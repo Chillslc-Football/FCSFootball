@@ -1,0 +1,18 @@
+import { Stack } from 'expo-router';
+
+import { colors } from '@/theme';
+
+export default function DeveloperLayout() {
+  return (
+    <Stack
+      screenOptions={{
+        headerStyle: { backgroundColor: colors.surface },
+        headerTintColor: colors.text,
+        headerTitleStyle: { fontWeight: '600' },
+        contentStyle: { backgroundColor: colors.background },
+      }}>
+      <Stack.Screen name="index" options={{ title: 'Developer' }} />
+      <Stack.Screen name="data-test" options={{ title: 'Data Test' }} />
+    </Stack>
+  );
+}

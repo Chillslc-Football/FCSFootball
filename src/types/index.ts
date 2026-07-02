@@ -59,3 +59,28 @@ export type RankedTeam = {
   movement?: PollMovement;
   nextGame?: NextGame;
 };
+
+export type TeamDivision = 'fcs' | 'fbs';
+
+export type ScheduleTeam = {
+  id: string;
+  name: string;
+  abbreviation: string;
+  conference?: string;
+  division: TeamDivision;
+  rank?: number;
+};
+
+export type ScheduleMatchupType = 'fcs-fcs' | 'fcs-fbs';
+
+export type ScheduleGame = {
+  id: string;
+  /** ISO date YYYY-MM-DD */
+  date: string;
+  time: string;
+  awayTeam: ScheduleTeam;
+  homeTeam: ScheduleTeam;
+  broadcast: string;
+  conference?: string;
+  matchupType: ScheduleMatchupType;
+};

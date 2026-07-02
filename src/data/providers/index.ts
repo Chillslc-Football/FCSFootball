@@ -1,8 +1,7 @@
 import type { Game, Team } from '@/types';
 
 /**
- * Base contract for future data providers (ESPN, NCAA, etc.).
- * Implementations will swap in without changing screen code.
+ * @deprecated Use FCSDataProvider from './types' instead.
  */
 export type DataProvider = {
   getTop25(): Promise<Team[]>;
@@ -10,3 +9,6 @@ export type DataProvider = {
   getSchedule(): Promise<Game[]>;
   getRankings(): Promise<Team[]>;
 };
+
+export type { FCSDataProvider, ProviderFetchStatus, ProviderResponse } from './types';
+export { MockDataProvider, mockDataProvider } from './mockProvider';
