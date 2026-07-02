@@ -1,7 +1,6 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
-import 'react-native-reanimated';
 
 import { colors } from '@/theme';
 
