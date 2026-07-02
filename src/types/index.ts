@@ -12,6 +12,27 @@ export type Game = {
   status: 'scheduled' | 'in_progress' | 'final';
 };
 
+export type GameStatus = 'live' | 'upcoming' | 'final';
+
+export type ScoreboardTeam = {
+  id: string;
+  name: string;
+  abbreviation: string;
+  rank?: number;
+};
+
+export type ScoreboardGame = {
+  id: string;
+  awayTeam: ScoreboardTeam;
+  homeTeam: ScoreboardTeam;
+  status: GameStatus;
+  awayScore?: number;
+  homeScore?: number;
+  /** Quarter/clock for live games, start time for upcoming games */
+  statusDetail: string;
+  broadcast: string;
+};
+
 export type TeamRecord = {
   wins: number;
   losses: number;
