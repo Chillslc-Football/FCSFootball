@@ -1,20 +1,42 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { GameCard } from '@/components/GameCard';
+import { UpsetWatchCard } from '@/components/UpsetWatchCard';
 import { Screen } from '@/components/Screen';
 import {
   MOCK_FINAL_GAMES,
   MOCK_LIVE_GAMES,
   MOCK_SCORES_META,
   MOCK_UPCOMING_GAMES,
+  MOCK_UPSET_WATCH_GAMES,
 } from '@/data/mock/scores';
 import { colors, spacing, typography } from '@/theme';
-import type { ScoreboardGame } from '@/types';
+import type { ScoreboardGame, UpsetWatchGame } from '@/types';
 
 type GameSectionProps = {
   title: string;
   games: ScoreboardGame[];
 };
+
+type UpsetSectionProps = {
+  games: UpsetWatchGame[];
+};
+
+function UpsetWatchSection({ games }: UpsetSectionProps) {
+  if (games.length === 0) return null;
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Upset Watch</Text>
+      <Text style={styles.sectionSubtitle}>FCS vs FBS games to watch</Text>
+      <View style={styles.list}>
+        {games.map((game) => (
+          <UpsetWatchCard key={game.id} game={game} />
+        ))}
+      </View>
+    </View>
+  );
+}
 
 function GameSection({ title, games }: GameSectionProps) {
   if (games.length === 0) return null;
@@ -42,6 +64,7 @@ export default function ScoresScreen() {
         </Text>
       </View>
 
+      <UpsetWatchSection games={MOCK_UPSET_WATCH_GAMES} />
       <GameSection title="Live" games={MOCK_LIVE_GAMES} />
       <GameSection title="Upcoming" games={MOCK_UPCOMING_GAMES} />
       <GameSection title="Final" games={MOCK_FINAL_GAMES} />
@@ -79,6 +102,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...typography.label,
     color: colors.textMuted,
+    marginBottom: spacing.xs,
+  },
+  sectionSubtitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
     marginBottom: spacing.sm,
   },
   list: {

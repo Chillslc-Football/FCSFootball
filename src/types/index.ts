@@ -84,3 +84,29 @@ export type ScheduleGame = {
   conference?: string;
   matchupType: ScheduleMatchupType;
 };
+
+export type UpsetAlertLabel =
+  | 'Upset Alert'
+  | 'One Score Game'
+  | 'FCS Leading'
+  | 'FCS Win';
+
+export type UpsetWatchTeam = {
+  id: string;
+  name: string;
+  abbreviation: string;
+  division: TeamDivision;
+  rank?: number;
+};
+
+export type UpsetWatchGame = {
+  id: string;
+  fcsTeam: UpsetWatchTeam;
+  fbsTeam: UpsetWatchTeam;
+  fcsScore: number;
+  fbsScore: number;
+  status: 'live' | 'final';
+  statusDetail: string;
+  alertLabel: UpsetAlertLabel;
+  broadcast: string;
+};

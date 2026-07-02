@@ -1,4 +1,51 @@
-import type { ScoreboardGame } from '@/types';
+import type { ScoreboardGame, UpsetWatchGame } from '@/types';
+
+export const MOCK_UPSET_WATCH_GAMES: UpsetWatchGame[] = [
+  {
+    id: 'upset-1',
+    fcsTeam: { id: 'mont', name: 'Montana', abbreviation: 'MONT', division: 'fcs', rank: 1 },
+    fbsTeam: { id: 'ore', name: 'Oregon', abbreviation: 'ORE', division: 'fbs' },
+    fcsScore: 24,
+    fbsScore: 24,
+    status: 'live',
+    statusDetail: 'Q4 · 1:15',
+    alertLabel: 'Upset Alert',
+    broadcast: 'ESPN+',
+  },
+  {
+    id: 'upset-2',
+    fcsTeam: { id: 'mtst', name: 'Montana State', abbreviation: 'MTST', division: 'fcs', rank: 5 },
+    fbsTeam: { id: 'orst', name: 'Oregon State', abbreviation: 'ORST', division: 'fbs' },
+    fcsScore: 27,
+    fbsScore: 21,
+    status: 'live',
+    statusDetail: 'Q4 · 8:42',
+    alertLabel: 'FCS Leading',
+    broadcast: 'ESPN2',
+  },
+  {
+    id: 'upset-3',
+    fcsTeam: { id: 'weber', name: 'Weber State', abbreviation: 'WEB', division: 'fcs', rank: 12 },
+    fbsTeam: { id: 'wash', name: 'Washington', abbreviation: 'WASH', division: 'fbs' },
+    fcsScore: 21,
+    fbsScore: 28,
+    status: 'live',
+    statusDetail: 'Q4 · 3:22',
+    alertLabel: 'One Score Game',
+    broadcast: 'ESPN+',
+  },
+  {
+    id: 'upset-4',
+    fcsTeam: { id: 'jmu', name: 'James Madison', abbreviation: 'JMU', division: 'fcs' },
+    fbsTeam: { id: 'uva', name: 'Virginia', abbreviation: 'UVA', division: 'fbs' },
+    fcsScore: 31,
+    fbsScore: 28,
+    status: 'final',
+    statusDetail: 'Final',
+    alertLabel: 'FCS Win',
+    broadcast: 'ESPNU',
+  },
+];
 
 export const MOCK_LIVE_GAMES: ScoreboardGame[] = [
   {
