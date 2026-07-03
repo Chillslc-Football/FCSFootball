@@ -1,10 +1,16 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { colors, spacing, typography } from '@/theme';
-import type { ScheduleGame, ScheduleTeam } from '@/types';
+import type { GameStatus, ScheduleGame, ScheduleTeam } from '@/types';
 
 type ScheduleGameCardProps = {
   game: ScheduleGame;
+};
+
+const STATUS_LABEL: Record<GameStatus, string> = {
+  live: 'LIVE',
+  upcoming: 'UPCOMING',
+  final: 'FINAL',
 };
 
 function RankBadge({ rank }: { rank: number }) {
@@ -15,29 +21,67 @@ function RankBadge({ rank }: { rank: number }) {
   );
 }
 
-function TeamRow({ team }: { team: ScheduleTeam }) {
+function TeamRow({
+  team,
+  score,
+  isWinner,
+  showScore,
+}: {
+  team: ScheduleTeam;
+  score?: number;
+  isWinner?: boolean;
+  showScore: boolean;
+}) {
   return (
     <View style={styles.teamRow}>
       <View style={styles.teamLeft}>
         {team.rank ? <RankBadge rank={team.rank} /> : null}
-        <Text style={styles.teamName} numberOfLines={1}>
+        <Text style={[styles.teamName, isWinner && styles.teamNameWinner]} numberOfLines={1}>
           {team.name}
         </Text>
       </View>
-      {team.conference ? (
-        <Text style={styles.teamConference}>{team.conference}</Text>
-      ) : null}
+      <View style={styles.teamRight}>
+        {team.conference ? (
+          <Text style={styles.teamConference} numberOfLines={1}>
+            {team.conference}
+          </Text>
+        ) : null}
+        {showScore ? (
+          <Text style={[styles.score, isWinner && styles.scoreWinner]}>{score ?? '—'}</Text>
+        ) : null}
+      </View>
     </View>
   );
 }
 
 export function ScheduleGameCard({ game }: ScheduleGameCardProps) {
   const isFbsMatchup = game.matchupType === 'fcs-fbs';
+  const status = game.status ?? 'upcoming';
+  const showScore = status === 'live' || status === 'final';
+  const awayWinner =
+    status === 'final' &&
+    game.awayScore != null &&
+    game.homeScore != null &&
+    game.awayScore > game.homeScore;
+  const homeWinner =
+    status === 'final' &&
+    game.awayScore != null &&
+    game.homeScore != null &&
+    game.homeScore > game.awayScore;
 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Text style={styles.time}>{game.time}</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.time}>{game.time}</Text>
+          {game.status ? (
+            <View style={[styles.statusBadge, styles[`status_${status}`]]}>
+              <Text style={[styles.statusText, styles[`statusText_${status}`]]}>
+                {STATUS_LABEL[status]}
+              </Text>
+            </View>
+          ) : null}
+        </View>
         <View style={styles.badges}>
           {isFbsMatchup ? (
             <View style={styles.fbsBadge}>
@@ -46,15 +90,37 @@ export function ScheduleGameCard({ game }: ScheduleGameCardProps) {
           ) : null}
           {game.conference ? (
             <View style={styles.confBadge}>
-              <Text style={styles.confBadgeText}>{game.conference}</Text>
+              <Text style={styles.confBadgeText} numberOfLines={1}>
+                {game.conference}
+              </Text>
             </View>
           ) : null}
         </View>
       </View>
 
-      <TeamRow team={game.awayTeam} />
+      {game.statusDetail && status !== 'upcoming' ? (
+        <Text style={styles.statusDetail}>{game.statusDetail}</Text>
+      ) : null}
+
+      <TeamRow
+        team={game.awayTeam}
+        score={game.awayScore}
+        isWinner={awayWinner}
+        showScore={showScore}
+      />
       <Text style={styles.atLabel}>at</Text>
-      <TeamRow team={game.homeTeam} />
+      <TeamRow
+        team={game.homeTeam}
+        score={game.homeScore}
+        isWinner={homeWinner}
+        showScore={showScore}
+      />
+
+      {game.venue ? (
+        <Text style={styles.venueText} numberOfLines={2}>
+          {game.venue}
+        </Text>
+      ) : null}
 
       <View style={styles.footer}>
         <View style={styles.broadcastBadge}>
@@ -76,19 +142,60 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: spacing.xs,
+    gap: spacing.sm,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexShrink: 1,
   },
   time: {
     ...typography.body,
     fontWeight: '600',
     color: colors.primary,
   },
+  statusBadge: {
+    borderRadius: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  status_live: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+  },
+  status_upcoming: {
+    backgroundColor: 'rgba(201, 162, 39, 0.15)',
+  },
+  status_final: {
+    backgroundColor: colors.surfaceElevated,
+  },
+  statusText: {
+    ...typography.label,
+    fontSize: 9,
+  },
+  statusText_live: {
+    color: colors.error,
+  },
+  statusText_upcoming: {
+    color: colors.primary,
+  },
+  statusText_final: {
+    color: colors.textMuted,
+  },
+  statusDetail: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
   badges: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.xs,
-    flexShrink: 1,
+    justifyContent: 'flex-end',
+    flex: 1,
   },
   fbsBadge: {
     backgroundColor: 'rgba(46, 125, 50, 0.15)',
@@ -108,6 +215,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderWidth: 1,
     borderColor: colors.border,
+    maxWidth: 120,
   },
   confBadgeText: {
     ...typography.label,
@@ -127,6 +235,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minWidth: 0,
   },
+  teamRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexShrink: 0,
+  },
   rankBadge: {
     backgroundColor: colors.primary,
     borderRadius: 4,
@@ -143,16 +257,36 @@ const styles = StyleSheet.create({
     color: colors.text,
     flex: 1,
   },
+  teamNameWinner: {
+    fontWeight: '700',
+  },
   teamConference: {
     ...typography.caption,
     color: colors.textMuted,
     fontSize: 11,
+    maxWidth: 72,
+  },
+  score: {
+    ...typography.heading,
+    fontSize: 18,
+    color: colors.textSecondary,
+    minWidth: 28,
+    textAlign: 'right',
+  },
+  scoreWinner: {
+    color: colors.text,
+    fontWeight: '700',
   },
   atLabel: {
     ...typography.caption,
     color: colors.textMuted,
     marginLeft: spacing.sm,
     fontStyle: 'italic',
+  },
+  venueText: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
   },
   footer: {
     flexDirection: 'row',

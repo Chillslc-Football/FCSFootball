@@ -120,6 +120,25 @@ export type ScheduleGame = {
   broadcast: string;
   conference?: string;
   matchupType: ScheduleMatchupType;
+  venue?: string;
+  status?: GameStatus;
+  awayScore?: number;
+  homeScore?: number;
+  /** Quarter/clock for live/final; kickoff time for upcoming */
+  statusDetail?: string;
+};
+
+export type ScheduleWeekId = 'week-0' | 'week-1' | 'week-2';
+
+export type EspnWeekGamesPayload = {
+  weekId: ScheduleWeekId;
+  weekLabel: string;
+  /** How games were loaded — week query or documented date-range fallback */
+  fetchStrategy: 'week_query' | 'date_range';
+  fetchNotes: string;
+  games: EspnNormalizedGame[];
+  endpoint: string;
+  raw: Record<string, unknown>;
 };
 
 export type UpsetAlertLabel =

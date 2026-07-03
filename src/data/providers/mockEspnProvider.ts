@@ -1,6 +1,6 @@
 import { MOCK_SCHEDULE_GAMES, MOCK_SCHEDULE_TODAY } from '@/data/mock/schedule';
 import type { EspnScoresProvider, ProviderResponse } from '@/data/providers/types';
-import type { EspnTodayGame, EspnTodayGamesPayload } from '@/types';
+import type { EspnTodayGame, EspnTodayGamesPayload, EspnWeekGamesPayload, ScheduleWeekId } from '@/types';
 
 const MOCK_DELAY_MS = 750;
 
@@ -57,6 +57,31 @@ export class MockEspnScoresProvider implements EspnScoresProvider {
       games,
       raw: buildRawEspnPayload(MOCK_SCHEDULE_TODAY, games),
       endpoint: 'mock://espn/scoreboard?groups=81',
+    };
+
+    return {
+      providerId: this.id,
+      durationMs: Date.now() - start,
+      timestamp: new Date().toISOString(),
+      data: payload,
+    };
+  }
+
+  async getWeekGames(
+    weekId: ScheduleWeekId,
+    _options?: { signal?: AbortSignal; timeoutMs?: number },
+  ): Promise<ProviderResponse<EspnWeekGamesPayload>> {
+    const start = Date.now();
+    await delay(MOCK_DELAY_MS);
+
+    const payload: EspnWeekGamesPayload = {
+      weekId,
+      weekLabel: weekId,
+      fetchStrategy: 'week_query',
+      fetchNotes: 'Mock provider — no week games.',
+      games: [],
+      endpoint: 'mock://espn/scoreboard/week',
+      raw: { source: 'espn-mock' },
     };
 
     return {

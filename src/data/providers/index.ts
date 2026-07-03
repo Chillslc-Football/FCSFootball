@@ -87,3 +87,15 @@ export {
   toScoreboardGame,
   toUpsetWatchGame,
 } from './espnTodayMapper';
+export {
+  getScheduleWeekConfig,
+  SCHEDULE_WEEK_CONFIG,
+  SCHEDULE_WEEK_OPTIONS,
+} from './espnScheduleWeek';
+export type { ScheduleWeekConfig, ScheduleWeekFetchStrategy } from './espnScheduleWeek';
+export {
+  formatScheduleDateLabel,
+  groupScheduleGamesByDate,
+  toScheduleGame,
+} from './espnScheduleMapper';
+export type { ScheduleDateGroup } from './espnScheduleMapper';

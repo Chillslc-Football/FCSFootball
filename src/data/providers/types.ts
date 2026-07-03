@@ -1,4 +1,4 @@
-import type { EspnNormalizedGame, EspnTodayGamesPayload, RankedTeam, ScoreboardGame } from '@/types';
+import type { EspnNormalizedGame, EspnTodayGamesPayload, EspnWeekGamesPayload, RankedTeam, ScoreboardGame, ScheduleWeekId } from '@/types';
 
 export type ProviderFetchStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -35,6 +35,11 @@ export interface EspnScoresProvider {
   readonly displayName: string;
 
   getTodayGames(options?: EspnFetchOptions): Promise<ProviderResponse<EspnTodayGamesPayload>>;
+
+  getWeekGames(
+    weekId: ScheduleWeekId,
+    options?: EspnFetchOptions,
+  ): Promise<ProviderResponse<EspnWeekGamesPayload>>;
 }
 
 /** @deprecated Use EspnScoresProvider */

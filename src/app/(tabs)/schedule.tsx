@@ -1,180 +1,150 @@
-import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ScheduleGameCard } from '@/components/ScheduleGameCard';
 import { Screen } from '@/components/Screen';
-import {
-  MOCK_SCHEDULE_CONFERENCES,
-  MOCK_SCHEDULE_GAMES,
-  MOCK_SCHEDULE_TODAY,
-  formatScheduleDate,
-  shiftScheduleDate,
-} from '@/data/mock/schedule';
-import type { MockScheduleConference } from '@/data/mock/schedule';
+import { espnScoresProvider } from '@/data/providers/espnProvider';
+import { groupScheduleGamesByDate } from '@/data/providers/espnScheduleMapper';
+import { SCHEDULE_WEEK_OPTIONS } from '@/data/providers/espnScheduleWeek';
 import { colors, spacing, typography } from '@/theme';
-import type { ScheduleGame } from '@/types';
+import type { ScheduleWeekId } from '@/types';
 
-function filterGames(
-  games: ScheduleGame[],
-  date: string,
-  conference: MockScheduleConference,
-  top25Only: boolean,
-): ScheduleGame[] {
-  return games.filter((game) => {
-    if (game.date !== date) return false;
-    if (conference !== 'All Conferences' && game.conference !== conference) return false;
-    if (top25Only && !game.awayTeam.rank && !game.homeTeam.rank) return false;
-    return true;
-  });
-}
+type LoadState = 'loading' | 'success' | 'error';
 
 export default function ScheduleScreen() {
-  const [selectedDate, setSelectedDate] = useState(MOCK_SCHEDULE_TODAY);
-  const [conference, setConference] = useState<MockScheduleConference>('All Conferences');
-  const [top25Only, setTop25Only] = useState(false);
+  const [selectedWeek, setSelectedWeek] = useState<ScheduleWeekId>('week-1');
+  const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [fetchNotes, setFetchNotes] = useState('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [gameCount, setGameCount] = useState(0);
 
-  const filteredGames = useMemo(
-    () => filterGames(MOCK_SCHEDULE_GAMES, selectedDate, conference, top25Only),
-    [selectedDate, conference, top25Only],
-  );
+  const [groups, setGroups] = useState<ReturnType<typeof groupScheduleGamesByDate>>([]);
 
-  const isToday = selectedDate === MOCK_SCHEDULE_TODAY;
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadWeekGames() {
+      setLoadState('loading');
+      setErrorMessage(null);
+      setGroups([]);
+
+      try {
+        const response = await espnScoresProvider.getWeekGames(selectedWeek);
+        if (cancelled) return;
+
+        const grouped = groupScheduleGamesByDate(response.data.games);
+        setGroups(grouped);
+        setGameCount(response.data.games.length);
+        setFetchNotes(response.data.fetchNotes);
+        setLoadState('success');
+      } catch (err) {
+        if (cancelled) return;
+        setGroups([]);
+        setGameCount(0);
+        setErrorMessage(
+          err instanceof Error ? err.message : 'Could not load FCS schedule from ESPN.',
+        );
+        setLoadState('error');
+      }
+    }
+
+    void loadWeekGames();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedWeek]);
+
+  const weekLabel =
+    SCHEDULE_WEEK_OPTIONS.find((option) => option.id === selectedWeek)?.label ?? selectedWeek;
 
   return (
-    <Screen title="Schedule" subtitle="Upcoming FCS matchups and kickoff times.">
-      <View style={styles.mockBanner}>
-        <Text style={styles.mockLabel}>Mock Data</Text>
-        <Text style={styles.mockHint}>
-          Sample schedule for development. Live data will replace this later.
-        </Text>
-      </View>
-
-      <View style={styles.dateNav}>
-        <Pressable
-          style={({ pressed }) => [styles.dateButton, pressed && styles.dateButtonPressed]}
-          onPress={() => setSelectedDate((d) => shiftScheduleDate(d, -1))}>
-          <Text style={styles.dateButtonText}>Previous Day</Text>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [
-            styles.dateButton,
-            isToday && styles.dateButtonActive,
-            pressed && styles.dateButtonPressed,
-          ]}
-          onPress={() => setSelectedDate(MOCK_SCHEDULE_TODAY)}>
-          <Text style={[styles.dateButtonText, isToday && styles.dateButtonTextActive]}>
-            Today
-          </Text>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [styles.dateButton, pressed && styles.dateButtonPressed]}
-          onPress={() => setSelectedDate((d) => shiftScheduleDate(d, 1))}>
-          <Text style={styles.dateButtonText}>Next Day</Text>
-        </Pressable>
-      </View>
-
-      <Text style={styles.dateHeader}>{formatScheduleDate(selectedDate)}</Text>
-
-      <View style={styles.filters}>
-        <Text style={styles.filterLabel}>Conference</Text>
+    <Screen title="Schedule" subtitle="FCS matchups grouped by date for the selected week.">
+      <View style={styles.weekSelector}>
+        <Text style={styles.weekSelectorLabel}>Week</Text>
         <View style={styles.chipRow}>
-          {MOCK_SCHEDULE_CONFERENCES.map((conf) => (
-            <Pressable
-              key={conf}
-              style={({ pressed }) => [
-                styles.chip,
-                conference === conf && styles.chipActive,
-                pressed && styles.chipPressed,
-              ]}
-              onPress={() => setConference(conf)}>
-              <Text style={[styles.chipText, conference === conf && styles.chipTextActive]}>
-                {conf}
-              </Text>
-            </Pressable>
-          ))}
+          {SCHEDULE_WEEK_OPTIONS.map((option) => {
+            const isActive = selectedWeek === option.id;
+            return (
+              <Pressable
+                key={option.id}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+                onPress={() => setSelectedWeek(option.id)}
+                style={[styles.chip, isActive && styles.chipActive]}>
+                <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
 
-      <View style={styles.toggleRow}>
-        <Text style={styles.toggleLabel}>Top 25 only</Text>
-        <Switch
-          value={top25Only}
-          onValueChange={setTop25Only}
-          trackColor={{ false: colors.border, true: colors.primaryMuted }}
-          thumbColor={top25Only ? colors.primary : colors.textMuted}
-        />
-      </View>
+      {loadState === 'loading' ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator color={colors.primary} size="large" />
+          <Text style={styles.loadingText}>Loading {weekLabel} FCS games…</Text>
+        </View>
+      ) : null}
 
-      <View style={styles.list}>
-        {filteredGames.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>No games match the current filters.</Text>
+      {loadState === 'error' ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorTitle}>Could not load schedule</Text>
+          <Text style={styles.errorText}>{errorMessage}</Text>
+        </View>
+      ) : null}
+
+      {loadState === 'success' ? (
+        <>
+          <View style={styles.metaBanner}>
+            <Text style={styles.metaTitle}>{weekLabel}</Text>
+            <Text style={styles.metaText}>
+              {gameCount} FCS game{gameCount === 1 ? '' : 's'} · ESPN scoreboard
+            </Text>
+            {__DEV__ && fetchNotes ? (
+              <Text style={styles.metaNotes}>{fetchNotes}</Text>
+            ) : null}
           </View>
-        ) : (
-          filteredGames.map((game) => <ScheduleGameCard key={game.id} game={game} />)
-        )}
-      </View>
+
+          {groups.length === 0 ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>No FCS games for {weekLabel}.</Text>
+              <Text style={styles.emptyText}>
+                Try another week or check back when the season schedule is available.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.scheduleList}>
+              {groups.map((group) => (
+                <View key={group.date} style={styles.dateSection}>
+                  <Text style={styles.dateHeader}>{group.label}</Text>
+                  <View style={styles.list}>
+                    {group.games.map((game) => (
+                      <ScheduleGameCard key={game.id} game={game} />
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </>
+      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  mockBanner: {
-    backgroundColor: colors.surfaceElevated,
+  weekSelector: {
+    backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  mockLabel: {
-    ...typography.label,
-    color: colors.primary,
-    marginBottom: spacing.xs,
-  },
-  mockHint: {
-    ...typography.caption,
-    color: colors.textSecondary,
-  },
-  dateNav: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  dateButton: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-  },
-  dateButtonActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  dateButtonPressed: {
-    opacity: 0.85,
-  },
-  dateButtonText: {
-    ...typography.caption,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  dateButtonTextActive: {
-    color: colors.background,
-  },
-  dateHeader: {
-    ...typography.heading,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  filters: {
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
     gap: spacing.sm,
   },
-  filterLabel: {
+  weekSelectorLabel: {
     ...typography.label,
     color: colors.textMuted,
   },
@@ -184,7 +154,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   chip: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceElevated,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.border,
@@ -192,33 +162,81 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   chipActive: {
-    backgroundColor: colors.surfaceElevated,
     borderColor: colors.primary,
-  },
-  chipPressed: {
-    opacity: 0.85,
+    backgroundColor: 'rgba(201, 162, 39, 0.15)',
   },
   chipText: {
     ...typography.caption,
     color: colors.textSecondary,
+    fontWeight: '500',
   },
   chipTextActive: {
     color: colors.primary,
     fontWeight: '600',
   },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  loadingBox: {
     backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  loadingText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  errorBox: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.error,
+    padding: spacing.lg,
+  },
+  errorTitle: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.error,
+    marginBottom: spacing.xs,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.text,
+  },
+  metaBanner: {
+    backgroundColor: colors.surfaceElevated,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.md,
     marginBottom: spacing.lg,
+    gap: spacing.xs,
   },
-  toggleLabel: {
+  metaTitle: {
     ...typography.body,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  metaText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  metaNotes: {
+    ...typography.caption,
+    color: colors.textMuted,
+    lineHeight: 18,
+    marginTop: spacing.xs,
+  },
+  scheduleList: {
+    gap: spacing.lg,
+  },
+  dateSection: {
+    gap: spacing.sm,
+  },
+  dateHeader: {
+    ...typography.heading,
     color: colors.text,
   },
   list: {
@@ -229,11 +247,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.lg,
+    padding: spacing.xl,
     alignItems: 'center',
+    gap: spacing.sm,
+  },
+  emptyTitle: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.text,
+    textAlign: 'center',
   },
   emptyText: {
     ...typography.caption,
     color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
