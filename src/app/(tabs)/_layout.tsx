@@ -27,17 +27,17 @@ export default function TabLayout() {
         tabBarInactiveTintColor: colors.tabIconDefault,
       }}>
       <Tabs.Screen
+        name="today"
+        options={{
+          title: 'Today',
+          tabBarIcon: ({ color }) => <TabIcon name="today" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="top-25"
         options={{
           title: 'Top 25',
           tabBarIcon: ({ color }) => <TabIcon name="trophy" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="scores"
-        options={{
-          title: 'Scores',
-          tabBarIcon: ({ color }) => <TabIcon name="football" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -59,6 +59,12 @@ export default function TabLayout() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ color }) => <TabIcon name="settings" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="scores"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

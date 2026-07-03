@@ -110,3 +110,27 @@ export type UpsetWatchGame = {
   alertLabel: UpsetAlertLabel;
   broadcast: string;
 };
+
+/** Parsed game shape for ESPN provider dev testing */
+export type EspnTodayGame = {
+  id: string;
+  awayTeam: string;
+  homeTeam: string;
+  awayTeamId?: string;
+  homeTeamId?: string;
+  awayScore?: number;
+  homeScore?: number;
+  startTime: string;
+  status: string;
+  broadcast?: string;
+  espnLink?: string;
+  /** Normalized internal Game when parse succeeds */
+  game?: Game;
+};
+
+export type EspnTodayGamesPayload = {
+  date: string;
+  games: EspnTodayGame[];
+  raw: Record<string, unknown>;
+  endpoint: string;
+};

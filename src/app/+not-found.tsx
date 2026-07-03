@@ -9,8 +9,8 @@ export default function NotFoundScreen() {
       <Stack.Screen options={{ title: 'Not Found' }} />
       <View style={styles.container}>
         <Text style={styles.title}>Page not found</Text>
-        <Link href="/top-25" style={styles.link}>
-          Go to Top 25
+        <Link href={'/today' as import('expo-router').Href} style={styles.link}>
+          Go to Today
         </Link>
       </View>
     </>

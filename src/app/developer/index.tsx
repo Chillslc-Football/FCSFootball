@@ -16,6 +16,20 @@ export default function DeveloperScreen() {
           <Text style={styles.rowSubtitle}>Experiment with provider fetch responses</Text>
         </Pressable>
       </Link>
+
+      <Link href={'/developer/espn-test' as Href} asChild>
+        <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+          <Text style={styles.rowTitle}>ESPN Data Test</Text>
+          <Text style={styles.rowSubtitle}>Scores & schedule via espnScoresProvider</Text>
+        </Pressable>
+      </Link>
+
+      <Link href={'/developer/ncaa-rankings-test' as Href} asChild>
+        <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+          <Text style={styles.rowTitle}>NCAA Rankings Test</Text>
+          <Text style={styles.rowSubtitle}>Stats Perform FCS Top 25 — not connected yet</Text>
+        </Pressable>
+      </Link>
     </View>
   );
 }

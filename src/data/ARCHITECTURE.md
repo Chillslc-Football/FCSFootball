@@ -1,0 +1,31 @@
+# FCS Football — Data Architecture
+
+## Source of truth by domain
+
+| Domain | Provider | Source | Notes |
+|--------|----------|--------|-------|
+| **Top 25 / Rankings** | `ncaaRankingsProvider` | [NCAA Stats Perform FCS Top 25](https://www.ncaa.com/rankings/football/fcs/stats-perform-fcs-top-25) | Authoritative FCS poll. **Do not use ESPN for rankings.** |
+| **Scores** | `espnScoresProvider` | ESPN college football scoreboard (FCS group) | Live/final scores, quarter/clock |
+| **Schedule** | `espnScoresProvider` | ESPN scoreboard / events | Kickoff times, matchups |
+| **Game status** | `espnScoresProvider` | ESPN | pre / in / post |
+| **Broadcast / TV** | `espnScoresProvider` | ESPN | Network, streaming placeholders |
+| **Game IDs & links** | `espnScoresProvider` | ESPN | ESPN event ID, watch/box score links |
+
+## Why ESPN is not used for rankings
+
+ESPN's general college football rankings and poll data are **not reliable** for the official FCS Top 25. Production Top 25 and Rankings screens must use NCAA Stats Perform data once connected.
+
+## Future merge step
+
+When both providers are live, ranked badges on scores/schedule/today screens will use **ranking merge logic** (`mergeRankingsOntoGames`):
+
+1. Fetch Top 25 from `ncaaRankingsProvider`
+2. Fetch games from `espnScoresProvider`
+3. Match NCAA-ranked teams onto ESPN games by normalized school name (and aliases)
+4. Attach `rank` to ESPN game team objects for display only — rankings data still originates from NCAA
+
+## Current status (development)
+
+- Production screens use **mock data** in `src/data/mock/`
+- `espnScoresProvider` — live fetch available on Developer → ESPN Data Test only
+- `ncaaRankingsProvider` — **not connected yet** (placeholder)

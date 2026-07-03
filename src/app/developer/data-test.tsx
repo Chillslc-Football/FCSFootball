@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 
 import { mockDataProvider } from '@/data/providers/mockProvider';
+import { NCAA_FCS_TOP_25_URL, ncaaRankingsProvider } from '@/data/providers';
 import type { ProviderFetchStatus, ProviderResponse } from '@/data/providers/types';
 import { colors, spacing, typography } from '@/theme';
 
@@ -96,6 +97,21 @@ export default function DataTestScreen() {
             {jsonText ?? 'Tap Fetch to load a mock provider response.'}
           </Text>
         </ScrollView>
+      </View>
+
+      <View style={styles.ncaaSection}>
+        <Text style={styles.ncaaSectionTitle}>NCAA Rankings Test</Text>
+        <Text style={styles.ncaaSource}>
+          Source: NCAA Stats Perform FCS Top 25
+        </Text>
+        <Text style={styles.ncaaUrl}>{NCAA_FCS_TOP_25_URL}</Text>
+        <View style={styles.ncaaStatusBadge}>
+          <Text style={styles.ncaaStatusText}>Status: not connected yet</Text>
+        </View>
+        <Text style={styles.ncaaWhy}>
+          Why: ESPN rankings are not reliable for FCS Top 25. Use{' '}
+          {ncaaRankingsProvider.id} for poll data; espnScoresProvider for games only.
+        </Text>
       </View>
     </View>
   );
@@ -209,5 +225,44 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     color: colors.textSecondary,
+  },
+  ncaaSection: {
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  ncaaSectionTitle: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  ncaaSource: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  ncaaUrl: {
+    ...typography.caption,
+    color: colors.primary,
+  },
+  ncaaStatusBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  ncaaStatusText: {
+    ...typography.label,
+    color: colors.textMuted,
+  },
+  ncaaWhy: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
 });

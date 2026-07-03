@@ -13,6 +13,8 @@ export default function DeveloperLayout() {
       }}>
       <Stack.Screen name="index" options={{ title: 'Developer' }} />
       <Stack.Screen name="data-test" options={{ title: 'Data Test' }} />
+      <Stack.Screen name="espn-test" options={{ title: 'ESPN Data Test' }} />
+      <Stack.Screen name="ncaa-rankings-test" options={{ title: 'NCAA Rankings Test' }} />
     </Stack>
   );
 }
