@@ -34,24 +34,24 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="top-25"
+        name="scores"
         options={{
-          title: 'Top 25',
-          tabBarIcon: ({ color }) => <TabIcon name="trophy" color={color} />,
+          title: 'Scores',
+          tabBarIcon: ({ color }) => <TabIcon name="football" color={color} />,
         }}
       />
       <Tabs.Screen
         name="schedule"
         options={{
-          title: 'Schedule',
+          title: 'Conferences',
           tabBarIcon: ({ color }) => <TabIcon name="calendar" color={color} />,
         }}
       />
       <Tabs.Screen
-        name="rankings"
+        name="polls"
         options={{
-          title: 'Rankings',
-          tabBarIcon: ({ color }) => <TabIcon name="list" color={color} />,
+          title: 'Polls',
+          tabBarIcon: ({ color }) => <TabIcon name="trophy" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -59,12 +59,6 @@ export default function TabLayout() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ color }) => <TabIcon name="settings" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="scores"
-        options={{
-          href: null,
         }}
       />
     </Tabs>

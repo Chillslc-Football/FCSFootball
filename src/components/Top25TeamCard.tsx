@@ -1,10 +1,14 @@
 import { StyleSheet, Text, View } from 'react-native';
 
+import { TeamLogo } from '@/components/TeamLogo';
+import { TeamNameLink } from '@/components/TeamNameLink';
 import { colors, spacing, typography } from '@/theme';
 import type { GameLocation, NextGame, PollMovement, RankedTeam, TeamRecord } from '@/types';
 
 type Top25TeamCardProps = {
   item: RankedTeam;
+  logoUrl?: string;
+  espnTeamId?: string;
 };
 
 const LOCATION_LABEL: Record<GameLocation, string> = {
@@ -49,14 +53,6 @@ function MovementBadge({ movement }: { movement?: PollMovement }) {
   );
 }
 
-function InitialsBadge({ abbreviation }: { abbreviation: string }) {
-  return (
-    <View style={styles.initialsBadge}>
-      <Text style={styles.initialsText}>{abbreviation.slice(0, 3)}</Text>
-    </View>
-  );
-}
-
 function NextGameSection({ nextGame }: { nextGame: NextGame }) {
   return (
     <View style={styles.nextGame}>
@@ -78,18 +74,26 @@ function NextGameSection({ nextGame }: { nextGame: NextGame }) {
   );
 }
 
-export function Top25TeamCard({ item }: Top25TeamCardProps) {
+export function Top25TeamCard({ item, logoUrl, espnTeamId }: Top25TeamCardProps) {
   const { rank, team, record, pollPoints, movement, nextGame } = item;
+  const resolvedLogoUrl = logoUrl ?? team.logoUrl;
 
   return (
     <View style={styles.card}>
       <View style={styles.mainRow}>
         <Text style={styles.rank}>{rank}</Text>
-        <InitialsBadge abbreviation={team.abbreviation} />
+        <TeamLogo
+          name={team.name}
+          abbreviation={team.abbreviation}
+          logoUrl={resolvedLogoUrl}
+          size="poll"
+        />
         <View style={styles.info}>
-          <Text style={styles.teamName} numberOfLines={1}>
-            {team.name}
-          </Text>
+          <TeamNameLink
+            name={team.name}
+            teamId={espnTeamId ?? team.id}
+            style={styles.teamName}
+          />
           <Text style={styles.record}>{formatRecord(record)}</Text>
         </View>
         <View style={styles.trailing}>
@@ -130,21 +134,6 @@ const styles = StyleSheet.create({
     width: 28,
     textAlign: 'center',
   },
-  initialsBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  initialsText: {
-    ...typography.label,
-    color: colors.textSecondary,
-    fontSize: 10,
-  },
   info: {
     flex: 1,
     minWidth: 0,
@@ -154,6 +143,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
     marginBottom: 2,
+    flex: undefined,
   },
   record: {
     ...typography.caption,

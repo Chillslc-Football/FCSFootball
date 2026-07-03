@@ -6,6 +6,7 @@ import type {
   UpsetAlertLabel,
   UpsetWatchGame,
 } from '@/types';
+import { getCompactTeamDisplayName } from '@/utils/teamDisplay';
 
 function abbreviateTeamName(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -18,15 +19,30 @@ function abbreviateTeamName(name: string): string {
 }
 
 function toScoreboardTeam(
-  name: string,
+  fullName: string,
   teamId: string | undefined,
   gameId: string,
   side: 'away' | 'home',
+  rank?: number,
+  abbreviation?: string,
+  logoUrl?: string,
+  record?: string,
+  shortDisplayName?: string,
 ): ScoreboardTeam {
+  const compactName = getCompactTeamDisplayName({
+    shortDisplayName,
+    abbreviation,
+    displayName: fullName,
+  });
+
   return {
     id: teamId ?? `${gameId}-${side}`,
-    name,
-    abbreviation: abbreviateTeamName(name),
+    name: compactName,
+    fullName,
+    abbreviation: abbreviation ?? abbreviateTeamName(fullName),
+    logoUrl,
+    rank,
+    record,
   };
 }
 
@@ -41,29 +57,43 @@ export function toGameStatus(game: EspnNormalizedGame): GameStatus {
   }
 }
 
-export function formatKickoffTime(startTime: string): string {
-  if (!startTime || startTime === 'TBD') return 'TBD';
-  const parsed = Date.parse(startTime);
-  if (Number.isNaN(parsed)) return startTime;
-  return new Date(parsed).toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
+export { formatKickoffTime } from '@/utils/formatGameTime';
 
 export function toScoreboardGame(game: EspnNormalizedGame): ScoreboardGame {
   const status = toGameStatus(game);
-  const kickoff = formatKickoffTime(game.startTime);
 
   return {
     id: game.id,
-    awayTeam: toScoreboardTeam(game.awayTeam, game.awayTeamId, game.id, 'away'),
-    homeTeam: toScoreboardTeam(game.homeTeam, game.homeTeamId, game.id, 'home'),
+    awayTeam: toScoreboardTeam(
+      game.awayTeam,
+      game.awayTeamId,
+      game.id,
+      'away',
+      game.awayRank,
+      game.awayAbbreviation,
+      game.awayLogoUrl,
+      game.awayRecord,
+      game.awayShortDisplayName,
+    ),
+    homeTeam: toScoreboardTeam(
+      game.homeTeam,
+      game.homeTeamId,
+      game.id,
+      'home',
+      game.homeRank,
+      game.homeAbbreviation,
+      game.homeLogoUrl,
+      game.homeRecord,
+      game.homeShortDisplayName,
+    ),
     status,
     awayScore: game.awayScore,
     homeScore: game.homeScore,
-    statusDetail: status === 'upcoming' ? kickoff : game.status,
+    startTime: game.startTime,
+    statusDetail: game.status,
     broadcast: game.broadcast ?? '—',
+    awayRecord: game.awayRecord,
+    homeRecord: game.homeRecord,
   };
 }
 
@@ -100,29 +130,51 @@ export function toUpsetWatchGame(game: EspnNormalizedGame): UpsetWatchGame | nul
   const homeScore = game.homeScore ?? 0;
 
   const fcsIsAway = game.awayDivision === 'fcs';
-  const fcsTeam = fcsIsAway ? game.awayTeam : game.homeTeam;
-  const fbsTeam = fcsIsAway ? game.homeTeam : game.awayTeam;
+  const fcsFullName = fcsIsAway ? game.awayTeam : game.homeTeam;
+  const fbsFullName = fcsIsAway ? game.homeTeam : game.awayTeam;
   const fcsTeamId = fcsIsAway ? game.awayTeamId : game.homeTeamId;
   const fbsTeamId = fcsIsAway ? game.homeTeamId : game.awayTeamId;
   const fcsScore = fcsIsAway ? awayScore : homeScore;
   const fbsScore = fcsIsAway ? homeScore : awayScore;
 
+  const fcsRecord = fcsIsAway ? game.awayRecord : game.homeRecord;
+  const fbsRecord = fcsIsAway ? game.homeRecord : game.awayRecord;
+
   const alertLabel = computeUpsetAlert(fcsScore, fbsScore, status);
   if (!alertLabel) return null;
+
+  const fcsAbbreviation = fcsIsAway ? game.awayAbbreviation : game.homeAbbreviation;
+  const fbsAbbreviation = fcsIsAway ? game.homeAbbreviation : game.awayAbbreviation;
+  const fcsShortDisplayName = fcsIsAway ? game.awayShortDisplayName : game.homeShortDisplayName;
+  const fbsShortDisplayName = fcsIsAway ? game.homeShortDisplayName : game.awayShortDisplayName;
 
   return {
     id: game.id,
     fcsTeam: {
       id: fcsTeamId ?? `${game.id}-fcs`,
-      name: fcsTeam,
-      abbreviation: abbreviateTeamName(fcsTeam),
+      name: getCompactTeamDisplayName({
+        shortDisplayName: fcsShortDisplayName,
+        abbreviation: fcsAbbreviation,
+        displayName: fcsFullName,
+      }),
+      fullName: fcsFullName,
+      abbreviation: fcsAbbreviation ?? abbreviateTeamName(fcsFullName),
+      logoUrl: fcsIsAway ? game.awayLogoUrl : game.homeLogoUrl,
       division: 'fcs',
+      record: fcsRecord,
     },
     fbsTeam: {
       id: fbsTeamId ?? `${game.id}-fbs`,
-      name: fbsTeam,
-      abbreviation: abbreviateTeamName(fbsTeam),
+      name: getCompactTeamDisplayName({
+        shortDisplayName: fbsShortDisplayName,
+        abbreviation: fbsAbbreviation,
+        displayName: fbsFullName,
+      }),
+      fullName: fbsFullName,
+      abbreviation: fbsAbbreviation ?? abbreviateTeamName(fbsFullName),
+      logoUrl: fcsIsAway ? game.homeLogoUrl : game.awayLogoUrl,
       division: 'fbs',
+      record: fbsRecord,
     },
     fcsScore,
     fbsScore,
@@ -130,6 +182,8 @@ export function toUpsetWatchGame(game: EspnNormalizedGame): UpsetWatchGame | nul
     statusDetail: status === 'live' ? game.status : game.status,
     alertLabel,
     broadcast: game.broadcast ?? '—',
+    fcsRecord,
+    fbsRecord,
   };
 }
 

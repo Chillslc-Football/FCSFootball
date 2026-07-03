@@ -1,4 +1,4 @@
-import type { EspnNormalizedGame, EspnTodayGamesPayload, EspnWeekGamesPayload, RankedTeam, ScoreboardGame, ScheduleWeekId } from '@/types';
+import type { EspnNormalizedGame, EspnTodayGamesPayload, EspnWeekGamesPayload, NcaaRankingsPayload, RankedTeam, ScoreboardGame, ScheduleWeekId } from '@/types';
 
 export type ProviderFetchStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -54,7 +54,7 @@ export interface NcaaRankingsProvider {
   readonly id: 'ncaa-rankings';
   readonly displayName: string;
 
-  getTop25(options?: EspnFetchOptions): Promise<ProviderResponse<RankedTeam[]>>;
+  getTop25(options?: EspnFetchOptions): Promise<ProviderResponse<NcaaRankingsPayload>>;
 }
 
 /**
@@ -63,7 +63,7 @@ export interface NcaaRankingsProvider {
  */
 export type RankingMergeInput = {
   rankings: RankedTeam[];
-  games: ScoreboardGame[];
+  games: EspnNormalizedGame[];
 };
 
 /** Result of parsing all events from an ESPN FCS scoreboard response */

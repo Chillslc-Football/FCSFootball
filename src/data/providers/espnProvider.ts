@@ -123,13 +123,20 @@ export class EspnScoresProviderImpl implements EspnScoresProvider {
     };
 
     try {
-      if (config.fetchStrategy === 'week_query' && config.weekPresetId) {
-        const endpoint = buildEspnWeekScoreboardUrl(config.weekPresetId);
+      if (config.fetchStrategy === 'week_query') {
+        const endpoint =
+          config.scoreboardUrl ??
+          (config.weekPresetId ? buildEspnWeekScoreboardUrl(config.weekPresetId) : undefined);
+
+        if (!endpoint) {
+          throw new Error(`No scoreboard URL configured for ${config.title}.`);
+        }
+
         const { games, raw } = await fetchScoreboardGames(endpoint, fetchOptions);
 
         const payload: EspnWeekGamesPayload = {
           weekId,
-          weekLabel: config.label,
+          weekLabel: config.displayLabel,
           fetchStrategy: 'week_query',
           fetchNotes: config.fetchNotes,
           games,
@@ -147,7 +154,7 @@ export class EspnScoresProviderImpl implements EspnScoresProvider {
 
       const dates = config.dateRangeIso ?? [];
       if (dates.length === 0) {
-        throw new Error(`No fetch configuration for ${config.label}.`);
+        throw new Error(`No fetch configuration for ${config.title}.`);
       }
 
       const endpoints: string[] = [];
@@ -164,7 +171,7 @@ export class EspnScoresProviderImpl implements EspnScoresProvider {
 
       const payload: EspnWeekGamesPayload = {
         weekId,
-        weekLabel: config.label,
+        weekLabel: config.displayLabel,
         fetchStrategy: 'date_range',
         fetchNotes: config.fetchNotes,
         games: mergeGamesById(mergedGames),

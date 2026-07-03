@@ -1,4 +1,4 @@
-import { formatKickoffTime, toGameStatus } from '@/data/providers/espnTodayMapper';
+import { toGameStatus } from '@/data/providers/espnTodayMapper';
 import type {
   EspnNormalizedGame,
   ScheduleGame,
@@ -6,6 +6,12 @@ import type {
   ScheduleTeam,
   TeamDivision,
 } from '@/types';
+import { getCompactTeamDisplayName } from '@/utils/teamDisplay';
+import {
+  extractLocalGameDateIso,
+  formatGameDateLabel,
+} from '@/utils/formatGameTime';
+import { sortScheduleGames } from '@/utils/sortGames';
 
 function abbreviateTeamName(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -22,19 +28,32 @@ function toDivision(hint: EspnNormalizedGame['awayDivision']): TeamDivision {
 }
 
 function toScheduleTeam(
-  name: string,
+  fullName: string,
   teamId: string | undefined,
   gameId: string,
   side: 'away' | 'home',
   division: EspnNormalizedGame['awayDivision'],
   conference?: string,
+  rank?: number,
+  abbreviation?: string,
+  logoUrl?: string,
+  record?: string,
+  shortDisplayName?: string,
 ): ScheduleTeam {
   return {
     id: teamId ?? `${gameId}-${side}`,
-    name,
-    abbreviation: abbreviateTeamName(name),
+    name: getCompactTeamDisplayName({
+      shortDisplayName,
+      abbreviation,
+      displayName: fullName,
+    }),
+    fullName,
+    abbreviation: abbreviation ?? abbreviateTeamName(fullName),
+    logoUrl,
     division: toDivision(division),
     conference,
+    rank,
+    record,
   };
 }
 
@@ -57,36 +76,22 @@ function pickConference(game: EspnNormalizedGame): string | undefined {
 
 /** Extract YYYY-MM-DD from ESPN startTime in local calendar. */
 export function extractGameDateIso(startTime: string): string {
-  if (!startTime || startTime === 'TBD') return 'unknown';
-  const parsed = Date.parse(startTime);
-  if (Number.isNaN(parsed)) return 'unknown';
-  const d = new Date(parsed);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return extractLocalGameDateIso(startTime);
 }
 
 export function formatScheduleDateLabel(isoDate: string): string {
-  if (isoDate === 'unknown') return 'Date TBD';
-  const parsed = Date.parse(`${isoDate}T12:00:00`);
-  if (Number.isNaN(parsed)) return isoDate;
-  return new Date(parsed).toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
+  return formatGameDateLabel(isoDate);
 }
 
 export function toScheduleGame(game: EspnNormalizedGame): ScheduleGame {
   const status = toGameStatus(game);
-  const kickoff = formatKickoffTime(game.startTime);
   const showScores = status === 'live' || status === 'final';
 
   return {
     id: game.id,
-    date: extractGameDateIso(game.startTime),
-    time: kickoff,
+    date: extractLocalGameDateIso(game.startTime),
+    startTime: game.startTime,
+    time: '',
     awayTeam: toScheduleTeam(
       game.awayTeam,
       game.awayTeamId,
@@ -94,6 +99,11 @@ export function toScheduleGame(game: EspnNormalizedGame): ScheduleGame {
       'away',
       game.awayDivision,
       game.awayConference,
+      game.awayRank,
+      game.awayAbbreviation,
+      game.awayLogoUrl,
+      game.awayRecord,
+      game.awayShortDisplayName,
     ),
     homeTeam: toScheduleTeam(
       game.homeTeam,
@@ -102,6 +112,11 @@ export function toScheduleGame(game: EspnNormalizedGame): ScheduleGame {
       'home',
       game.homeDivision,
       game.homeConference,
+      game.homeRank,
+      game.homeAbbreviation,
+      game.homeLogoUrl,
+      game.homeRecord,
+      game.homeShortDisplayName,
     ),
     broadcast: game.broadcast ?? '—',
     conference: pickConference(game),
@@ -110,7 +125,9 @@ export function toScheduleGame(game: EspnNormalizedGame): ScheduleGame {
     status,
     awayScore: showScores ? game.awayScore : undefined,
     homeScore: showScores ? game.homeScore : undefined,
-    statusDetail: status === 'upcoming' ? kickoff : game.status,
+    statusDetail: game.status,
+    awayRecord: game.awayRecord,
+    homeRecord: game.homeRecord,
   };
 }
 
@@ -139,6 +156,6 @@ export function groupScheduleGamesByDate(games: EspnNormalizedGame[]): ScheduleD
     .map(([date, dateGames]) => ({
       date,
       label: formatScheduleDateLabel(date),
-      games: dateGames.sort((a, b) => a.time.localeCompare(b.time)),
+      games: sortScheduleGames(dateGames),
     }));
 }

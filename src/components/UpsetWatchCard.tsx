@@ -1,10 +1,15 @@
 import { StyleSheet, Text, View } from 'react-native';
 
+import { WatchOnEspnButton } from '@/components/WatchOnEspnButton';
+import { TeamLogo } from '@/components/TeamLogo';
+import { TeamNameLink } from '@/components/TeamNameLink';
 import { colors, spacing, typography } from '@/theme';
-import type { UpsetAlertLabel, UpsetWatchGame } from '@/types';
+import type { EspnNormalizedGame, UpsetAlertLabel, UpsetWatchGame } from '@/types';
 
 type UpsetWatchCardProps = {
   game: UpsetWatchGame;
+  watchGame?: EspnNormalizedGame;
+  onWatchOpened?: (result: { gameId: string; openedUrl?: string }) => void;
 };
 
 const ALERT_STYLE: Record<
@@ -35,11 +40,21 @@ const ALERT_STYLE: Record<
 
 function TeamScoreRow({
   name,
+  compactName,
+  teamId,
+  abbreviation,
+  logoUrl,
+  record,
   score,
   isFcs,
   isWinner,
 }: {
   name: string;
+  compactName: string;
+  teamId: string;
+  abbreviation?: string;
+  logoUrl?: string;
+  record?: string;
   score: number;
   isFcs: boolean;
   isWinner: boolean;
@@ -47,6 +62,7 @@ function TeamScoreRow({
   return (
     <View style={styles.teamRow}>
       <View style={styles.teamLeft}>
+        <TeamLogo name={name} abbreviation={abbreviation} logoUrl={logoUrl} size="list" />
         {isFcs ? (
           <View style={styles.fcsBadge}>
             <Text style={styles.fcsBadgeText}>FCS</Text>
@@ -56,16 +72,20 @@ function TeamScoreRow({
             <Text style={styles.fbsBadgeText}>FBS</Text>
           </View>
         )}
-        <Text style={[styles.teamName, isWinner && styles.teamNameWinner]} numberOfLines={1}>
-          {name}
-        </Text>
+        <TeamNameLink
+          name={name}
+          label={compactName}
+          teamId={teamId}
+          record={record}
+          emphasized={isWinner}
+        />
       </View>
       <Text style={[styles.score, isWinner && styles.scoreWinner]}>{score}</Text>
     </View>
   );
 }
 
-export function UpsetWatchCard({ game }: UpsetWatchCardProps) {
+export function UpsetWatchCard({ game, watchGame, onWatchOpened }: UpsetWatchCardProps) {
   const { fcsTeam, fbsTeam, fcsScore, fbsScore, status, statusDetail, alertLabel, broadcast } =
     game;
   const alertStyle = ALERT_STYLE[alertLabel];
@@ -84,13 +104,23 @@ export function UpsetWatchCard({ game }: UpsetWatchCardProps) {
       </View>
 
       <TeamScoreRow
-        name={fcsTeam.name}
+        name={fcsTeam.fullName ?? fcsTeam.name}
+        compactName={fcsTeam.name}
+        teamId={fcsTeam.id}
+        abbreviation={fcsTeam.abbreviation}
+        logoUrl={fcsTeam.logoUrl}
+        record={fcsTeam.record}
         score={fcsScore}
         isFcs
         isWinner={fcsWinner}
       />
       <TeamScoreRow
-        name={fbsTeam.name}
+        name={fbsTeam.fullName ?? fbsTeam.name}
+        compactName={fbsTeam.name}
+        teamId={fbsTeam.id}
+        abbreviation={fbsTeam.abbreviation}
+        logoUrl={fbsTeam.logoUrl}
+        record={fbsTeam.record}
         score={fbsScore}
         isFcs={false}
         isWinner={fbsWinner}
@@ -100,6 +130,9 @@ export function UpsetWatchCard({ game }: UpsetWatchCardProps) {
         <View style={styles.broadcastBadge}>
           <Text style={styles.broadcastText}>{broadcast}</Text>
         </View>
+        {watchGame ? (
+          <WatchOnEspnButton game={watchGame} onOpened={onWatchOpened} />
+        ) : null}
       </View>
     </View>
   );
@@ -190,8 +223,10 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: spacing.xs,
+    gap: spacing.sm,
   },
   broadcastBadge: {
     backgroundColor: colors.surfaceElevated,

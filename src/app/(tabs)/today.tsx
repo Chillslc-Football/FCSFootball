@@ -7,17 +7,23 @@ import {
   View,
 } from 'react-native';
 
+import { RankMergeDiagnostics } from '@/components/RankMergeDiagnostics';
 import { FeaturedGameCard } from '@/components/FeaturedGameCard';
 import { Screen } from '@/components/Screen';
 import { TodayGameCard } from '@/components/TodayGameCard';
 import { UpsetWatchCard } from '@/components/UpsetWatchCard';
+import { WatchLinkDiagnostics } from '@/components/WatchLinkDiagnostics';
 import { espnScoresProvider } from '@/data/providers/espnProvider';
+import { mergeStaticRankingsOntoGames } from '@/data/providers/rankingMerge';
+import type { RankingMergeResult } from '@/data/providers/rankingMerge';
+import { registerEspnGames } from '@/data/teams/teamGamesStore';
 import {
   filterUpsetWatchGames,
   pickFeaturedGame,
   toScoreboardGame,
 } from '@/data/providers/espnTodayMapper';
 import { colors, spacing, typography } from '@/theme';
+import { sortEspnNormalizedGames } from '@/utils/sortGames';
 import type { EspnNormalizedGame } from '@/types';
 
 type LoadState = 'loading' | 'success' | 'error';
@@ -80,7 +86,13 @@ function getScreenHeader(dateMode: TodayDateMode): { title: string; subtitle: st
   };
 }
 
-function TodayGameList({ games }: { games: EspnNormalizedGame[] }) {
+function TodayGameList({
+  games,
+  onWatchOpened,
+}: {
+  games: EspnNormalizedGame[];
+  onWatchOpened?: (result: { gameId: string; openedUrl?: string }) => void;
+}) {
   if (games.length === 0) {
     return (
       <View style={styles.empty}>
@@ -91,8 +103,13 @@ function TodayGameList({ games }: { games: EspnNormalizedGame[] }) {
 
   return (
     <View style={styles.list}>
-      {games.map((game) => (
-        <TodayGameCard key={game.id} game={game} />
+      {games.map((game, index) => (
+        <TodayGameCard
+          key={game.id}
+          game={game}
+          onWatchOpened={onWatchOpened}
+          showDevDiagnostics={index === 0}
+        />
       ))}
     </View>
   );
@@ -134,9 +151,19 @@ export default function TodayScreen() {
   const [games, setGames] = useState<EspnNormalizedGame[]>([]);
   const [dateLabel, setDateLabel] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [diagnosticGameId, setDiagnosticGameId] = useState<string | null>(null);
+  const [lastOpenedWatchUrl, setLastOpenedWatchUrl] = useState<string | null>(null);
+  const [mergeResult, setMergeResult] = useState<RankingMergeResult | null>(null);
 
   const screenHeader = useMemo(() => getScreenHeader(dateMode), [dateMode]);
   const isPreview = dateMode !== 'today';
+
+  const handleWatchOpened = (result: { gameId: string; openedUrl?: string }) => {
+    setDiagnosticGameId(result.gameId);
+    if (result.openedUrl) {
+      setLastOpenedWatchUrl(result.openedUrl);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -151,8 +178,14 @@ export default function TodayScreen() {
         );
         if (cancelled) return;
 
-        setGames(response.data.games);
+        const merged = await mergeStaticRankingsOntoGames(response.data.games);
+        if (cancelled) return;
+
+        setGames(merged.games);
+        registerEspnGames(merged.games);
+        setMergeResult(merged);
         setDateLabel(formatDateLabel(response.data.date));
+        setDiagnosticGameId(response.data.games[0]?.id ?? null);
         setLoadState('success');
       } catch (err) {
         if (cancelled) return;
@@ -171,10 +204,11 @@ export default function TodayScreen() {
     };
   }, [dateMode, isPreview]);
 
-  const featuredSource = useMemo(() => pickFeaturedGame(games), [games]);
+  const sortedGames = useMemo(() => sortEspnNormalizedGames(games), [games]);
+  const featuredSource = useMemo(() => pickFeaturedGame(sortedGames), [sortedGames]);
   const featuredGame = featuredSource ? toScoreboardGame(featuredSource) : null;
-  const upsetGames = useMemo(() => filterUpsetWatchGames(games), [games]);
-  const hasGames = games.length > 0;
+  const upsetGames = useMemo(() => filterUpsetWatchGames(sortedGames), [sortedGames]);
+  const hasGames = sortedGames.length > 0;
   const emptyTitle = isPreview
     ? 'No FCS games scheduled for this date.'
     : 'No FCS games scheduled today.';
@@ -226,7 +260,11 @@ export default function TodayScreen() {
             <>
               {featuredGame ? (
                 <Section title="Featured">
-                  <FeaturedGameCard game={featuredGame} />
+                  <FeaturedGameCard
+                    game={featuredGame}
+                    watchGame={featuredSource ?? undefined}
+                    onWatchOpened={handleWatchOpened}
+                  />
                 </Section>
               ) : null}
 
@@ -234,7 +272,12 @@ export default function TodayScreen() {
                 {upsetGames.length > 0 ? (
                   <View style={styles.list}>
                     {upsetGames.map((game) => (
-                      <UpsetWatchCard key={game.id} game={game} />
+                      <UpsetWatchCard
+                        key={game.id}
+                        game={game}
+                        watchGame={sortedGames.find((source) => source.id === game.id)}
+                        onWatchOpened={handleWatchOpened}
+                      />
                     ))}
                   </View>
                 ) : (
@@ -260,13 +303,26 @@ export default function TodayScreen() {
 
           <Section title="All FCS Games Today">
             {hasGames ? (
-              <TodayGameList games={games} />
+              <TodayGameList games={sortedGames} onWatchOpened={handleWatchOpened} />
             ) : (
               <View style={styles.empty}>
                 <Text style={styles.emptyText}>{emptyTitle}</Text>
               </View>
             )}
           </Section>
+
+          {__DEV__ && hasGames ? (
+            <WatchLinkDiagnostics
+              games={games}
+              selectedGameId={diagnosticGameId}
+              onSelectGame={setDiagnosticGameId}
+              lastOpenedUrl={lastOpenedWatchUrl}
+            />
+          ) : null}
+
+          {__DEV__ && mergeResult ? (
+            <RankMergeDiagnostics result={mergeResult} />
+          ) : null}
         </>
       ) : null}
     </Screen>

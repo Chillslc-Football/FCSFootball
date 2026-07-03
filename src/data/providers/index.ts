@@ -59,12 +59,43 @@ export {
 } from './espnConnectivity';
 export type { EspnConnectivityResult } from './espnConnectivity';
 export {
+  getStaticFcsTop25File,
+  mapStaticFcsTop25ToPayload,
+} from '../static/staticRankings';
+export type { StaticFcsTop25Entry, StaticFcsTop25File } from '../static/staticRankings';
+export {
   NcaaRankingsNotConnectedError,
   NcaaRankingsProviderImpl,
   ncaaRankingsProvider,
+  NCAA_RANKINGS_PROXY_URL_ENV,
 } from './ncaaRankingsProvider';
-export { mergeRankingsOntoGames } from './rankingMerge';
+export { NCAA_RANKINGS_INVESTIGATION } from './ncaaRankingsInvestigation';
+export type {
+  NcaaRankingsProductionStatus,
+  NcaaRankingsRetrievalMethod,
+} from './ncaaRankingsInvestigation';
+export {
+  mapNcaaRankingsProxyResponse,
+} from './ncaaRankingsParser';
+export type {
+  NcaaRankingsParseResult,
+  NcaaRankingsProxyResponse,
+  NcaaRankingsProxyRow,
+} from './ncaaRankingsParser';
+export {
+  NCAA_RANKINGS_FETCH_TIMEOUT_MS,
+  testNcaaRankingsPageReachability,
+} from './ncaaConnectivity';
+export type { NcaaRankingsReachabilityResult } from './ncaaConnectivity';
+export { mergeRankingsOntoGames, mergeStaticRankingsOntoGames } from './rankingMerge';
 export type { RankingMergeResult } from './rankingMerge';
+export {
+  buildRankLookup,
+  lookupTeamRank,
+  normalizeTeamName,
+  registerAliasKeys,
+} from './teamNameMatch';
+export { FCS_TEAM_ALIASES } from '../static/teamAliases';
 export {
   extractEspnScoreboardDate,
   parseEspnScoreboard,
@@ -87,15 +118,27 @@ export {
   toScoreboardGame,
   toUpsetWatchGame,
 } from './espnTodayMapper';
+export type { ScheduleWeekConfig, ScheduleWeekFetchStrategy, ScheduleWeekMeta } from './espnScheduleWeek';
 export {
+  formatCollegeWeekDateRange,
+  formatWeekDisplayLabel,
+  getScheduleWeekLabel,
+  getScheduleWeekMeta,
+  SCORES_WEEK_OPTIONS,
   getScheduleWeekConfig,
   SCHEDULE_WEEK_CONFIG,
   SCHEDULE_WEEK_OPTIONS,
 } from './espnScheduleWeek';
-export type { ScheduleWeekConfig, ScheduleWeekFetchStrategy } from './espnScheduleWeek';
 export {
   formatScheduleDateLabel,
   groupScheduleGamesByDate,
   toScheduleGame,
 } from './espnScheduleMapper';
 export type { ScheduleDateGroup } from './espnScheduleMapper';
+export {
+  buildEspnWebGameUrl,
+  buildSportscenterGameDeepLink,
+  openWatchOnEspn,
+  resolveEspnWatchTargets,
+} from './espnWatchLinks';
+export type { EspnWatchResolution } from './espnWatchLinks';

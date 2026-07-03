@@ -1,17 +1,36 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { RankMergeDiagnostics } from '@/components/RankMergeDiagnostics';
+import { ConferenceDropdown } from '@/components/ConferenceDropdown';
 import { ScheduleGameCard } from '@/components/ScheduleGameCard';
 import { Screen } from '@/components/Screen';
+import { SegmentedControl } from '@/components/SegmentedControl';
 import { espnScoresProvider } from '@/data/providers/espnProvider';
 import { groupScheduleGamesByDate } from '@/data/providers/espnScheduleMapper';
+import { mergeStaticRankingsOntoGames } from '@/data/providers/rankingMerge';
+import { registerEspnGames } from '@/data/teams/teamGamesStore';
+import type { RankingMergeResult } from '@/data/providers/rankingMerge';
 import { SCHEDULE_WEEK_OPTIONS } from '@/data/providers/espnScheduleWeek';
+import {
+  DEFAULT_CONFERENCE_ID,
+  getConferenceLabel,
+  type ConferenceId,
+} from '@/data/conferences/conferenceList';
 import { colors, spacing, typography } from '@/theme';
 import type { ScheduleWeekId } from '@/types';
 
 type LoadState = 'loading' | 'success' | 'error';
+type ConferencesView = 'schedule' | 'standings';
 
-export default function ScheduleScreen() {
+const VIEW_OPTIONS: { id: ConferencesView; label: string }[] = [
+  { id: 'schedule', label: 'Schedule' },
+  { id: 'standings', label: 'Standings' },
+];
+
+export default function ConferencesScreen() {
+  const [selectedConference, setSelectedConference] = useState<ConferenceId>(DEFAULT_CONFERENCE_ID);
+  const [activeView, setActiveView] = useState<ConferencesView>('schedule');
   const [selectedWeek, setSelectedWeek] = useState<ScheduleWeekId>('week-1');
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [fetchNotes, setFetchNotes] = useState('');
@@ -19,6 +38,7 @@ export default function ScheduleScreen() {
   const [gameCount, setGameCount] = useState(0);
 
   const [groups, setGroups] = useState<ReturnType<typeof groupScheduleGamesByDate>>([]);
+  const [mergeResult, setMergeResult] = useState<RankingMergeResult | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,9 +52,14 @@ export default function ScheduleScreen() {
         const response = await espnScoresProvider.getWeekGames(selectedWeek);
         if (cancelled) return;
 
-        const grouped = groupScheduleGamesByDate(response.data.games);
+        const merged = await mergeStaticRankingsOntoGames(response.data.games);
+        if (cancelled) return;
+
+        const grouped = groupScheduleGamesByDate(merged.games);
         setGroups(grouped);
-        setGameCount(response.data.games.length);
+        registerEspnGames(merged.games);
+        setMergeResult(merged);
+        setGameCount(merged.games.length);
         setFetchNotes(response.data.fetchNotes);
         setLoadState('success');
       } catch (err) {
@@ -59,82 +84,132 @@ export default function ScheduleScreen() {
     SCHEDULE_WEEK_OPTIONS.find((option) => option.id === selectedWeek)?.label ?? selectedWeek;
 
   return (
-    <Screen title="Schedule" subtitle="FCS matchups grouped by date for the selected week.">
-      <View style={styles.weekSelector}>
-        <Text style={styles.weekSelectorLabel}>Week</Text>
-        <View style={styles.chipRow}>
-          {SCHEDULE_WEEK_OPTIONS.map((option) => {
-            const isActive = selectedWeek === option.id;
-            return (
-              <Pressable
-                key={option.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isActive }}
-                onPress={() => setSelectedWeek(option.id)}
-                style={[styles.chip, isActive && styles.chipActive]}>
-                <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
-                  {option.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+    <Screen
+      title="Conferences"
+      subtitle="Conference schedules, standings, and team pages — starting with the Big Sky.">
+      <View style={styles.controls}>
+        <ConferenceDropdown selected={selectedConference} onSelect={setSelectedConference} />
+
+        <SegmentedControl
+          options={VIEW_OPTIONS}
+          selected={activeView}
+          onSelect={setActiveView}
+          accessibilityLabel="Conference content"
+        />
       </View>
 
-      {loadState === 'loading' ? (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator color={colors.primary} size="large" />
-          <Text style={styles.loadingText}>Loading {weekLabel} FCS games…</Text>
+      {activeView === 'standings' ? (
+        <View style={styles.placeholder}>
+          <Text style={styles.placeholderTitle}>{getConferenceLabel(selectedConference)}</Text>
+          <Text style={styles.placeholderText}>Conference standings coming soon.</Text>
         </View>
-      ) : null}
-
-      {loadState === 'error' ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorTitle}>Could not load schedule</Text>
-          <Text style={styles.errorText}>{errorMessage}</Text>
-        </View>
-      ) : null}
-
-      {loadState === 'success' ? (
+      ) : (
         <>
-          <View style={styles.metaBanner}>
-            <Text style={styles.metaTitle}>{weekLabel}</Text>
-            <Text style={styles.metaText}>
-              {gameCount} FCS game{gameCount === 1 ? '' : 's'} · ESPN scoreboard
-            </Text>
-            {__DEV__ && fetchNotes ? (
-              <Text style={styles.metaNotes}>{fetchNotes}</Text>
-            ) : null}
+          <View style={styles.weekSelector}>
+            <Text style={styles.weekSelectorLabel}>Week</Text>
+            <View style={styles.chipRow}>
+              {SCHEDULE_WEEK_OPTIONS.map((option) => {
+                const isActive = selectedWeek === option.id;
+                return (
+                  <Pressable
+                    key={option.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isActive }}
+                    onPress={() => setSelectedWeek(option.id)}
+                    style={[styles.chip, isActive && styles.chipActive]}>
+                    <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
 
-          {groups.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>No FCS games for {weekLabel}.</Text>
-              <Text style={styles.emptyText}>
-                Try another week or check back when the season schedule is available.
-              </Text>
+          {loadState === 'loading' ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator color={colors.primary} size="large" />
+              <Text style={styles.loadingText}>Loading {weekLabel} FCS games…</Text>
             </View>
-          ) : (
-            <View style={styles.scheduleList}>
-              {groups.map((group) => (
-                <View key={group.date} style={styles.dateSection}>
-                  <Text style={styles.dateHeader}>{group.label}</Text>
-                  <View style={styles.list}>
-                    {group.games.map((game) => (
-                      <ScheduleGameCard key={game.id} game={game} />
-                    ))}
-                  </View>
+          ) : null}
+
+          {loadState === 'error' ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorTitle}>Could not load schedule</Text>
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+
+          {loadState === 'success' ? (
+            <>
+              <View style={styles.metaBanner}>
+                <Text style={styles.metaTitle}>{weekLabel}</Text>
+                <Text style={styles.metaText}>
+                  {gameCount} FCS game{gameCount === 1 ? '' : 's'} · ESPN scoreboard
+                </Text>
+                {__DEV__ && fetchNotes ? (
+                  <Text style={styles.metaNotes}>{fetchNotes}</Text>
+                ) : null}
+              </View>
+
+              {groups.length === 0 ? (
+                <View style={styles.empty}>
+                  <Text style={styles.emptyTitle}>No FCS games for {weekLabel}.</Text>
+                  <Text style={styles.emptyText}>
+                    Try another week or check back when the season schedule is available.
+                  </Text>
                 </View>
-              ))}
-            </View>
-          )}
+              ) : (
+                <View style={styles.scheduleList}>
+                  {groups.map((group) => (
+                    <View key={group.date} style={styles.dateSection}>
+                      <Text style={styles.dateHeader}>{group.label}</Text>
+                      <View style={styles.list}>
+                        {group.games.map((game) => (
+                          <ScheduleGameCard key={game.id} game={game} />
+                        ))}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {__DEV__ && mergeResult ? (
+                <RankMergeDiagnostics result={mergeResult} />
+              ) : null}
+            </>
+          ) : null}
         </>
-      ) : null}
+      )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  controls: {
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  placeholder: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  placeholderTitle: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  placeholderText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
   weekSelector: {
     backgroundColor: colors.surface,
     borderRadius: 12,

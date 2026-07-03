@@ -1,11 +1,17 @@
 import { StyleSheet, Text, View } from 'react-native';
 
+import { WatchOnEspnButton } from '@/components/WatchOnEspnButton';
+import { TeamLogo } from '@/components/TeamLogo';
+import { TeamNameLink } from '@/components/TeamNameLink';
 import { colors, spacing, typography } from '@/theme';
-import type { GameStatus, ScoreboardGame, ScoreboardTeam } from '@/types';
+import { formatGameStatusDetail } from '@/utils/formatGameTime';
+import type { EspnNormalizedGame, GameStatus, ScoreboardGame, ScoreboardTeam } from '@/types';
 
 type FeaturedGameCardProps = {
   game: ScoreboardGame;
   highlightTeamId?: string;
+  watchGame?: EspnNormalizedGame;
+  onWatchOpened?: (result: { gameId: string; openedUrl?: string }) => void;
 };
 
 const STATUS_LABEL: Record<GameStatus, string> = {
@@ -41,14 +47,24 @@ function TeamLine({
   return (
     <View style={[styles.teamRow, highlighted && styles.teamRowHighlighted]}>
       <View style={styles.teamLeft}>
+        <TeamLogo
+          name={team.fullName ?? team.name}
+          abbreviation={team.abbreviation}
+          logoUrl={team.logoUrl}
+          size="featured"
+        />
         {team.rank ? (
           <View style={styles.rankBadge}>
             <Text style={styles.rankBadgeText}>#{team.rank}</Text>
           </View>
         ) : null}
-        <Text style={[styles.teamName, highlighted && styles.teamNameHighlighted]} numberOfLines={1}>
-          {team.name}
-        </Text>
+        <TeamNameLink
+          name={team.fullName ?? team.name}
+          label={team.name}
+          teamId={team.id}
+          record={team.record}
+          emphasized={highlighted}
+        />
       </View>
       {score !== undefined ? (
         <Text style={[styles.score, highlighted && styles.scoreHighlighted]}>{score}</Text>
@@ -57,10 +73,21 @@ function TeamLine({
   );
 }
 
-export function FeaturedGameCard({ game, highlightTeamId }: FeaturedGameCardProps) {
-  const { awayTeam, homeTeam, awayScore, homeScore, status, statusDetail, broadcast } = game;
+export function FeaturedGameCard({
+  game,
+  highlightTeamId,
+  watchGame,
+  onWatchOpened,
+}: FeaturedGameCardProps) {
+  const { awayTeam, homeTeam, awayScore, homeScore, status, statusDetail, broadcast, startTime } =
+    game;
   const statusStyle = STATUS_DETAIL_STYLE[status];
   const showScores = status === 'live' || status === 'final';
+  const displayStatusDetail = formatGameStatusDetail({
+    startTime,
+    status,
+    espnStatus: statusDetail,
+  });
 
   return (
     <View style={styles.card}>
@@ -68,7 +95,7 @@ export function FeaturedGameCard({ game, highlightTeamId }: FeaturedGameCardProp
         <Text style={styles.featuredLabel}>Featured</Text>
         <View style={[styles.statusBadge, statusStyle.badge]}>
           <Text style={[styles.statusBadgeText, statusStyle.text]}>
-            {STATUS_LABEL[status]} · {statusDetail}
+            {STATUS_LABEL[status]} · {displayStatusDetail}
           </Text>
         </View>
       </View>
@@ -93,6 +120,9 @@ export function FeaturedGameCard({ game, highlightTeamId }: FeaturedGameCardProp
         <View style={styles.broadcastBadge}>
           <Text style={styles.broadcastText}>{broadcast}</Text>
         </View>
+        {watchGame ? (
+          <WatchOnEspnButton game={watchGame} onOpened={onWatchOpened} />
+        ) : null}
       </View>
     </View>
   );
@@ -195,8 +225,10 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: spacing.sm,
+    gap: spacing.sm,
   },
   broadcastBadge: {
     backgroundColor: colors.surface,

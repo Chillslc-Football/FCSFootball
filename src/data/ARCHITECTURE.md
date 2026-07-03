@@ -26,6 +26,12 @@ When both providers are live, ranked badges on scores/schedule/today screens wil
 
 ## Current status (development)
 
-- Production screens use **mock data** in `src/data/mock/`
-- `espnScoresProvider` — live fetch available on Developer → ESPN Data Test only
-- `ncaaRankingsProvider` — **not connected yet** (placeholder)
+- Production Top 25 / Rankings use **static JSON** in `src/data/static/fcsTop25.json` (manual weekly updates)
+- `espnScoresProvider` — live on Today, Schedule; dev test on Developer → ESPN Data Test
+- `ncaaRankingsProvider` — reads bundled static JSON (`fcsTop25.json`); not live NCAA fetch
+
+### NCAA rankings (Phase 10)
+
+Investigation confirmed NCAA.com serves Stats Perform FCS Top 25 as **server-rendered HTML** only. No reliable public JSON endpoint exists for the mobile app to consume directly.
+
+**Next step:** Deploy a server-side rankings cache that parses NCAA HTML and exposes JSON. Wire `ncaaRankingsProvider` to that proxy URL. See `src/data/providers/NCAA_RANKINGS_INVESTIGATION.md`.

@@ -14,7 +14,10 @@
       "backgroundColor": "#0F1419"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["sportscenter", "espnapp"]
+      }
     },
     "android": {
       "adaptiveIcon": {

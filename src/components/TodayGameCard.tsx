@@ -1,11 +1,20 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { formatKickoffTime, toGameStatus } from '@/data/providers/espnTodayMapper';
+import { WatchOnEspnButton } from '@/components/WatchOnEspnButton';
+import { GameCardDevDiagnostics } from '@/components/GameCardDevDiagnostics';
+import { TeamLogo } from '@/components/TeamLogo';
+import { TeamNameLink } from '@/components/TeamNameLink';
+import { isFcsFbsEspnGame } from '@/data/scores/scoresFilters';
+import { toGameStatus } from '@/data/providers/espnTodayMapper';
 import { colors, spacing, typography } from '@/theme';
+import { formatGameStatusDetail } from '@/utils/formatGameTime';
+import { getAwayCompactName, getHomeCompactName } from '@/utils/teamDisplay';
 import type { EspnNormalizedGame, GameStatus } from '@/types';
 
 type TodayGameCardProps = {
   game: EspnNormalizedGame;
+  onWatchOpened?: (result: { gameId: string; openedUrl?: string }) => void;
+  showDevDiagnostics?: boolean;
 };
 
 const STATUS_LABEL: Record<GameStatus, string> = {
@@ -14,22 +23,50 @@ const STATUS_LABEL: Record<GameStatus, string> = {
   final: 'FINAL',
 };
 
+function RankBadge({ rank }: { rank: number }) {
+  return (
+    <View style={styles.rankBadge}>
+      <Text style={styles.rankBadgeText}>#{rank}</Text>
+    </View>
+  );
+}
+
 function TeamRow({
   name,
+  compactName,
+  teamId,
+  abbreviation,
+  logoUrl,
+  rank,
+  record,
   score,
   isWinner,
   showScore,
 }: {
   name: string;
+  compactName: string;
+  teamId?: string;
+  abbreviation?: string;
+  logoUrl?: string;
+  rank?: number;
+  record?: string;
   score?: number;
   isWinner?: boolean;
   showScore: boolean;
 }) {
   return (
     <View style={styles.teamRow}>
-      <Text style={[styles.teamName, isWinner && styles.teamNameWinner]} numberOfLines={1}>
-        {name}
-      </Text>
+      <View style={styles.teamLeft}>
+        <TeamLogo name={name} abbreviation={abbreviation} logoUrl={logoUrl} size="list" />
+        {rank != null ? <RankBadge rank={rank} /> : null}
+        <TeamNameLink
+          name={name}
+          label={compactName}
+          teamId={teamId}
+          record={record}
+          emphasized={isWinner}
+        />
+      </View>
       {showScore ? (
         <Text style={[styles.score, isWinner && styles.scoreWinner]}>
           {score ?? '—'}
@@ -39,7 +76,7 @@ function TeamRow({
   );
 }
 
-export function TodayGameCard({ game }: TodayGameCardProps) {
+export function TodayGameCard({ game, onWatchOpened, showDevDiagnostics }: TodayGameCardProps) {
   const status = toGameStatus(game);
   const showScore = status === 'live' || status === 'final';
   const awayWinner =
@@ -52,22 +89,39 @@ export function TodayGameCard({ game }: TodayGameCardProps) {
     game.awayScore != null &&
     game.homeScore != null &&
     game.homeScore > game.awayScore;
-  const kickoff = formatKickoffTime(game.startTime);
-  const statusDetail = status === 'upcoming' ? kickoff : game.status;
+  const statusDetail = formatGameStatusDetail({
+    startTime: game.startTime,
+    status,
+    espnStatus: game.status,
+  });
+  const showFbsBadge = isFcsFbsEspnGame(game);
 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={[styles.statusBadge, styles[`status_${status}`]]}>
-          <Text style={[styles.statusText, styles[`statusText_${status}`]]}>
-            {STATUS_LABEL[status]}
-          </Text>
+        <View style={styles.headerLeft}>
+          <View style={[styles.statusBadge, styles[`status_${status}`]]}>
+            <Text style={[styles.statusText, styles[`statusText_${status}`]]}>
+              {STATUS_LABEL[status]}
+            </Text>
+          </View>
+          {showFbsBadge ? (
+            <View style={styles.fbsBadge}>
+              <Text style={styles.fbsBadgeText}>FCS vs FBS</Text>
+            </View>
+          ) : null}
         </View>
         <Text style={styles.statusDetail}>{statusDetail}</Text>
       </View>
 
       <TeamRow
         name={game.awayTeam}
+        compactName={getAwayCompactName(game)}
+        teamId={game.awayTeamId}
+        abbreviation={game.awayAbbreviation}
+        logoUrl={game.awayLogoUrl}
+        rank={game.awayIsRanked ? game.awayRank : undefined}
+        record={game.awayRecord}
         score={game.awayScore}
         isWinner={awayWinner}
         showScore={showScore}
@@ -75,6 +129,12 @@ export function TodayGameCard({ game }: TodayGameCardProps) {
       <Text style={styles.atLabel}>at</Text>
       <TeamRow
         name={game.homeTeam}
+        compactName={getHomeCompactName(game)}
+        teamId={game.homeTeamId}
+        abbreviation={game.homeAbbreviation}
+        logoUrl={game.homeLogoUrl}
+        rank={game.homeIsRanked ? game.homeRank : undefined}
+        record={game.homeRecord}
         score={game.homeScore}
         isWinner={homeWinner}
         showScore={showScore}
@@ -92,7 +152,10 @@ export function TodayGameCard({ game }: TodayGameCardProps) {
         <View style={styles.broadcastBadge}>
           <Text style={styles.broadcastText}>{game.broadcast ?? '—'}</Text>
         </View>
+        <WatchOnEspnButton game={game} onOpened={onWatchOpened} />
       </View>
+
+      {showDevDiagnostics && __DEV__ ? <GameCardDevDiagnostics game={game} /> : null}
     </View>
   );
 }
@@ -111,6 +174,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: spacing.xs,
+    gap: spacing.sm,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexShrink: 1,
+  },
+  fbsBadge: {
+    backgroundColor: 'rgba(46, 125, 50, 0.15)',
+    borderRadius: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  fbsBadgeText: {
+    ...typography.label,
+    color: colors.accent,
+    fontSize: 9,
   },
   statusBadge: {
     borderRadius: 6,
@@ -150,6 +231,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
+  teamLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  rankBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  rankBadgeText: {
+    ...typography.label,
+    color: colors.background,
+    fontSize: 9,
+  },
   teamName: {
     ...typography.body,
     color: colors.text,
@@ -183,8 +282,10 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: spacing.xs,
+    gap: spacing.sm,
   },
   broadcastBadge: {
     backgroundColor: colors.surfaceElevated,

@@ -1,6 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native';
 
+import { TeamLogo } from '@/components/TeamLogo';
+import { TeamNameLink } from '@/components/TeamNameLink';
 import { colors, spacing, typography } from '@/theme';
+import { formatScheduleGameKickoff } from '@/utils/formatGameTime';
 import type { GameStatus, ScheduleGame, ScheduleTeam } from '@/types';
 
 type ScheduleGameCardProps = {
@@ -35,10 +38,20 @@ function TeamRow({
   return (
     <View style={styles.teamRow}>
       <View style={styles.teamLeft}>
+        <TeamLogo
+          name={team.fullName ?? team.name}
+          abbreviation={team.abbreviation}
+          logoUrl={team.logoUrl}
+          size="list"
+        />
         {team.rank ? <RankBadge rank={team.rank} /> : null}
-        <Text style={[styles.teamName, isWinner && styles.teamNameWinner]} numberOfLines={1}>
-          {team.name}
-        </Text>
+        <TeamNameLink
+          name={team.fullName ?? team.name}
+          label={team.name}
+          teamId={team.id}
+          record={team.record}
+          emphasized={isWinner}
+        />
       </View>
       <View style={styles.teamRight}>
         {team.conference ? (
@@ -69,11 +82,13 @@ export function ScheduleGameCard({ game }: ScheduleGameCardProps) {
     game.homeScore != null &&
     game.homeScore > game.awayScore;
 
+  const kickoffLabel = formatScheduleGameKickoff(game);
+
   return (
     <View style={styles.card}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.time}>{game.time}</Text>
+          <Text style={styles.time}>{kickoffLabel}</Text>
           {game.status ? (
             <View style={[styles.statusBadge, styles[`status_${status}`]]}>
               <Text style={[styles.statusText, styles[`statusText_${status}`]]}>

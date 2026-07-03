@@ -1,4 +1,15 @@
-import type { EspnDivisionHint, EspnNormalizedGame, Game } from '@/types';
+import type { EspnDivisionHint, EspnLinkCandidate, EspnNormalizedGame, Game } from '@/types';
+
+import {
+  lookupEspnConference,
+  resolveEspnConferenceName,
+  resolveEspnDivisionFromConferenceId,
+} from '@/data/providers/espnConferenceLookup';
+import {
+  parseEspnTeamAbbreviation,
+  parseEspnTeamLogoUrl,
+} from '@/data/providers/espnTeamLogo';
+import { parseEspnTeamIdentity } from '@/data/providers/espnTeamNames';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -77,6 +88,37 @@ function parseTeamDivisionHint(
   return 'unknown';
 }
 
+function parseTeamConferenceId(team: Record<string, unknown> | undefined): string | undefined {
+  return team ? asIdString(team.conferenceId) : undefined;
+}
+
+function resolveTeamMetadata(
+  team: Record<string, unknown> | undefined,
+  eventGroups: unknown,
+): {
+  division: EspnDivisionHint;
+  conference?: string;
+  conferenceId?: string;
+  abbreviation?: string;
+  logoUrl?: string;
+} {
+  const conferenceId = parseTeamConferenceId(team);
+  const lookup = lookupEspnConference(conferenceId);
+  let division = parseTeamDivisionHint(team, eventGroups);
+  const conference = parseTeamConference(team) ?? lookup?.name ?? resolveEspnConferenceName(conferenceId);
+  const abbreviation = parseEspnTeamAbbreviation(team);
+  const logoUrl = parseEspnTeamLogoUrl(team);
+
+  if (division === 'unknown') {
+    const fromConference = resolveEspnDivisionFromConferenceId(conferenceId);
+    if (fromConference) {
+      division = fromConference;
+    }
+  }
+
+  return { division, conference, conferenceId, abbreviation, logoUrl };
+}
+
 function parseTeamConference(team: Record<string, unknown> | undefined): string | undefined {
   if (!team) return undefined;
 
@@ -97,23 +139,99 @@ function parseTeamConference(team: Record<string, unknown> | undefined): string 
   );
 }
 
+function summarizeRecordEntry(entry: Record<string, unknown>): string | undefined {
+  const summary = asString(entry.summary) ?? asString(entry.displayValue);
+  if (summary) return summary;
+
+  const wins = asNumber(entry.wins);
+  const losses = asNumber(entry.losses);
+  if (wins != null && losses != null) {
+    return `${wins}-${losses}`;
+  }
+
+  return undefined;
+}
+
+function collectCompetitorRecordEntries(competitor: Record<string, unknown>): Record<string, unknown>[] {
+  const entries: Record<string, unknown>[] = [];
+
+  const append = (value: unknown) => {
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (isRecord(entry)) entries.push(entry);
+      }
+      return;
+    }
+    if (isRecord(value)) entries.push(value);
+  };
+
+  append(competitor.records ?? competitor.record);
+
+  const team = isRecord(competitor.team) ? competitor.team : undefined;
+  if (team) {
+    append(team.records ?? team.record);
+  }
+
+  return entries;
+}
+
+/** Raw ESPN records payload for dev diagnostics. */
+export function getCompetitorRecordsRaw(competitor: Record<string, unknown>): unknown {
+  const team = isRecord(competitor.team) ? competitor.team : undefined;
+  return competitor.records ?? competitor.record ?? team?.records ?? team?.record;
+}
+
+function parseCompetitorRecord(competitor: Record<string, unknown>): string | undefined {
+  const entries = collectCompetitorRecordEntries(competitor);
+  if (entries.length === 0) return undefined;
+
+  for (const entry of entries) {
+    const type = asString(entry.type);
+    const name = asString(entry.name)?.toLowerCase();
+    if (type === 'total' || name === 'overall') {
+      const summary = summarizeRecordEntry(entry);
+      if (summary) return summary;
+    }
+  }
+
+  for (const entry of entries) {
+    const summary = summarizeRecordEntry(entry);
+    if (summary) return summary;
+  }
+
+  return undefined;
+}
+
 function parseCompetitor(competitor: unknown): {
   homeAway?: string;
   teamId?: string;
   teamName?: string;
+  shortDisplayName?: string;
+  mascot?: string;
+  location?: string;
+  abbreviation?: string;
   score?: number;
-  teamRecord?: Record<string, unknown>;
+  record?: string;
+  recordsRaw?: unknown;
+  team?: Record<string, unknown>;
 } {
   if (!isRecord(competitor)) return {};
 
   const team = isRecord(competitor.team) ? competitor.team : undefined;
+  const identity = parseEspnTeamIdentity(team);
 
   return {
     homeAway: asString(competitor.homeAway),
     teamId: team ? asIdString(team.id) : undefined,
-    teamName: team ? asString(team.displayName) ?? asString(team.name) : undefined,
+    teamName: identity?.displayName,
+    shortDisplayName: identity?.shortDisplayName,
+    mascot: identity?.mascot,
+    location: identity?.location,
+    abbreviation: identity?.abbreviation ?? parseEspnTeamAbbreviation(team),
     score: asNumber(competitor.score),
-    teamRecord: team,
+    record: parseCompetitorRecord(competitor),
+    recordsRaw: getCompetitorRecordsRaw(competitor),
+    team,
   };
 }
 
@@ -138,14 +256,39 @@ function parseBroadcast(competition: Record<string, unknown>): string | undefine
   return undefined;
 }
 
-function parseEspnLink(event: Record<string, unknown>): string | undefined {
+function parseEventLinks(event: Record<string, unknown>): EspnLinkCandidate[] {
   const links = event.links;
-  if (!Array.isArray(links)) return undefined;
+  if (!Array.isArray(links)) return [];
 
+  const results: EspnLinkCandidate[] = [];
   for (const link of links) {
     if (!isRecord(link)) continue;
     const href = asString(link.href);
-    if (href) return href;
+    if (!href) continue;
+    const rel = Array.isArray(link.rel)
+      ? link.rel.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+    results.push({
+      href,
+      rel,
+      text: asString(link.text) ?? asString(link.shortText),
+    });
+  }
+  return results;
+}
+
+function parseEspnLink(candidates: EspnLinkCandidate[]): string | undefined {
+  for (const link of candidates) {
+    const isEventLink = link.rel.some(
+      (rel) => rel === 'event' || rel === 'summary' || rel === 'boxscore',
+    );
+    if (isEventLink && link.href.startsWith('http')) {
+      return link.href;
+    }
+  }
+
+  for (const link of candidates) {
+    if (link.href.startsWith('http')) return link.href;
   }
 
   return undefined;
@@ -237,27 +380,59 @@ function parseEvent(event: unknown): EspnNormalizedGame | null {
   let homeDivision: EspnDivisionHint = 'unknown';
   let awayConference: string | undefined;
   let homeConference: string | undefined;
+  let awayAbbreviation: string | undefined;
+  let homeAbbreviation: string | undefined;
+  let awayShortDisplayName: string | undefined;
+  let homeShortDisplayName: string | undefined;
+  let awayMascot: string | undefined;
+  let homeMascot: string | undefined;
+  let awayLocation: string | undefined;
+  let homeLocation: string | undefined;
+  let awayLogoUrl: string | undefined;
+  let homeLogoUrl: string | undefined;
+  let awayRecord: string | undefined;
+  let homeRecord: string | undefined;
+  let awayRecordsRaw: unknown;
+  let homeRecordsRaw: unknown;
+
+  let awayConferenceId: string | undefined;
+  let homeConferenceId: string | undefined;
 
   const eventGroups = event.groups;
 
   for (const competitor of competitors) {
     const parsed = parseCompetitor(competitor);
-    const division = parseTeamDivisionHint(parsed.teamRecord, eventGroups);
-    const conference = parseTeamConference(parsed.teamRecord);
+    const metadata = resolveTeamMetadata(parsed.team, eventGroups);
     const side = parsed.homeAway?.toLowerCase();
 
     if (side === 'away') {
       awayTeam = parsed.teamName;
       awayTeamId = parsed.teamId;
       awayScore = parsed.score;
-      awayDivision = division;
-      awayConference = conference;
+      awayRecord = parsed.record;
+      awayRecordsRaw = parsed.recordsRaw;
+      awayDivision = metadata.division;
+      awayConference = metadata.conference;
+      awayConferenceId = metadata.conferenceId;
+      awayAbbreviation = parsed.abbreviation ?? metadata.abbreviation;
+      awayShortDisplayName = parsed.shortDisplayName;
+      awayMascot = parsed.mascot;
+      awayLocation = parsed.location;
+      awayLogoUrl = metadata.logoUrl;
     } else if (side === 'home') {
       homeTeam = parsed.teamName;
       homeTeamId = parsed.teamId;
       homeScore = parsed.score;
-      homeDivision = division;
-      homeConference = conference;
+      homeRecord = parsed.record;
+      homeRecordsRaw = parsed.recordsRaw;
+      homeDivision = metadata.division;
+      homeConference = metadata.conference;
+      homeConferenceId = metadata.conferenceId;
+      homeAbbreviation = parsed.abbreviation ?? metadata.abbreviation;
+      homeShortDisplayName = parsed.shortDisplayName;
+      homeMascot = parsed.mascot;
+      homeLocation = parsed.location;
+      homeLogoUrl = metadata.logoUrl;
     }
   }
 
@@ -274,9 +449,23 @@ function parseEvent(event: unknown): EspnNormalizedGame | null {
 
   const startTime = asString(event.date) ?? 'TBD';
   const broadcast = parseBroadcast(competition);
-  const espnLink = parseEspnLink(event);
+  const espnLinkCandidates = parseEventLinks(event);
+  const espnLink = parseEspnLink(espnLinkCandidates);
+  const espnUid = asString(event.uid);
   const venue = parseVenue(competition);
-  const groupInfo = parseGroupInfo(event, competition);
+  const parsedGroupInfo = parseGroupInfo(event, competition);
+  const conferenceGroupInfo = [awayConferenceId, homeConferenceId]
+    .filter(
+      (value, index, array): value is string => Boolean(value) && array.indexOf(value) === index,
+    )
+    .map((id) => {
+      const record = lookupEspnConference(id);
+      return record ? `conferenceId ${id}: ${record.name}` : `conferenceId: ${id}`;
+    })
+    .join(' · ');
+  const groupInfo =
+    parsedGroupInfo ?? (conferenceGroupInfo.length > 0 ? conferenceGroupInfo : undefined);
+
   const normalizedStatus = mapEspnStateToGameStatus(statusState);
 
   const game: Game | undefined =
@@ -296,17 +485,33 @@ function parseEvent(event: unknown): EspnNormalizedGame | null {
     homeTeam,
     awayTeamId,
     homeTeamId,
+    awayAbbreviation,
+    homeAbbreviation,
+    awayShortDisplayName,
+    homeShortDisplayName,
+    awayMascot,
+    homeMascot,
+    awayLocation,
+    homeLocation,
+    awayLogoUrl,
+    homeLogoUrl,
     awayScore,
     homeScore,
     awayDivision,
     homeDivision,
     awayConference,
     homeConference,
+    awayRecord,
+    homeRecord,
+    awayRecordsRaw,
+    homeRecordsRaw,
     startTime,
     status: statusName,
     normalizedStatus,
     broadcast,
     espnLink,
+    espnUid,
+    espnLinkCandidates,
     venue,
     groupInfo,
     game,

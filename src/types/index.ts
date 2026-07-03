@@ -2,6 +2,7 @@ export type Team = {
   id: string;
   name: string;
   abbreviation: string;
+  logoUrl?: string;
 };
 
 export type Game = {
@@ -17,6 +18,13 @@ export type TeamDivision = 'fcs' | 'fbs';
 /** FCS/FBS hint from ESPN team or group metadata — unknown when not present */
 export type EspnDivisionHint = TeamDivision | 'unknown';
 
+/** Parsed ESPN link object from scoreboard event.links */
+export type EspnLinkCandidate = {
+  href: string;
+  rel: string[];
+  text?: string;
+};
+
 /**
  * Normalized ESPN scoreboard game — dev/provider parsing shape.
  * Phase 6E: full event fields without wiring to production screens.
@@ -25,11 +33,21 @@ export type EspnNormalizedGame = {
   id: string;
   awayTeam: string;
   awayTeamId?: string;
+  awayAbbreviation?: string;
+  awayShortDisplayName?: string;
+  awayMascot?: string;
+  awayLocation?: string;
+  awayLogoUrl?: string;
   awayScore?: number;
   awayDivision?: EspnDivisionHint;
   awayConference?: string;
   homeTeam: string;
   homeTeamId?: string;
+  homeAbbreviation?: string;
+  homeShortDisplayName?: string;
+  homeMascot?: string;
+  homeLocation?: string;
+  homeLogoUrl?: string;
   homeScore?: number;
   homeDivision?: EspnDivisionHint;
   homeConference?: string;
@@ -39,13 +57,29 @@ export type EspnNormalizedGame = {
   normalizedStatus?: Game['status'];
   startTime: string;
   broadcast?: string;
+  /** Primary ESPN web gamecast URL when provided by API */
   espnLink?: string;
+  /** ESPN global event uid (e.g. s:20~l:23~e:401866615) — used for app deep links */
+  espnUid?: string;
+  /** All link objects from the ESPN event payload */
+  espnLinkCandidates?: EspnLinkCandidate[];
   /** Venue name and location when ESPN provides it */
   venue?: string;
   /** Raw ESPN group / conference context when available */
   groupInfo?: string;
   /** Core internal Game when required ids + status are present */
   game?: Game;
+  /** NCAA Top 25 rank when matched from static poll */
+  awayRank?: number;
+  homeRank?: number;
+  awayIsRanked?: boolean;
+  homeIsRanked?: boolean;
+  /** Season record from ESPN competitor.records (type total), e.g. "8-1" */
+  awayRecord?: string;
+  homeRecord?: string;
+  /** Raw ESPN competitor.records for dev diagnostics */
+  awayRecordsRaw?: unknown;
+  homeRecordsRaw?: unknown;
 };
 
 /** @deprecated Use EspnNormalizedGame */
@@ -55,9 +89,15 @@ export type GameStatus = 'live' | 'upcoming' | 'final';
 
 export type ScoreboardTeam = {
   id: string;
+  /** Compact display name for game cards */
   name: string;
+  /** Full ESPN displayName for links and ranking context */
+  fullName?: string;
   abbreviation: string;
+  logoUrl?: string;
   rank?: number;
+  /** Season record, e.g. "8-1" */
+  record?: string;
 };
 
 export type ScoreboardGame = {
@@ -67,9 +107,13 @@ export type ScoreboardGame = {
   status: GameStatus;
   awayScore?: number;
   homeScore?: number;
-  /** Quarter/clock for live games, start time for upcoming games */
+  /** ESPN ISO kickoff — formatted in local timezone at render time */
+  startTime?: string;
+  /** Quarter/clock for live/final; kickoff fallback when startTime missing */
   statusDetail: string;
   broadcast: string;
+  awayRecord?: string;
+  homeRecord?: string;
 };
 
 export type TeamRecord = {
@@ -99,21 +143,42 @@ export type RankedTeam = {
   nextGame?: NextGame;
 };
 
+export type NcaaRankingsPayload = {
+  pollName: string;
+  updatedLabel: string;
+  seasonYear?: number;
+  week?: number;
+  teams: RankedTeam[];
+  sourceUrl: string;
+  endpoint: string;
+  isManualData?: boolean;
+  updatedAt?: string;
+};
+
 export type ScheduleTeam = {
   id: string;
+  /** Compact display name for game cards */
   name: string;
+  /** Full ESPN displayName for links and ranking context */
+  fullName?: string;
   abbreviation: string;
+  logoUrl?: string;
   conference?: string;
   division: TeamDivision;
   rank?: number;
+  /** Season record, e.g. "8-1" */
+  record?: string;
 };
 
 export type ScheduleMatchupType = 'fcs-fcs' | 'fcs-fbs';
 
 export type ScheduleGame = {
   id: string;
-  /** ISO date YYYY-MM-DD */
+  /** ISO date YYYY-MM-DD in local calendar for grouping */
   date: string;
+  /** ESPN ISO kickoff — formatted in local timezone at render time */
+  startTime?: string;
+  /** Legacy/mock display fallback when startTime is unavailable */
   time: string;
   awayTeam: ScheduleTeam;
   homeTeam: ScheduleTeam;
@@ -124,11 +189,30 @@ export type ScheduleGame = {
   status?: GameStatus;
   awayScore?: number;
   homeScore?: number;
-  /** Quarter/clock for live/final; kickoff time for upcoming */
+  /** Quarter/clock for live/final; kickoff fallback when startTime missing */
   statusDetail?: string;
+  awayRecord?: string;
+  homeRecord?: string;
 };
 
-export type ScheduleWeekId = 'week-0' | 'week-1' | 'week-2';
+export type ScheduleWeekId =
+  | 'week-0'
+  | 'week-1'
+  | 'week-2'
+  | 'week-3'
+  | 'week-4'
+  | 'week-5'
+  | 'week-6'
+  | 'week-7'
+  | 'week-8'
+  | 'week-9'
+  | 'week-10'
+  | 'week-11'
+  | 'week-12'
+  | 'week-13'
+  | 'week-14'
+  | 'week-15'
+  | 'week-16';
 
 export type EspnWeekGamesPayload = {
   weekId: ScheduleWeekId;
@@ -149,10 +233,16 @@ export type UpsetAlertLabel =
 
 export type UpsetWatchTeam = {
   id: string;
+  /** Compact display name for game cards */
   name: string;
+  /** Full ESPN displayName for links and ranking context */
+  fullName?: string;
   abbreviation: string;
+  logoUrl?: string;
   division: TeamDivision;
   rank?: number;
+  /** Season record, e.g. "8-1" */
+  record?: string;
 };
 
 export type UpsetWatchGame = {
@@ -165,6 +255,8 @@ export type UpsetWatchGame = {
   statusDetail: string;
   alertLabel: UpsetAlertLabel;
   broadcast: string;
+  fcsRecord?: string;
+  fbsRecord?: string;
 };
 
 export type EspnTodayGamesPayload = {

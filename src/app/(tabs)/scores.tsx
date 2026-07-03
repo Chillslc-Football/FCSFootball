@@ -1,115 +1,242 @@
-import { StyleSheet, Text, View } from 'react-native';
-
-import { GameCard } from '@/components/GameCard';
-import { UpsetWatchCard } from '@/components/UpsetWatchCard';
-import { Screen } from '@/components/Screen';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  MOCK_FINAL_GAMES,
-  MOCK_LIVE_GAMES,
-  MOCK_SCORES_META,
-  MOCK_UPCOMING_GAMES,
-  MOCK_UPSET_WATCH_GAMES,
-} from '@/data/mock/scores';
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+
+import { RankMergeDiagnostics } from '@/components/RankMergeDiagnostics';
+import { GameFilterDropdown } from '@/components/GameFilterDropdown';
+import { ScoresFilterDiagnosticsPanel } from '@/components/ScoresFilterDiagnosticsPanel';
+import { Screen } from '@/components/Screen';
+import { TodayGameCard } from '@/components/TodayGameCard';
+import { WeekDropdown } from '@/components/WeekDropdown';
+import { espnScoresProvider } from '@/data/providers/espnProvider';
+import { mergeStaticRankingsOntoGames } from '@/data/providers/rankingMerge';
+import type { RankingMergeResult } from '@/data/providers/rankingMerge';
+import { registerEspnGames } from '@/data/teams/teamGamesStore';
+import {
+  applyScoresFilter,
+  collectScoresFilterDiagnostics,
+  DEFAULT_SCORES_FILTER,
+  getScoresFilterSupport,
+  groupScoresByStatus,
+  type ScoresFilterId,
+} from '@/data/scores/scoresFilters';
 import { colors, spacing, typography } from '@/theme';
-import type { ScoreboardGame, UpsetWatchGame } from '@/types';
+import type { EspnNormalizedGame, ScheduleWeekId } from '@/types';
 
-type GameSectionProps = {
-  title: string;
-  games: ScoreboardGame[];
-};
+type LoadState = 'loading' | 'success' | 'error';
 
-type UpsetSectionProps = {
-  games: UpsetWatchGame[];
-};
-
-function UpsetWatchSection({ games }: UpsetSectionProps) {
-  if (games.length === 0) return null;
-
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Upset Watch</Text>
-      <Text style={styles.sectionSubtitle}>FCS vs FBS games to watch</Text>
-      <View style={styles.list}>
-        {games.map((game) => (
-          <UpsetWatchCard key={game.id} game={game} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function GameSection({ title, games }: GameSectionProps) {
-  if (games.length === 0) return null;
-
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.list}>
-        {games.map((game) => (
-          <GameCard key={game.id} game={game} />
-        ))}
-      </View>
-    </View>
-  );
-}
+const DEFAULT_SCORES_WEEK: ScheduleWeekId = 'week-1';
 
 export default function ScoresScreen() {
+  const [weekId, setWeekId] = useState<ScheduleWeekId>(DEFAULT_SCORES_WEEK);
+  const [filterId, setFilterId] = useState<ScoresFilterId>(DEFAULT_SCORES_FILTER);
+  const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [games, setGames] = useState<EspnNormalizedGame[]>([]);
+  const [mergeResult, setMergeResult] = useState<RankingMergeResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [sourceLabel, setSourceLabel] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadGames() {
+      setLoadState('loading');
+      setErrorMessage(null);
+
+      try {
+        const response = await espnScoresProvider.getWeekGames(weekId);
+        if (cancelled) return;
+
+        const merged = await mergeStaticRankingsOntoGames(response.data.games);
+        if (cancelled) return;
+
+        setGames(merged.games);
+        registerEspnGames(merged.games);
+        setMergeResult(merged);
+        setSourceLabel(`${response.data.weekLabel} · ESPN scoreboard`);
+        setLoadState('success');
+      } catch (err) {
+        if (cancelled) return;
+        setGames([]);
+        setMergeResult(null);
+        setErrorMessage(
+          err instanceof Error ? err.message : 'Could not load FCS scores from ESPN.',
+        );
+        setLoadState('error');
+      }
+    }
+
+    void loadGames();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [weekId]);
+
+  const filterSupport = getScoresFilterSupport(filterId);
+
+  const filteredGames = useMemo(
+    () => applyScoresFilter(games, filterId),
+    [games, filterId],
+  );
+
+  const filterDiagnostics = useMemo(
+    () => collectScoresFilterDiagnostics(games, filterId),
+    [games, filterId],
+  );
+
+  const statusGroups = useMemo(
+    () => groupScoresByStatus(filteredGames),
+    [filteredGames],
+  );
+
+  const isPlaceholderFilter = filterSupport === 'placeholder';
+  const noGamesLoaded = games.length === 0;
+  const showEmptyState =
+    loadState === 'success' && (isPlaceholderFilter || noGamesLoaded || statusGroups.length === 0);
+
   return (
-    <Screen title="Scores" subtitle="Live and final scores from FCS games.">
-      <View style={styles.mockBanner}>
-        <Text style={styles.mockLabel}>Mock Data</Text>
-        <Text style={styles.mockText}>{MOCK_SCORES_META.dateLabel}</Text>
-        <Text style={styles.mockHint}>
-          Sample scores for development. Live data will replace this later.
-        </Text>
+    <Screen title="Scores" subtitle="Browse FCS scores with conference and poll filters.">
+      <View style={styles.dropdownStack}>
+        <GameFilterDropdown selected={filterId} onSelect={setFilterId} />
+        <WeekDropdown selected={weekId} onSelect={setWeekId} />
       </View>
 
-      <UpsetWatchSection games={MOCK_UPSET_WATCH_GAMES} />
-      <GameSection title="Live" games={MOCK_LIVE_GAMES} />
-      <GameSection title="Upcoming" games={MOCK_UPCOMING_GAMES} />
-      <GameSection title="Final" games={MOCK_FINAL_GAMES} />
+      {loadState === 'loading' ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator color={colors.primary} size="large" />
+          <Text style={styles.loadingText}>Loading FCS scores…</Text>
+        </View>
+      ) : null}
+
+      {loadState === 'error' ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorTitle}>Could not load scores</Text>
+          <Text style={styles.errorText}>{errorMessage}</Text>
+        </View>
+      ) : null}
+
+      {loadState === 'success' ? (
+        <>
+          {showEmptyState ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>
+                {isPlaceholderFilter
+                  ? 'Not enough data from ESPN yet'
+                  : noGamesLoaded
+                    ? 'No games loaded for this week'
+                    : 'No games match this filter'}
+              </Text>
+              <Text style={styles.emptyText}>
+                {isPlaceholderFilter
+                  ? 'This filter needs additional ESPN or poll data that is not available on the FCS scoreboard feed yet.'
+                  : noGamesLoaded
+                    ? `ESPN returned 0 games for ${sourceLabel}. Try another week.`
+                    : `${games.length} game${games.length === 1 ? '' : 's'} loaded, but this filter removed all of them. Try All FCS or another conference.`}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.groupList}>
+              {statusGroups.map((group) => (
+                <View key={group.key} style={styles.groupSection}>
+                  <Text style={styles.groupTitle}>{group.title}</Text>
+                  <View style={styles.list}>
+                    {group.games.map((game, index) => (
+                      <TodayGameCard
+                        key={game.id}
+                        game={game}
+                        showDevDiagnostics={index === 0}
+                      />
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {__DEV__ ? (
+            <>
+              <ScoresFilterDiagnosticsPanel diagnostics={filterDiagnostics} />
+              {mergeResult ? <RankMergeDiagnostics result={mergeResult} /> : null}
+            </>
+          ) : null}
+        </>
+      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  mockBanner: {
-    backgroundColor: colors.surfaceElevated,
+  dropdownStack: {
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  loadingBox: {
+    backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
+    padding: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.md,
   },
-  mockLabel: {
-    ...typography.label,
-    color: colors.primary,
-    marginBottom: spacing.xs,
+  loadingText: {
+    ...typography.body,
+    color: colors.textSecondary,
   },
-  mockText: {
+  errorBox: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.error,
+    padding: spacing.lg,
+  },
+  errorTitle: {
     ...typography.body,
     fontWeight: '600',
-    color: colors.text,
+    color: colors.error,
     marginBottom: spacing.xs,
   },
-  mockHint: {
+  errorText: {
     ...typography.caption,
-    color: colors.textSecondary,
+    color: colors.text,
   },
-  section: {
-    marginBottom: spacing.lg,
+  groupList: {
+    gap: spacing.lg,
   },
-  sectionTitle: {
+  groupSection: {
+    gap: spacing.sm,
+  },
+  groupTitle: {
     ...typography.label,
     color: colors.textMuted,
-    marginBottom: spacing.xs,
-  },
-  sectionSubtitle: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
   },
   list: {
     gap: spacing.sm,
+  },
+  empty: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  emptyTitle: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  emptyText: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

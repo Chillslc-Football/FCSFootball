@@ -1,6 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { colors, spacing, typography } from '@/theme';
+import { TeamNameLink } from '@/components/TeamNameLink';
+import { formatGameStatusDetail } from '@/utils/formatGameTime';
 import type { GameStatus, ScoreboardGame, ScoreboardTeam } from '@/types';
 
 type GameCardProps = {
@@ -36,9 +38,13 @@ function TeamRow({
     <View style={styles.teamRow}>
       <View style={styles.teamLeft}>
         {team.rank ? <RankBadge rank={team.rank} /> : null}
-        <Text style={[styles.teamName, isWinner && styles.teamNameWinner]} numberOfLines={1}>
-          {team.name}
-        </Text>
+        <TeamNameLink
+          name={team.fullName ?? team.name}
+          label={team.name}
+          teamId={team.id}
+          record={team.record}
+          emphasized={isWinner}
+        />
       </View>
       {showScore ? (
         <Text style={[styles.score, isWinner && styles.scoreWinner]}>
@@ -50,10 +56,16 @@ function TeamRow({
 }
 
 export function GameCard({ game }: GameCardProps) {
-  const { awayTeam, homeTeam, status, awayScore, homeScore, statusDetail, broadcast } = game;
+  const { awayTeam, homeTeam, status, awayScore, homeScore, statusDetail, broadcast, startTime } =
+    game;
   const showScore = status === 'live' || status === 'final';
   const awayWinner = status === 'final' && awayScore !== undefined && homeScore !== undefined && awayScore > homeScore;
   const homeWinner = status === 'final' && awayScore !== undefined && homeScore !== undefined && homeScore > awayScore;
+  const displayStatusDetail = formatGameStatusDetail({
+    startTime,
+    status,
+    espnStatus: statusDetail,
+  });
 
   return (
     <View style={styles.card}>
@@ -63,7 +75,7 @@ export function GameCard({ game }: GameCardProps) {
             {STATUS_LABEL[status]}
           </Text>
         </View>
-        <Text style={styles.statusDetail}>{statusDetail}</Text>
+        <Text style={styles.statusDetail}>{displayStatusDetail}</Text>
       </View>
 
       <TeamRow
