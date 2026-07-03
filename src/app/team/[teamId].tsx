@@ -1,7 +1,8 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,24 +11,102 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TeamLogo } from '@/components/TeamLogo';
-import { TodayGameCard } from '@/components/TodayGameCard';
+import { FavoriteStarButton } from '@/components/FavoriteStarButton';
+import { TeamScheduleGameRow } from '@/components/TeamScheduleGameRow';
 import {
   loadTeamSeasonData,
   TEAM_SCHEDULE_SOURCE_NOTE,
   type TeamProfile,
 } from '@/data/teams/loadTeamSeasonGames';
+import { useSelectedConference } from '@/data/conferences/SelectedConferenceContext';
+import { resolveConferenceId } from '@/data/conferences/resolveConferenceId';
+import { lookupEspnConference, resolveEspnConferenceName } from '@/data/providers/espnConferenceLookup';
 import { colors, spacing, typography } from '@/theme';
 import { getTeamDetailHeading } from '@/utils/teamDisplay';
+import { isEspnTeamId } from '@/utils/teamId';
 import type { EspnNormalizedGame } from '@/types';
 
 type LoadState = 'loading' | 'success' | 'error';
 
-function TeamHeader({ profile }: { profile: TeamProfile }) {
+function isPureNumericId(value: string): boolean {
+  return /^\d+$/.test(value.trim());
+}
+
+function isInternalTeamIdentifier(value: string, profile: TeamProfile): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  if (trimmed === profile.routeId || trimmed === profile.espnTeamId) return true;
+  if (isPureNumericId(trimmed)) return true;
+  return isEspnTeamId(trimmed) && trimmed === profile.espnTeamId;
+}
+
+function resolveConferenceLabel(profile: TeamProfile): string | undefined {
+  const raw = profile.conference?.trim();
+  if (!raw || isInternalTeamIdentifier(raw, profile)) return undefined;
+
+  if (isPureNumericId(raw)) {
+    return lookupEspnConference(raw)?.name ?? resolveEspnConferenceName(raw);
+  }
+
+  return raw;
+}
+
+function buildHeaderSecondaryMeta(profile: TeamProfile): string[] {
+  const parts: string[] = [];
+
+  const record = profile.record?.trim();
+  if (record) {
+    parts.push(`Record ${record}`);
+  }
+
+  const abbreviation = profile.abbreviation?.trim();
+  if (abbreviation && !isInternalTeamIdentifier(abbreviation, profile)) {
+    parts.push(abbreviation);
+  }
+
+  return parts;
+}
+
+function resolveHeaderTitle(profile: TeamProfile, title: string): string {
+  const trimmed = title.trim();
+  if (!isPureNumericId(trimmed)) return trimmed;
+
+  const displayName = profile.displayName?.trim();
+  if (displayName && !isPureNumericId(displayName)) return displayName;
+
+  const abbreviation = profile.abbreviation?.trim();
+  if (abbreviation && !isPureNumericId(abbreviation)) return abbreviation;
+
+  return 'Team';
+}
+
+function resolveHeaderMascot(profile: TeamProfile, mascot?: string): string | undefined {
+  const trimmed = mascot?.trim();
+  if (!trimmed || isInternalTeamIdentifier(trimmed, profile)) return undefined;
+  return trimmed;
+}
+
+function TeamHeader({ profile, routeId }: { profile: TeamProfile; routeId: string }) {
+  const router = useRouter();
+  const { setSelectedConference } = useSelectedConference();
+
   const heading = getTeamDetailHeading({
     displayName: profile.displayName,
     location: profile.location,
     mascot: profile.mascot,
   });
+
+  const conferenceLabel = resolveConferenceLabel(profile);
+  const conferenceId = resolveConferenceId(profile.conference);
+  const secondaryMeta = buildHeaderSecondaryMeta(profile);
+  const headerTitle = resolveHeaderTitle(profile, heading.title);
+  const headerMascot = resolveHeaderMascot(profile, heading.mascot);
+
+  function handleConferencePress() {
+    if (!conferenceId) return;
+    setSelectedConference(conferenceId);
+    router.push('/(tabs)/schedule');
+  }
 
   return (
     <View style={styles.headerCard}>
@@ -35,7 +114,7 @@ function TeamHeader({ profile }: { profile: TeamProfile }) {
         name={profile.displayName}
         abbreviation={profile.abbreviation}
         logoUrl={profile.logoUrl}
-        size="featured"
+        size={40}
       />
       <View style={styles.headerInfo}>
         <View style={styles.nameRow}>
@@ -44,21 +123,43 @@ function TeamHeader({ profile }: { profile: TeamProfile }) {
               <Text style={styles.rankBadgeText}>#{profile.rank}</Text>
             </View>
           ) : null}
-          <Text style={styles.teamName}>{heading.title}</Text>
+          <Text style={styles.teamName} numberOfLines={2}>
+            {headerTitle}
+          </Text>
         </View>
-        {heading.mascot ? (
-          <Text style={styles.metaText}>{heading.mascot}</Text>
+        {headerMascot ? (
+          <Text style={styles.metaText} numberOfLines={1}>
+            {headerMascot}
+          </Text>
         ) : null}
-        {profile.abbreviation ? (
-          <Text style={styles.metaText}>{profile.abbreviation}</Text>
-        ) : null}
-        {profile.conference ? (
-          <Text style={styles.metaText}>{profile.conference}</Text>
-        ) : null}
-        {profile.record ? (
-          <Text style={styles.metaText}>Record: {profile.record}</Text>
+        {conferenceLabel || secondaryMeta.length > 0 ? (
+          <View style={styles.metaRow}>
+            {conferenceLabel ? (
+              conferenceId ? (
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={`View ${conferenceLabel} on Conferences tab`}
+                  hitSlop={4}
+                  onPress={handleConferencePress}
+                  style={({ pressed }) => [pressed && styles.metaLinkPressed]}>
+                  <Text style={styles.metaText}>{conferenceLabel}</Text>
+                </Pressable>
+              ) : (
+                <Text style={styles.metaText}>{conferenceLabel}</Text>
+              )
+            ) : null}
+            {conferenceLabel && secondaryMeta.length > 0 ? (
+              <Text style={styles.metaText}> · </Text>
+            ) : null}
+            {secondaryMeta.length > 0 ? (
+              <Text style={styles.metaText} numberOfLines={2}>
+                {secondaryMeta.join(' · ')}
+              </Text>
+            ) : null}
+          </View>
         ) : null}
       </View>
+      <FavoriteStarButton profile={profile} routeId={routeId} />
     </View>
   );
 }
@@ -108,7 +209,9 @@ export default function TeamDetailScreen() {
     };
   }, [routeId]);
 
-  const screenTitle = profile?.displayName ?? profile?.name ?? 'Team';
+  const screenTitle = profile
+    ? resolveHeaderTitle(profile, profile.displayName ?? profile.name ?? 'Team')
+    : 'Team';
 
   return (
     <>
@@ -136,7 +239,7 @@ export default function TeamDetailScreen() {
 
         {loadState === 'success' && profile ? (
           <>
-            <TeamHeader profile={profile} />
+            <TeamHeader profile={profile} routeId={routeId} />
 
             <Text style={styles.sourceNote}>{TEAM_SCHEDULE_SOURCE_NOTE}</Text>
 
@@ -150,9 +253,13 @@ export default function TeamDetailScreen() {
                 </Text>
               </View>
             ) : (
-              <View style={styles.gameList}>
-                {games.map((game) => (
-                  <TodayGameCard key={game.id} game={game} />
+              <View style={styles.scheduleList}>
+                {games.map((game, index) => (
+                  <TeamScheduleGameRow
+                    key={game.id}
+                    game={game}
+                    isLast={index === games.length - 1}
+                  />
                 ))}
               </View>
             )}
@@ -206,22 +313,22 @@ const styles = StyleSheet.create({
   headerCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.lg,
+    padding: spacing.md,
   },
   headerInfo: {
     flex: 1,
     minWidth: 0,
-    gap: spacing.xs,
+    gap: 2,
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
     flexWrap: 'wrap',
   },
   rankBadge: {
@@ -236,13 +343,25 @@ const styles = StyleSheet.create({
     fontSize: 9,
   },
   teamName: {
-    ...typography.title,
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
     color: colors.text,
-    flexShrink: 1,
+    lineHeight: 22,
+    minWidth: 0,
   },
   metaText: {
-    ...typography.body,
+    ...typography.caption,
     color: colors.textSecondary,
+    lineHeight: 16,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  metaLinkPressed: {
+    opacity: 0.7,
   },
   sourceNote: {
     ...typography.caption,
@@ -250,11 +369,17 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   sectionTitle: {
-    ...typography.heading,
+    fontSize: 13,
+    fontWeight: '700',
     color: colors.text,
+    letterSpacing: 0.2,
   },
-  gameList: {
-    gap: spacing.sm,
+  scheduleList: {
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
   },
   emptyBox: {
     backgroundColor: colors.surface,

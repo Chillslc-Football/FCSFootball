@@ -14,6 +14,8 @@ export type EspnFetchOptions = {
   timeoutMs?: number;
   /** YYYY-MM-DD override for scoreboard date filter (dev / preview). */
   dateIso?: string;
+  /** Bypass in-memory ESPN cache and refetch from the network. */
+  forceRefresh?: boolean;
 };
 
 /** Official FCS Top 25 page — rankings source of truth (not ESPN). */

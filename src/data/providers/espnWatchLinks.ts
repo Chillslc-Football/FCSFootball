@@ -73,6 +73,27 @@ function pickWebUrl(game: EspnNormalizedGame): { url: string | null; source: str
 }
 
 /**
+ * ESPN web game summary / gamecast URL for a normalized game.
+ * Prefers espnLink and event/summary/boxscore links — not mobile streaming deep links.
+ */
+export function resolveEspnGameSummaryUrl(game: EspnNormalizedGame): string | null {
+  return pickWebUrl(game).url;
+}
+
+export async function openEspnGameSummary(game: EspnNormalizedGame): Promise<boolean> {
+  const url = resolveEspnGameSummaryUrl(game);
+  if (!url) return false;
+
+  try {
+    await Linking.openURL(url);
+    return true;
+  } catch (err) {
+    console.warn('[ESPN Game Summary] open failed', err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+/**
  * Resolve Watch on ESPN targets for a normalized game.
  *
  * ESPN FCS scoreboard events expose a desktop gamecast web URL and event uid.

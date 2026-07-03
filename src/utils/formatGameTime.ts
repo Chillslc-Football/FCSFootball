@@ -1,6 +1,9 @@
 import type { GameStatus } from '@/types';
 
-/** Device timezone from Intl — no hardcoded region. */
+/** ESPN kickoff times are displayed in Eastern Time. */
+const ESPN_KICKOFF_TIMEZONE = 'America/New_York';
+
+/** Device timezone from Intl — used by dev diagnostics only. */
 export function getDeviceTimezone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -13,92 +16,198 @@ function isIsoDateTimeString(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}T/.test(value.trim());
 }
 
-/** Manual local time when Intl is unavailable (Hermes-safe). */
-function formatLocalTimeManual(date: Date): string {
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
-  const period = hours >= 12 ? 'PM' : 'AM';
-  const hour12 = hours % 12 || 12;
-  const minutePart = minutes.toString().padStart(2, '0');
+function normalizeUtcIso(value: string): string {
+  const shortZ = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})Z$/i.exec(value);
+  if (shortZ) return `${shortZ[1]}:00.000Z`;
+  return value;
+}
+
+function parseClockTime12(text: string): { hour12: number; minute: number; period: 'AM' | 'PM' } | null {
+  const match = /(\d{1,2}):(\d{2})[\s\u202f]*([AaPp][Mm])\b/.exec(text);
+  if (!match) return null;
+
+  const hour12 = Number(match[1]);
+  const minute = Number(match[2]);
+  const period = match[3].toUpperCase() as 'AM' | 'PM';
+
+  if (!Number.isFinite(hour12) || hour12 < 1 || hour12 > 12) return null;
+  if (!Number.isFinite(minute) || minute < 0 || minute > 59) return null;
+
+  return { hour12, minute, period };
+}
+
+/** Render a 12-hour clock without converting through 24-hour (preserves noon/midnight). */
+function formatClock12Display(hour12: number, minute: number, period: 'AM' | 'PM'): string {
+  const minutePart = minute.toString().padStart(2, '0');
   return `${hour12}:${minutePart} ${period}`;
 }
 
-/** Parse ESPN ISO kickoff string into a Date, or null when invalid/TBD. */
-export function parseGameStartTime(startTime: string | undefined): Date | null {
-  if (!startTime || startTime === 'TBD') return null;
-  const parsed = Date.parse(startTime);
-  if (Number.isNaN(parsed)) return null;
-  return new Date(parsed);
+function formatClock12From24(hour: number, minute: number): string {
+  const normalized = ((hour % 24) + 24) % 24;
+  const period: 'AM' | 'PM' = normalized < 12 ? 'AM' : 'PM';
+  const hour12 = normalized % 12 || 12;
+  return formatClock12Display(hour12, minute, period);
 }
 
-/** Compact kickoff time in the device local timezone, e.g. "2:00 PM". */
-export function formatGameKickoffTime(startTime: string | undefined): string {
-  const date = parseGameStartTime(startTime);
-  if (!date) return 'TBD';
+/** Manual fallback when Intl is unavailable (Hermes-safe). */
+function formatLocalTimeManual(date: Date): string {
+  return formatClock12From24(date.getHours(), date.getMinutes());
+}
+
+/** Parse ESPN kickoff ISO into a Date, or null when invalid/TBD. */
+export function parseGameStartTime(startTime: string | undefined): Date | null {
+  if (!startTime?.trim() || startTime.trim() === 'TBD') return null;
 
   try {
-    return new Intl.DateTimeFormat(undefined, {
+    const trimmed = startTime.trim();
+    const normalized =
+      /Z$/i.test(trimmed) || /[+-]\d{2}:?\d{2}$/.test(trimmed)
+        ? normalizeUtcIso(trimmed)
+        : trimmed;
+    const ms = Date.parse(normalized);
+    if (Number.isNaN(ms)) return null;
+    return new Date(ms);
+  } catch {
+    return null;
+  }
+}
+
+function formatEasternTime(date: Date): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: ESPN_KICKOFF_TIMEZONE,
       hour: 'numeric',
       minute: '2-digit',
+      hour12: true,
+    }).formatToParts(date);
+
+    const hour = parts.find((part) => part.type === 'hour')?.value;
+    const minute = parts.find((part) => part.type === 'minute')?.value;
+    const dayPeriod = parts.find((part) => part.type === 'dayPeriod')?.value?.toUpperCase();
+
+    if (hour && minute && (dayPeriod === 'AM' || dayPeriod === 'PM')) {
+      return formatClock12Display(Number(hour), Number(minute), dayPeriod);
+    }
+
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: ESPN_KICKOFF_TIMEZONE,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
     }).format(date);
   } catch {
     return formatLocalTimeManual(date);
   }
 }
 
-/** Local date + time for cards, e.g. "Thu, Sep 5 • 6:30 PM". */
-export function formatGameKickoffDateTime(startTime: string | undefined): string {
-  const date = parseGameStartTime(startTime);
-  if (!date) return 'TBD';
-
+/**
+ * Compact kickoff time in Eastern Time, e.g. "7:00 PM ET".
+ * All kickoff times are shown in ESPN Eastern Time.
+ */
+export function formatGameKickoffTime(startTime: string | undefined): string {
   try {
-    const datePart = new Intl.DateTimeFormat(undefined, {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-    }).format(date);
-    const timePart = formatGameKickoffTime(startTime);
-    return `${datePart} • ${timePart}`;
-  } catch {
-    const timePart = formatLocalTimeManual(date);
-    return timePart;
+    if (!startTime?.trim() || startTime.trim() === 'TBD') return 'TBD';
+
+    const trimmed = startTime.trim();
+
+    if (/\bET\b/i.test(trimmed) && !isIsoDateTimeString(trimmed)) {
+      return trimmed;
+    }
+
+    const clockOnly = parseClockTime12(trimmed);
+    if (clockOnly && !isIsoDateTimeString(trimmed)) {
+      return `${formatClock12Display(clockOnly.hour12, clockOnly.minute, clockOnly.period)} ET`;
+    }
+
+    const instant = parseGameStartTime(startTime);
+    if (!instant || Number.isNaN(instant.getTime())) {
+      console.warn('[formatGameKickoffTime] invalid startTime:', startTime);
+      return 'TBD';
+    }
+
+    return `${formatEasternTime(instant)} ET`;
+  } catch (error) {
+    console.warn('[formatGameKickoffTime] failed:', startTime, error);
+    return 'TBD';
   }
 }
 
-/** Detailed local kickoff with timezone abbreviation, e.g. "Thu, Sep 5 • 6:30 PM MDT". */
-export function formatGameKickoffDateTimeDetailed(startTime: string | undefined): string {
-  const date = parseGameStartTime(startTime);
-  if (!date) return 'TBD';
-
+/** Compact Eastern game date for schedule rows, e.g. "Sat, Sep 6". */
+export function formatGameKickoffDate(startTime: string | undefined): string {
   try {
-    const datePart = new Intl.DateTimeFormat(undefined, {
+    const date = parseGameStartTime(startTime);
+    if (!date) return 'TBD';
+
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: ESPN_KICKOFF_TIMEZONE,
       weekday: 'short',
       month: 'short',
       day: 'numeric',
     }).format(date);
-    const timePart = new Intl.DateTimeFormat(undefined, {
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZoneName: 'short',
-    }).format(date);
-    return `${datePart} • ${timePart}`;
   } catch {
     return 'TBD';
   }
 }
 
-/** YYYY-MM-DD in the device local calendar for grouping schedule days. */
-export function extractLocalGameDateIso(startTime: string): string {
-  const date = parseGameStartTime(startTime);
-  if (!date) return 'unknown';
+/** Eastern date + time for cards, e.g. "Thu, Sep 5 • 7:00 PM ET". */
+export function formatGameKickoffDateTime(startTime: string | undefined): string {
+  try {
+    const date = parseGameStartTime(startTime);
+    if (!date) return 'TBD';
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+    try {
+      const datePart = new Intl.DateTimeFormat('en-US', {
+        timeZone: ESPN_KICKOFF_TIMEZONE,
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      }).format(date);
+      const timePart = formatGameKickoffTime(startTime);
+      return `${datePart} • ${timePart}`;
+    } catch {
+      return formatGameKickoffTime(startTime);
+    }
+  } catch {
+    return 'TBD';
+  }
 }
 
-/** Section header label for a local schedule date key (YYYY-MM-DD). */
+/** Detailed Eastern kickoff with timezone label, e.g. "Thu, Sep 5 • 7:00 PM ET". */
+export function formatGameKickoffDateTimeDetailed(startTime: string | undefined): string {
+  return formatGameKickoffDateTime(startTime);
+}
+
+/** YYYY-MM-DD in the Eastern calendar for grouping schedule days. */
+export function extractLocalGameDateIso(startTime: string): string {
+  try {
+    if (!startTime?.trim() || startTime.trim() === 'TBD') return 'unknown';
+
+    const date = parseGameStartTime(startTime);
+    if (!date || Number.isNaN(date.getTime())) return 'unknown';
+
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: ESPN_KICKOFF_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(date);
+      const get = (type: Intl.DateTimeFormatPartTypes) =>
+        parts.find((part) => part.type === type)?.value ?? '00';
+      return `${get('year')}-${get('month')}-${get('day')}`;
+    } catch {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+  } catch (error) {
+    console.warn('[extractLocalGameDateIso] failed:', startTime, error);
+    return 'unknown';
+  }
+}
+
+/** Section header label for a schedule date key (YYYY-MM-DD). */
 export function formatGameDateLabel(isoDate: string): string {
   if (isoDate === 'unknown') return 'Date TBD';
 
@@ -116,7 +225,7 @@ export function formatGameDateLabel(isoDate: string): string {
   }
 }
 
-/** Right-rail / header status: local kickoff when upcoming, ESPN status otherwise. */
+/** Right-rail / header status: Eastern kickoff when upcoming, ESPN status otherwise. */
 export function formatGameStatusDetail(options: {
   startTime?: string;
   status: GameStatus;
@@ -146,12 +255,8 @@ export function formatScheduleGameKickoff(game: {
 
   const legacy = game.time?.trim();
   if (!legacy) return 'TBD';
-  if (isIsoDateTimeString(legacy)) {
-    const formatted = formatGameKickoffTime(legacy);
-    if (formatted !== 'TBD') return formatted;
-  }
 
-  return legacy;
+  return formatGameKickoffTime(legacy);
 }
 
 /** @deprecated Use formatGameKickoffTime */

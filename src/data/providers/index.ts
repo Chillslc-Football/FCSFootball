@@ -54,6 +54,19 @@ export {
 } from './espnProvider';
 export { ESPN_FETCH_TIMEOUT_MS, EspnFetchError, fetchEspnJson } from './espnFetch';
 export {
+  buildEspnEndpointCacheKey,
+  buildEspnTodayCacheKey,
+  buildEspnWeekCacheKey,
+  clearEspnCache,
+  ESPN_CACHE_TTL_DEFAULT_MS,
+  ESPN_CACHE_TTL_LIVE_MS,
+  getOrFetchEspnCached,
+  hasValidEspnCacheEntry,
+  resolveEspnCacheTtlMs,
+} from './espnCache';
+export type { EspnScoreboardCachePayload } from './espnCache';
+export { forceRefreshEspnData } from './espnRefresh';
+export {
   formatEspnResponseSize,
   testEspnConnectivity,
 } from './espnConnectivity';

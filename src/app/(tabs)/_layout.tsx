@@ -29,8 +29,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="today"
         options={{
-          title: 'Today',
-          tabBarIcon: ({ color }) => <TabIcon name="today" color={color} />,
+          title: 'Favorites',
+          tabBarIcon: ({ color }) => <TabIcon name="star" color={color} />,
         }}
       />
       <Tabs.Screen

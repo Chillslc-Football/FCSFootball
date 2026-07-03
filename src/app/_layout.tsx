@@ -2,6 +2,8 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 
+import { FavoriteTeamsProvider } from '@/data/favorites/FavoriteTeamsContext';
+import { SelectedConferenceProvider } from '@/data/conferences/SelectedConferenceContext';
 import { colors } from '@/theme';
 
 const FCSDarkTheme = {
@@ -20,13 +22,17 @@ const FCSDarkTheme = {
 export default function RootLayout() {
   return (
     <ThemeProvider value={FCSDarkTheme}>
-      <StatusBar style="light" />
-      <Stack>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="developer" options={{ headerShown: false }} />
-        <Stack.Screen name="team/[teamId]" options={{ title: 'Team' }} />
-      </Stack>
+      <FavoriteTeamsProvider>
+        <SelectedConferenceProvider>
+          <StatusBar style="light" />
+          <Stack>
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="developer" options={{ headerShown: false }} />
+            <Stack.Screen name="team/[teamId]" options={{ title: 'Team' }} />
+          </Stack>
+        </SelectedConferenceProvider>
+      </FavoriteTeamsProvider>
     </ThemeProvider>
   );
 }

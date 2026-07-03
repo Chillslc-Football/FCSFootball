@@ -6,37 +6,67 @@ import {
   View,
 } from 'react-native';
 
-import { RankMergeDiagnostics } from '@/components/RankMergeDiagnostics';
 import { GameFilterDropdown } from '@/components/GameFilterDropdown';
-import { ScoresFilterDiagnosticsPanel } from '@/components/ScoresFilterDiagnosticsPanel';
+import { ScoresGameCard } from '@/components/ScoresGameCard';
 import { Screen } from '@/components/Screen';
-import { TodayGameCard } from '@/components/TodayGameCard';
 import { WeekDropdown } from '@/components/WeekDropdown';
 import { espnScoresProvider } from '@/data/providers/espnProvider';
 import { mergeStaticRankingsOntoGames } from '@/data/providers/rankingMerge';
-import type { RankingMergeResult } from '@/data/providers/rankingMerge';
+import {
+  prioritizeFavoriteScoreGames,
+} from '@/data/scores/prioritizeFavoriteScoreGames';
+import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
 import { registerEspnGames } from '@/data/teams/teamGamesStore';
 import {
   applyScoresFilter,
-  collectScoresFilterDiagnostics,
   DEFAULT_SCORES_FILTER,
   getScoresFilterSupport,
-  groupScoresByStatus,
   type ScoresFilterId,
 } from '@/data/scores/scoresFilters';
 import { colors, spacing, typography } from '@/theme';
+import { extractLocalGameDateIso, formatGameDateLabel } from '@/utils/formatGameTime';
+import { sortEspnNormalizedGames } from '@/utils/sortGames';
 import type { EspnNormalizedGame, ScheduleWeekId } from '@/types';
 
 type LoadState = 'loading' | 'success' | 'error';
 
 const DEFAULT_SCORES_WEEK: ScheduleWeekId = 'week-1';
 
+type ScoresDateGroup = {
+  date: string;
+  label: string;
+  games: EspnNormalizedGame[];
+};
+
+function groupScoresByDate(games: EspnNormalizedGame[]): ScoresDateGroup[] {
+  const byDate = new Map<string, EspnNormalizedGame[]>();
+
+  for (const game of games) {
+    const dateKey = extractLocalGameDateIso(game.startTime);
+    const bucket = byDate.get(dateKey) ?? [];
+    bucket.push(game);
+    byDate.set(dateKey, bucket);
+  }
+
+  return [...byDate.entries()]
+    .sort(([a], [b]) => {
+      if (a === 'unknown') return 1;
+      if (b === 'unknown') return -1;
+      return a.localeCompare(b);
+    })
+    .map(([date, dateGames]) => ({
+      date,
+      label: formatGameDateLabel(date),
+      games: sortEspnNormalizedGames(dateGames),
+    }));
+}
+
 export default function ScoresScreen() {
+  const { favorites, loaded: favoritesLoaded } = useFavoriteTeams();
   const [weekId, setWeekId] = useState<ScheduleWeekId>(DEFAULT_SCORES_WEEK);
   const [filterId, setFilterId] = useState<ScoresFilterId>(DEFAULT_SCORES_FILTER);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [games, setGames] = useState<EspnNormalizedGame[]>([]);
-  const [mergeResult, setMergeResult] = useState<RankingMergeResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sourceLabel, setSourceLabel] = useState('');
 
@@ -56,13 +86,11 @@ export default function ScoresScreen() {
 
         setGames(merged.games);
         registerEspnGames(merged.games);
-        setMergeResult(merged);
         setSourceLabel(`${response.data.weekLabel} · ESPN scoreboard`);
         setLoadState('success');
       } catch (err) {
         if (cancelled) return;
         setGames([]);
-        setMergeResult(null);
         setErrorMessage(
           err instanceof Error ? err.message : 'Could not load FCS scores from ESPN.',
         );
@@ -84,23 +112,32 @@ export default function ScoresScreen() {
     [games, filterId],
   );
 
-  const filterDiagnostics = useMemo(
-    () => collectScoresFilterDiagnostics(games, filterId),
-    [games, filterId],
-  );
+  const dateGroups = useMemo(() => {
+    const baseGroups = groupScoresByDate(filteredGames);
+    if (!favoritesLoaded || favorites.length === 0) {
+      return baseGroups;
+    }
 
-  const statusGroups = useMemo(
-    () => groupScoresByStatus(filteredGames),
-    [filteredGames],
-  );
+    const orderedGames = baseGroups.flatMap((group) => group.games);
+    const { favoriteGames, otherGames } = prioritizeFavoriteScoreGames(orderedGames, favorites);
+
+    if (favoriteGames.length === 0) {
+      return baseGroups;
+    }
+
+    return [
+      { date: '__favorites__', label: '', games: favoriteGames },
+      ...groupScoresByDate(otherGames),
+    ];
+  }, [filteredGames, favorites, favoritesLoaded]);
 
   const isPlaceholderFilter = filterSupport === 'placeholder';
   const noGamesLoaded = games.length === 0;
   const showEmptyState =
-    loadState === 'success' && (isPlaceholderFilter || noGamesLoaded || statusGroups.length === 0);
+    loadState === 'success' && (isPlaceholderFilter || noGamesLoaded || dateGroups.length === 0);
 
   return (
-    <Screen title="Scores" subtitle="Browse FCS scores with conference and poll filters.">
+    <Screen denseTop>
       <View style={styles.dropdownStack}>
         <GameFilterDropdown selected={filterId} onSelect={setFilterId} />
         <WeekDropdown selected={weekId} onSelect={setWeekId} />
@@ -141,15 +178,17 @@ export default function ScoresScreen() {
             </View>
           ) : (
             <View style={styles.groupList}>
-              {statusGroups.map((group) => (
-                <View key={group.key} style={styles.groupSection}>
-                  <Text style={styles.groupTitle}>{group.title}</Text>
-                  <View style={styles.list}>
+              {dateGroups.map((group) => (
+                <View key={group.date} style={styles.dateSection}>
+                  {group.label ? (
+                    <Text style={styles.dateHeader}>{group.label}</Text>
+                  ) : null}
+                  <View style={styles.scoreboardList}>
                     {group.games.map((game, index) => (
-                      <TodayGameCard
+                      <ScoresGameCard
                         key={game.id}
                         game={game}
-                        showDevDiagnostics={index === 0}
+                        isLast={index === group.games.length - 1}
                       />
                     ))}
                   </View>
@@ -157,13 +196,6 @@ export default function ScoresScreen() {
               ))}
             </View>
           )}
-
-          {__DEV__ ? (
-            <>
-              <ScoresFilterDiagnosticsPanel diagnostics={filterDiagnostics} />
-              {mergeResult ? <RankMergeDiagnostics result={mergeResult} /> : null}
-            </>
-          ) : null}
         </>
       ) : null}
     </Screen>
@@ -172,8 +204,8 @@ export default function ScoresScreen() {
 
 const styles = StyleSheet.create({
   dropdownStack: {
-    gap: spacing.sm,
-    marginBottom: spacing.md,
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
   },
   loadingBox: {
     backgroundColor: colors.surface,
@@ -206,17 +238,23 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   groupList: {
-    gap: spacing.lg,
+    gap: spacing.md,
   },
-  groupSection: {
-    gap: spacing.sm,
+  dateSection: {
+    gap: spacing.xs,
   },
-  groupTitle: {
-    ...typography.label,
-    color: colors.textMuted,
+  dateHeader: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+    letterSpacing: 0.2,
   },
-  list: {
-    gap: spacing.sm,
+  scoreboardList: {
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
   },
   empty: {
     backgroundColor: colors.surface,

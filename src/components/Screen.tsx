@@ -5,20 +5,22 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, typography } from '@/theme';
 
 type ScreenProps = {
-  title: string;
+  title?: string;
   subtitle?: string;
+  /** Tighter top padding when the tab/header bar already shows the screen title. */
+  denseTop?: boolean;
   children?: ReactNode;
 };
 
-export function Screen({ title, subtitle, children }: ScreenProps) {
+export function Screen({ title, subtitle, denseTop = false, children }: ScreenProps) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, !denseTop && { paddingTop: insets.top }]}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, denseTop && styles.contentDenseTop]}
         showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>{title}</Text>
+        {title ? <Text style={styles.title}>{title}</Text> : null}
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         {children ?? (
           <View style={styles.placeholder}>
@@ -38,6 +40,9 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
+  },
+  contentDenseTop: {
+    paddingTop: spacing.xs,
   },
   title: {
     ...typography.title,

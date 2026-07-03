@@ -38,6 +38,11 @@ export type TeamSeasonData = {
 
 let seasonLoadPromise: Promise<EspnNormalizedGame[]> | null = null;
 
+/** Clear the session-level team schedule batch loader so the next load refetches. */
+export function resetSeasonGamesLoad(): void {
+  seasonLoadPromise = null;
+}
+
 /** Fetch all configured ESPN scoreboard weeks once per session and merge into cache. */
 export async function ensureSeasonGamesLoaded(): Promise<EspnNormalizedGame[]> {
   if (seasonLoadPromise) {
@@ -45,28 +50,34 @@ export async function ensureSeasonGamesLoaded(): Promise<EspnNormalizedGame[]> {
   }
 
   seasonLoadPromise = (async () => {
-    const existing = getAllCachedEspnGames();
-    const seen = new Set(existing.map((game) => game.id));
-    const collected: EspnNormalizedGame[] = [...existing];
+    try {
+      const existing = getAllCachedEspnGames();
+      const seen = new Set(existing.map((game) => game.id));
+      const collected: EspnNormalizedGame[] = [...existing];
 
-    const responses = await Promise.all(
-      SCORES_WEEK_OPTIONS.map((option) =>
-        espnScoresProvider.getWeekGames(option.id).catch(() => null),
-      ),
-    );
+      const responses = await Promise.all(
+        SCORES_WEEK_OPTIONS.map((option) =>
+          espnScoresProvider.getWeekGames(option.id).catch(() => null),
+        ),
+      );
 
-    for (const response of responses) {
-      if (!response) continue;
-      for (const game of response.data.games) {
-        if (seen.has(game.id)) continue;
-        seen.add(game.id);
-        collected.push(game);
+      for (const response of responses) {
+        if (!response) continue;
+        for (const game of response.data.games) {
+          if (seen.has(game.id)) continue;
+          seen.add(game.id);
+          collected.push(game);
+        }
       }
-    }
 
-    const merged = await mergeStaticRankingsOntoGames(collected);
-    registerEspnGames(merged.games);
-    return merged.games;
+      const merged = await mergeStaticRankingsOntoGames(collected);
+      registerEspnGames(merged.games);
+      return merged.games;
+    } catch (error) {
+      console.warn('[ensureSeasonGamesLoaded] failed:', error);
+      seasonLoadPromise = null;
+      return getAllCachedEspnGames();
+    }
   })();
 
   return seasonLoadPromise;

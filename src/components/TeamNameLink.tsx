@@ -31,47 +31,44 @@ export function TeamNameLink({
   const trimmedRecord = record?.trim();
 
   return (
-    <Pressable
-      accessibilityRole="link"
-      accessibilityLabel={
-        trimmedRecord ? `View ${name} team page, record ${trimmedRecord}` : `View ${name} team page`
-      }
-      onPress={() => router.push(buildTeamHref({ teamId, name }))}
-      style={styles.pressable}>
-      <View style={styles.labelRow}>
+    <View style={styles.container}>
+      <Pressable
+        accessibilityRole="link"
+        accessibilityLabel={
+          trimmedRecord ? `View ${name} team page, record ${trimmedRecord}` : `View ${name} team page`
+        }
+        onPress={() => router.push(buildTeamHref({ teamId, name }))}
+        style={styles.pressable}>
         <Text
           style={[styles.link, emphasized && styles.linkEmphasized, style]}
           numberOfLines={numberOfLines}
           ellipsizeMode="tail">
           {displayName}
         </Text>
-        {trimmedRecord ? (
-          <Text
-            style={[styles.record, emphasized && styles.linkEmphasized, style]}
-            numberOfLines={1}>
-            {' '}({trimmedRecord})
-          </Text>
-        ) : null}
-      </View>
-    </Pressable>
+      </Pressable>
+      {trimmedRecord ? (
+        <Text style={[styles.record, emphasized && styles.linkEmphasized, style]} numberOfLines={1}>
+          {' '}({trimmedRecord})
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  pressable: {
-    flex: 1,
-    minWidth: 0,
-  },
-  labelRow: {
+  container: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     minWidth: 0,
   },
+  pressable: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
   link: {
     ...typography.body,
     color: colors.text,
-    flexShrink: 1,
   },
   record: {
     ...typography.body,

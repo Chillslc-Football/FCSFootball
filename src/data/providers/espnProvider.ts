@@ -1,5 +1,12 @@
 import { fetchEspnJson } from '@/data/providers/espnFetch';
 import {
+  buildEspnEndpointCacheKey,
+  buildEspnWeekCacheKey,
+  getOrFetchEspnCached,
+  resolveEspnCacheTtlMs,
+  type EspnScoreboardCachePayload,
+} from '@/data/providers/espnCache';
+import {
   extractEspnScoreboardDate,
   parseEspnScoreboardNormalized,
   toRawRecord,
@@ -56,16 +63,83 @@ function mergeGamesById(games: EspnNormalizedGame[]): EspnNormalizedGame[] {
 
 async function fetchScoreboardGames(
   endpoint: string,
-  fetchOptions: FetchWithTimeoutOptions,
-): Promise<{ games: EspnNormalizedGame[]; raw: Record<string, unknown> }> {
-  const raw = await fetchEspnJson<unknown>(endpoint, fetchOptions);
+  fetchOptions: FetchWithTimeoutOptions & { forceRefresh?: boolean },
+): Promise<EspnScoreboardCachePayload> {
+  const cacheKey = buildEspnEndpointCacheKey(endpoint);
 
-  if (!isRecord(raw)) {
-    throw new Error('ESPN returned invalid data: expected a JSON object.');
+  return getOrFetchEspnCached(
+    cacheKey,
+    async () => {
+      const raw = await fetchEspnJson<unknown>(endpoint, fetchOptions);
+
+      if (!isRecord(raw)) {
+        throw new Error('ESPN returned invalid data: expected a JSON object.');
+      }
+
+      const parseResult = parseEspnScoreboardNormalized(raw);
+      return { games: parseResult.games, raw: toRawRecord(raw) };
+    },
+    {
+      forceRefresh: fetchOptions.forceRefresh,
+      ttlMs: (payload) => resolveEspnCacheTtlMs(payload.games),
+    },
+  );
+}
+
+async function loadWeekGamesPayload(
+  weekId: ScheduleWeekId,
+  fetchOptions: FetchWithTimeoutOptions & { forceRefresh?: boolean },
+): Promise<EspnWeekGamesPayload> {
+  const config = getScheduleWeekConfig(weekId);
+
+  if (config.fetchStrategy === 'week_query') {
+    const endpoint =
+      config.scoreboardUrl ??
+      (config.weekPresetId ? buildEspnWeekScoreboardUrl(config.weekPresetId) : undefined);
+
+    if (!endpoint) {
+      throw new Error(`No scoreboard URL configured for ${config.title}.`);
+    }
+
+    const { games, raw } = await fetchScoreboardGames(endpoint, fetchOptions);
+
+    return {
+      weekId,
+      weekLabel: config.displayLabel,
+      fetchStrategy: 'week_query',
+      fetchNotes: config.fetchNotes,
+      games,
+      endpoint,
+      raw,
+    };
   }
 
-  const parseResult = parseEspnScoreboardNormalized(raw);
-  return { games: parseResult.games, raw: toRawRecord(raw) };
+  const dates = config.dateRangeIso ?? [];
+  if (dates.length === 0) {
+    throw new Error(`No fetch configuration for ${config.title}.`);
+  }
+
+  const endpoints: string[] = [];
+  const mergedGames: EspnNormalizedGame[] = [];
+  const rawResponses: Record<string, unknown>[] = [];
+
+  for (const dateIso of dates) {
+    const endpoint = buildEspnFcsScoreboardUrl(dateIso);
+    endpoints.push(endpoint);
+    const { games, raw } = await fetchScoreboardGames(endpoint, fetchOptions);
+    mergedGames.push(...games);
+    rawResponses.push(raw);
+  }
+
+  return {
+    weekId,
+    weekLabel: config.displayLabel,
+    fetchStrategy: 'date_range',
+    fetchNotes: config.fetchNotes,
+    games: mergeGamesById(mergedGames),
+    endpoint: endpoints.join(' | '),
+    raw: { strategy: 'date_range', dates, responses: rawResponses },
+  };
 }
 
 /**
@@ -82,9 +156,10 @@ export class EspnScoresProviderImpl implements EspnScoresProvider {
     const start = Date.now();
     const dateIso = options?.dateIso ?? getLocalTodayIsoDate();
     const endpoint = buildEspnFcsScoreboardUrl(dateIso);
-    const fetchOptions: FetchWithTimeoutOptions = {
+    const fetchOptions: FetchWithTimeoutOptions & { forceRefresh?: boolean } = {
       signal: options?.signal,
       timeoutMs: options?.timeoutMs,
+      forceRefresh: options?.forceRefresh,
     };
 
     try {
@@ -116,68 +191,21 @@ export class EspnScoresProviderImpl implements EspnScoresProvider {
     options?: EspnFetchOptions,
   ): Promise<ProviderResponse<EspnWeekGamesPayload>> {
     const start = Date.now();
-    const config = getScheduleWeekConfig(weekId);
-    const fetchOptions: FetchWithTimeoutOptions = {
+    const fetchOptions: FetchWithTimeoutOptions & { forceRefresh?: boolean } = {
       signal: options?.signal,
       timeoutMs: options?.timeoutMs,
+      forceRefresh: options?.forceRefresh,
     };
 
     try {
-      if (config.fetchStrategy === 'week_query') {
-        const endpoint =
-          config.scoreboardUrl ??
-          (config.weekPresetId ? buildEspnWeekScoreboardUrl(config.weekPresetId) : undefined);
-
-        if (!endpoint) {
-          throw new Error(`No scoreboard URL configured for ${config.title}.`);
-        }
-
-        const { games, raw } = await fetchScoreboardGames(endpoint, fetchOptions);
-
-        const payload: EspnWeekGamesPayload = {
-          weekId,
-          weekLabel: config.displayLabel,
-          fetchStrategy: 'week_query',
-          fetchNotes: config.fetchNotes,
-          games,
-          endpoint,
-          raw,
-        };
-
-        return {
-          providerId: this.id,
-          durationMs: Date.now() - start,
-          timestamp: new Date().toISOString(),
-          data: payload,
-        };
-      }
-
-      const dates = config.dateRangeIso ?? [];
-      if (dates.length === 0) {
-        throw new Error(`No fetch configuration for ${config.title}.`);
-      }
-
-      const endpoints: string[] = [];
-      const mergedGames: EspnNormalizedGame[] = [];
-      const rawResponses: Record<string, unknown>[] = [];
-
-      for (const dateIso of dates) {
-        const endpoint = buildEspnFcsScoreboardUrl(dateIso);
-        endpoints.push(endpoint);
-        const { games, raw } = await fetchScoreboardGames(endpoint, fetchOptions);
-        mergedGames.push(...games);
-        rawResponses.push(raw);
-      }
-
-      const payload: EspnWeekGamesPayload = {
-        weekId,
-        weekLabel: config.displayLabel,
-        fetchStrategy: 'date_range',
-        fetchNotes: config.fetchNotes,
-        games: mergeGamesById(mergedGames),
-        endpoint: endpoints.join(' | '),
-        raw: { strategy: 'date_range', dates, responses: rawResponses },
-      };
+      const payload = await getOrFetchEspnCached(
+        buildEspnWeekCacheKey(weekId),
+        () => loadWeekGamesPayload(weekId, fetchOptions),
+        {
+          forceRefresh: options?.forceRefresh,
+          ttlMs: (data) => resolveEspnCacheTtlMs(data.games),
+        },
+      );
 
       return {
         providerId: this.id,

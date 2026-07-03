@@ -6,17 +6,14 @@ import { ConferenceDropdown } from '@/components/ConferenceDropdown';
 import { ScheduleGameCard } from '@/components/ScheduleGameCard';
 import { Screen } from '@/components/Screen';
 import { SegmentedControl } from '@/components/SegmentedControl';
+import { useSelectedConference } from '@/data/conferences/SelectedConferenceContext';
 import { espnScoresProvider } from '@/data/providers/espnProvider';
 import { groupScheduleGamesByDate } from '@/data/providers/espnScheduleMapper';
 import { mergeStaticRankingsOntoGames } from '@/data/providers/rankingMerge';
 import { registerEspnGames } from '@/data/teams/teamGamesStore';
 import type { RankingMergeResult } from '@/data/providers/rankingMerge';
 import { SCHEDULE_WEEK_OPTIONS } from '@/data/providers/espnScheduleWeek';
-import {
-  DEFAULT_CONFERENCE_ID,
-  getConferenceLabel,
-  type ConferenceId,
-} from '@/data/conferences/conferenceList';
+import { getConferenceLabel } from '@/data/conferences/conferenceList';
 import { colors, spacing, typography } from '@/theme';
 import type { ScheduleWeekId } from '@/types';
 
@@ -29,7 +26,7 @@ const VIEW_OPTIONS: { id: ConferencesView; label: string }[] = [
 ];
 
 export default function ConferencesScreen() {
-  const [selectedConference, setSelectedConference] = useState<ConferenceId>(DEFAULT_CONFERENCE_ID);
+  const { selectedConference, setSelectedConference } = useSelectedConference();
   const [activeView, setActiveView] = useState<ConferencesView>('schedule');
   const [selectedWeek, setSelectedWeek] = useState<ScheduleWeekId>('week-1');
   const [loadState, setLoadState] = useState<LoadState>('loading');
