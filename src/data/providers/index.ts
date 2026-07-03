@@ -31,13 +31,33 @@ export {
   MockEspnProvider,
 } from './mockEspnProvider';
 export {
+  compareEspnWeekQueryFormats,
+  ESPN_SCOREBOARD_BASE,
+  ESPN_WEEK_FORMAT_VARIANTS,
+  ESPN_WEEK_QUERY_PRESETS,
+  buildEspnWeekScoreboardUrl,
+} from './espnWeekQuery';
+export type {
+  EspnFormatCompareResult,
+  EspnWeekPresetId,
+  EspnWeekQueryPreset,
+} from './espnWeekQuery';
+export {
   ESPN_FCS_SCOREBOARD_URL,
+  buildEspnFcsScoreboardUrl,
+  formatEspnDateParam,
+  getLocalTodayIsoDate,
   EspnScoresProviderImpl,
   espnScoresProvider,
   espnProvider,
   EspnProvider,
 } from './espnProvider';
 export { ESPN_FETCH_TIMEOUT_MS, EspnFetchError, fetchEspnJson } from './espnFetch';
+export {
+  formatEspnResponseSize,
+  testEspnConnectivity,
+} from './espnConnectivity';
+export type { EspnConnectivityResult } from './espnConnectivity';
 export {
   NcaaRankingsNotConnectedError,
   NcaaRankingsProviderImpl,
@@ -48,4 +68,22 @@ export type { RankingMergeResult } from './rankingMerge';
 export {
   extractEspnScoreboardDate,
   parseEspnScoreboard,
+  parseEspnScoreboardNormalized,
+  parseFirstEspnGame,
+  summarizeParsedEspnGames,
+  diagnoseEspnScoreboard,
 } from './espnParser';
+export type {
+  EspnParsedGamesSummary,
+  EspnScoreboardDiagnostics,
+  EspnScoreboardParseResult,
+  ParseFirstEspnGameResult,
+} from './espnParser';
+export {
+  filterUpsetWatchGames,
+  formatKickoffTime,
+  pickFeaturedGame,
+  toGameStatus,
+  toScoreboardGame,
+  toUpsetWatchGame,
+} from './espnTodayMapper';

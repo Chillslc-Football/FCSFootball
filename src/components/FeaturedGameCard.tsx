@@ -1,11 +1,32 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { colors, spacing, typography } from '@/theme';
-import type { ScoreboardGame, ScoreboardTeam } from '@/types';
+import type { GameStatus, ScoreboardGame, ScoreboardTeam } from '@/types';
 
 type FeaturedGameCardProps = {
   game: ScoreboardGame;
   highlightTeamId?: string;
+};
+
+const STATUS_LABEL: Record<GameStatus, string> = {
+  live: 'LIVE',
+  upcoming: 'UPCOMING',
+  final: 'FINAL',
+};
+
+const STATUS_DETAIL_STYLE: Record<GameStatus, { badge: object; text: object }> = {
+  live: {
+    badge: { backgroundColor: 'rgba(239, 68, 68, 0.15)' },
+    text: { color: colors.error },
+  },
+  upcoming: {
+    badge: { backgroundColor: 'rgba(201, 162, 39, 0.15)' },
+    text: { color: colors.primary },
+  },
+  final: {
+    badge: { backgroundColor: colors.surfaceElevated },
+    text: { color: colors.textMuted },
+  },
 };
 
 function TeamLine({
@@ -37,28 +58,34 @@ function TeamLine({
 }
 
 export function FeaturedGameCard({ game, highlightTeamId }: FeaturedGameCardProps) {
-  const { awayTeam, homeTeam, awayScore, homeScore, statusDetail, broadcast } = game;
+  const { awayTeam, homeTeam, awayScore, homeScore, status, statusDetail, broadcast } = game;
+  const statusStyle = STATUS_DETAIL_STYLE[status];
+  const showScores = status === 'live' || status === 'final';
 
   return (
     <View style={styles.card}>
       <View style={styles.topRow}>
         <Text style={styles.featuredLabel}>Featured</Text>
-        <View style={styles.liveBadge}>
-          <Text style={styles.liveText}>LIVE · {statusDetail}</Text>
+        <View style={[styles.statusBadge, statusStyle.badge]}>
+          <Text style={[styles.statusBadgeText, statusStyle.text]}>
+            {STATUS_LABEL[status]} · {statusDetail}
+          </Text>
         </View>
       </View>
 
-      <Text style={styles.matchupLabel}>Brawl of the Wild</Text>
+      <Text style={styles.matchupLabel}>
+        {awayTeam.name} at {homeTeam.name}
+      </Text>
 
       <TeamLine
         team={awayTeam}
-        score={awayScore}
+        score={showScores ? awayScore : undefined}
         highlighted={awayTeam.id === highlightTeamId}
       />
       <Text style={styles.atLabel}>at</Text>
       <TeamLine
         team={homeTeam}
-        score={homeScore}
+        score={showScores ? homeScore : undefined}
         highlighted={homeTeam.id === highlightTeamId}
       />
 
@@ -91,10 +118,18 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   liveBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
     borderRadius: 6,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
+  },
+  statusBadge: {
+    borderRadius: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  statusBadgeText: {
+    ...typography.label,
+    fontSize: 10,
   },
   liveText: {
     ...typography.label,

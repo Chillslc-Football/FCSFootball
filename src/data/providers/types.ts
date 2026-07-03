@@ -1,4 +1,4 @@
-import type { EspnTodayGamesPayload, RankedTeam, ScoreboardGame } from '@/types';
+import type { EspnNormalizedGame, EspnTodayGamesPayload, RankedTeam, ScoreboardGame } from '@/types';
 
 export type ProviderFetchStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -12,6 +12,8 @@ export type ProviderResponse<T = unknown> = {
 export type EspnFetchOptions = {
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** YYYY-MM-DD override for scoreboard date filter (dev / preview). */
+  dateIso?: string;
 };
 
 /** Official FCS Top 25 page — rankings source of truth (not ESPN). */
@@ -58,6 +60,10 @@ export type RankingMergeInput = {
   rankings: RankedTeam[];
   games: ScoreboardGame[];
 };
+
+/** Result of parsing all events from an ESPN FCS scoreboard response */
+export type { EspnScoreboardParseResult } from '@/data/providers/espnParser';
+export type { EspnNormalizedGame } from '@/types';
 
 /**
  * @deprecated Split responsibilities use EspnScoresProvider + NcaaRankingsProvider.

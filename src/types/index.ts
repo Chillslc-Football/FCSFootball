@@ -12,6 +12,45 @@ export type Game = {
   status: 'scheduled' | 'in_progress' | 'final';
 };
 
+export type TeamDivision = 'fcs' | 'fbs';
+
+/** FCS/FBS hint from ESPN team or group metadata — unknown when not present */
+export type EspnDivisionHint = TeamDivision | 'unknown';
+
+/**
+ * Normalized ESPN scoreboard game — dev/provider parsing shape.
+ * Phase 6E: full event fields without wiring to production screens.
+ */
+export type EspnNormalizedGame = {
+  id: string;
+  awayTeam: string;
+  awayTeamId?: string;
+  awayScore?: number;
+  awayDivision?: EspnDivisionHint;
+  awayConference?: string;
+  homeTeam: string;
+  homeTeamId?: string;
+  homeScore?: number;
+  homeDivision?: EspnDivisionHint;
+  homeConference?: string;
+  /** Human-readable ESPN status description */
+  status: string;
+  /** Mapped internal Game.status when ESPN state is recognized */
+  normalizedStatus?: Game['status'];
+  startTime: string;
+  broadcast?: string;
+  espnLink?: string;
+  /** Venue name and location when ESPN provides it */
+  venue?: string;
+  /** Raw ESPN group / conference context when available */
+  groupInfo?: string;
+  /** Core internal Game when required ids + status are present */
+  game?: Game;
+};
+
+/** @deprecated Use EspnNormalizedGame */
+export type EspnTodayGame = EspnNormalizedGame;
+
 export type GameStatus = 'live' | 'upcoming' | 'final';
 
 export type ScoreboardTeam = {
@@ -60,8 +99,6 @@ export type RankedTeam = {
   nextGame?: NextGame;
 };
 
-export type TeamDivision = 'fcs' | 'fbs';
-
 export type ScheduleTeam = {
   id: string;
   name: string;
@@ -109,23 +146,6 @@ export type UpsetWatchGame = {
   statusDetail: string;
   alertLabel: UpsetAlertLabel;
   broadcast: string;
-};
-
-/** Parsed game shape for ESPN provider dev testing */
-export type EspnTodayGame = {
-  id: string;
-  awayTeam: string;
-  homeTeam: string;
-  awayTeamId?: string;
-  homeTeamId?: string;
-  awayScore?: number;
-  homeScore?: number;
-  startTime: string;
-  status: string;
-  broadcast?: string;
-  espnLink?: string;
-  /** Normalized internal Game when parse succeeds */
-  game?: Game;
 };
 
 export type EspnTodayGamesPayload = {
