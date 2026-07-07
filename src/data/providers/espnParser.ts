@@ -105,7 +105,8 @@ function resolveTeamMetadata(
   const conferenceId = parseTeamConferenceId(team);
   const lookup = lookupEspnConference(conferenceId);
   let division = parseTeamDivisionHint(team, eventGroups);
-  const conference = parseTeamConference(team) ?? lookup?.name ?? resolveEspnConferenceName(conferenceId);
+  const conference =
+    lookup?.name ?? parseTeamConference(team) ?? resolveEspnConferenceName(conferenceId);
   const abbreviation = parseEspnTeamAbbreviation(team);
   const logoUrl = parseEspnTeamLogoUrl(team);
 
@@ -202,6 +203,29 @@ function parseCompetitorRecord(competitor: Record<string, unknown>): string | un
   return undefined;
 }
 
+function parseEspnTop25RankFromRecord(record: Record<string, unknown>): number | undefined {
+  const curated = isRecord(record.curatedRank) ? record.curatedRank : undefined;
+  const fromCurated = curated ? asNumber(curated.current) : undefined;
+  if (fromCurated != null && fromCurated >= 1 && fromCurated <= 25) {
+    return fromCurated;
+  }
+
+  const rank = asNumber(record.rank);
+  if (rank != null && rank >= 1 && rank <= 25) {
+    return rank;
+  }
+
+  return undefined;
+}
+
+function parseCompetitorCuratedRank(competitor: Record<string, unknown>): number | undefined {
+  const team = isRecord(competitor.team) ? competitor.team : undefined;
+  return (
+    parseEspnTop25RankFromRecord(competitor) ??
+    (team ? parseEspnTop25RankFromRecord(team) : undefined)
+  );
+}
+
 function parseCompetitor(competitor: unknown): {
   homeAway?: string;
   teamId?: string;
@@ -212,6 +236,7 @@ function parseCompetitor(competitor: unknown): {
   abbreviation?: string;
   score?: number;
   record?: string;
+  curatedRank?: number;
   recordsRaw?: unknown;
   team?: Record<string, unknown>;
 } {
@@ -230,6 +255,7 @@ function parseCompetitor(competitor: unknown): {
     abbreviation: identity?.abbreviation ?? parseEspnTeamAbbreviation(team),
     score: asNumber(competitor.score),
     record: parseCompetitorRecord(competitor),
+    curatedRank: parseCompetitorCuratedRank(competitor),
     recordsRaw: getCompetitorRecordsRaw(competitor),
     team,
   };
@@ -394,6 +420,8 @@ function parseEvent(event: unknown): EspnNormalizedGame | null {
   let homeRecord: string | undefined;
   let awayRecordsRaw: unknown;
   let homeRecordsRaw: unknown;
+  let awayEspnCuratedRank: number | undefined;
+  let homeEspnCuratedRank: number | undefined;
 
   let awayConferenceId: string | undefined;
   let homeConferenceId: string | undefined;
@@ -411,6 +439,7 @@ function parseEvent(event: unknown): EspnNormalizedGame | null {
       awayScore = parsed.score;
       awayRecord = parsed.record;
       awayRecordsRaw = parsed.recordsRaw;
+      awayEspnCuratedRank = parsed.curatedRank;
       awayDivision = metadata.division;
       awayConference = metadata.conference;
       awayConferenceId = metadata.conferenceId;
@@ -425,6 +454,7 @@ function parseEvent(event: unknown): EspnNormalizedGame | null {
       homeScore = parsed.score;
       homeRecord = parsed.record;
       homeRecordsRaw = parsed.recordsRaw;
+      homeEspnCuratedRank = parsed.curatedRank;
       homeDivision = metadata.division;
       homeConference = metadata.conference;
       homeConferenceId = metadata.conferenceId;
@@ -439,13 +469,18 @@ function parseEvent(event: unknown): EspnNormalizedGame | null {
   if (!awayTeam || !homeTeam) return null;
 
   const statusObj = isRecord(event.status) ? event.status : undefined;
-  const statusType = statusObj && isRecord(statusObj.type) ? statusObj.type : undefined;
+  const competitionStatusObj = isRecord(competition.status) ? competition.status : undefined;
+  const resolvedStatusObj = statusObj ?? competitionStatusObj;
+  const statusType =
+    resolvedStatusObj && isRecord(resolvedStatusObj.type) ? resolvedStatusObj.type : undefined;
   const statusName =
     (statusType && asString(statusType.description)) ??
     (statusType && asString(statusType.name)) ??
     (statusType && asString(statusType.state)) ??
     'Unknown';
   const statusState = statusType ? asString(statusType.state) : undefined;
+  const statusShortDetail = statusType ? asString(statusType.shortDetail) : undefined;
+  const statusDetailText = statusType ? asString(statusType.detail) : undefined;
 
   const startTime = asString(event.date) ?? 'TBD';
   const broadcast = parseBroadcast(competition);
@@ -505,8 +540,12 @@ function parseEvent(event: unknown): EspnNormalizedGame | null {
     homeRecord,
     awayRecordsRaw,
     homeRecordsRaw,
+    awayEspnCuratedRank,
+    homeEspnCuratedRank,
     startTime,
     status: statusName,
+    statusShortDetail,
+    statusDetail: statusDetailText,
     normalizedStatus,
     broadcast,
     espnLink,

@@ -1,10 +1,16 @@
 import {
+  fetchEspnApTop25Lookup,
+  isEspnFbsTop25Rank,
+  resolveEspnFbsTeamRank,
+  type EspnFbsRankLookup,
+} from '@/data/providers/espnFbsRankings';
+import {
   buildRankLookup,
   lookupTeamRank,
   registerAliasKeys,
 } from '@/data/providers/teamNameMatch';
 import { ncaaRankingsProvider } from '@/data/providers/ncaaRankingsProvider';
-import type { RankingMergeInput } from '@/data/providers/types';
+import type { RankingMergeInput, ScoresLeagueFilterId } from '@/data/providers/types';
 import type { EspnNormalizedGame, RankedTeam } from '@/types';
 
 export type RankingMergeResult = {
@@ -27,6 +33,44 @@ function applyRankFields(
     awayIsRanked: awayRank != null,
     homeIsRanked: homeRank != null,
   };
+}
+
+function resolveGameSideFbsRank(
+  game: EspnNormalizedGame,
+  side: 'away' | 'home',
+  lookup: EspnFbsRankLookup,
+): number | undefined {
+  const parsedCurated =
+    side === 'away' ? game.awayEspnCuratedRank : game.homeEspnCuratedRank;
+  const teamId = side === 'away' ? game.awayTeamId : game.homeTeamId;
+  return resolveEspnFbsTeamRank(teamId, parsedCurated, lookup);
+}
+
+function applyEspnFbsRankingsToGames(
+  games: EspnNormalizedGame[],
+  lookup: EspnFbsRankLookup,
+): { games: EspnNormalizedGame[]; gamesWithRankMatches: number; matchedRankCount: number } {
+  let gamesWithRankMatches = 0;
+  let matchedRankCount = 0;
+
+  const mergedGames = games.map((game) => {
+    const awayRank = resolveGameSideFbsRank(game, 'away', lookup);
+    const homeRank = resolveGameSideFbsRank(game, 'home', lookup);
+
+    if (awayRank != null) matchedRankCount++;
+    if (homeRank != null) matchedRankCount++;
+    if (awayRank != null || homeRank != null) {
+      gamesWithRankMatches++;
+    }
+
+    return {
+      ...applyRankFields(game, awayRank, homeRank),
+      awayEspnCuratedRank: awayRank ?? game.awayEspnCuratedRank,
+      homeEspnCuratedRank: homeRank ?? game.homeEspnCuratedRank,
+    };
+  });
+
+  return { games: mergedGames, gamesWithRankMatches, matchedRankCount };
 }
 
 /**
@@ -106,4 +150,81 @@ export async function mergeStaticRankingsOntoGames(
     rankings: response.data.teams,
     games,
   });
+}
+
+/** Apply ESPN AP/curated ranks (1–25) onto FBS games. */
+export async function applyEspnFbsRankings(
+  games: EspnNormalizedGame[],
+): Promise<RankingMergeResult> {
+  const lookup = await fetchEspnApTop25Lookup();
+  const { games: mergedGames, gamesWithRankMatches, matchedRankCount } =
+    applyEspnFbsRankingsToGames(games, lookup);
+
+  return {
+    games: mergedGames,
+    rankedTeamsLoaded: lookup.byTeamId.size,
+    gamesWithRankMatches,
+    matchedRankCount,
+    unmatchedRankedTeams: [],
+  };
+}
+
+function overlayEspnFbsRankingsOnFbsTeams(
+  games: EspnNormalizedGame[],
+  lookup: EspnFbsRankLookup,
+): EspnNormalizedGame[] {
+  return games.map((game) => {
+    const awayRank =
+      game.awayDivision === 'fbs'
+        ? resolveGameSideFbsRank(game, 'away', lookup) ?? game.awayRank
+        : game.awayRank;
+    const homeRank =
+      game.homeDivision === 'fbs'
+        ? resolveGameSideFbsRank(game, 'home', lookup) ?? game.homeRank
+        : game.homeRank;
+
+    return {
+      ...applyRankFields(game, awayRank, homeRank),
+      awayEspnCuratedRank: awayRank ?? game.awayEspnCuratedRank,
+      homeEspnCuratedRank: homeRank ?? game.homeEspnCuratedRank,
+    };
+  });
+}
+
+/** Scores tab rankings — NCAA for FCS, ESPN AP/curated for FBS. */
+export async function mergeScoresTabRankings(
+  games: EspnNormalizedGame[],
+  league: ScoresLeagueFilterId,
+): Promise<RankingMergeResult> {
+  if (league === 'fbs') {
+    return applyEspnFbsRankings(games);
+  }
+
+  const ncaaResult = await mergeStaticRankingsOntoGames(games);
+
+  if (league === 'fcs') {
+    return ncaaResult;
+  }
+
+  const lookup = await fetchEspnApTop25Lookup();
+
+  return {
+    ...ncaaResult,
+    games: overlayEspnFbsRankingsOnFbsTeams(ncaaResult.games, lookup),
+  };
+}
+
+/** @deprecated Use applyEspnFbsRankings */
+export function applyEspnCuratedRanks(games: EspnNormalizedGame[]): RankingMergeResult {
+  const lookup: EspnFbsRankLookup = { pollName: 'AP Top 25', byTeamId: new Map() };
+  const { games: mergedGames, gamesWithRankMatches, matchedRankCount } =
+    applyEspnFbsRankingsToGames(games, lookup);
+
+  return {
+    games: mergedGames,
+    rankedTeamsLoaded: 0,
+    gamesWithRankMatches,
+    matchedRankCount,
+    unmatchedRankedTeams: [],
+  };
 }

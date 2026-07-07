@@ -125,14 +125,14 @@ export function FavoriteTeamRow({ favorite, allGames, isLast = false }: Favorite
             </Text>
             <View style={styles.nextMetaRow}>
               <Text style={styles.nextMetaText}>
-                {formatGameKickoffDate(nextGameInfo.game.startTime ?? '')}
+                {formatGameKickoffDate(nextGameInfo.game)}
               </Text>
               <Text style={[styles.nextMetaText, isLive && styles.nextMetaLive]}>
                 {isLive
                   ? nextGameInfo.game.status
                   : nextGameInfo.game.normalizedStatus === 'final'
                     ? 'Final'
-                    : formatGameKickoffTime(nextGameInfo.game.startTime)}
+                    : formatGameKickoffTime(nextGameInfo.game)}
               </Text>
             </View>
             <CompactWatchLabel game={nextGameInfo.game} />

@@ -121,8 +121,8 @@ export function TeamScheduleGameRow({ game, isLast = false }: TeamScheduleGameRo
     ? String(game.homeScore ?? '—')
     : game.homeRecord?.trim() || undefined;
 
-  const dateLabel = formatGameKickoffDate(game.startTime);
-  const kickoffLabel = formatGameKickoffTime(game.startTime);
+  const dateLabel = formatGameKickoffDate(game);
+  const kickoffLabel = formatGameKickoffTime(game);
   const isInProgress = game.normalizedStatus === 'in_progress';
   const isFinal = game.normalizedStatus === 'final';
 

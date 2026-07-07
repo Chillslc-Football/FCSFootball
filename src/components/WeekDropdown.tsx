@@ -13,7 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DROPDOWN_CHEVRON_SIZE, dropdownStyles } from '@/components/dropdownStyles';
-import { getScheduleWeekLabel, SCORES_WEEK_OPTIONS } from '@/data/providers/espnScheduleWeek';
+import { getScoresWeekDisplayLabel, SCORES_WEEK_OPTIONS } from '@/data/providers/espnScheduleWeek';
 import { colors, spacing } from '@/theme';
 import type { ScheduleWeekId } from '@/types';
 
@@ -55,7 +55,7 @@ function WeekOptionRow({
 export function WeekDropdown({ selected, onSelect, style }: WeekDropdownProps) {
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
-  const selectedLabel = getScheduleWeekLabel(selected);
+  const selectedLabel = getScoresWeekDisplayLabel(selected);
 
   return (
     <>

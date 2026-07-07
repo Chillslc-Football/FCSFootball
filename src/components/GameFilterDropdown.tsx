@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
+  FlatList,
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   Text,
   View,
+  type ListRenderItem,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -14,10 +15,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DROPDOWN_CHEVRON_SIZE, dropdownStyles } from '@/components/dropdownStyles';
 import {
+  findScoresFilterMenuIndex,
+  FLAT_SCORES_FILTER_MENU,
   getScoresFilterLabel,
-  SCORES_FILTER_MENU,
+  getScoresFilterMenuItemHeight,
+  type FlatScoresFilterItem,
   type ScoresFilterId,
-  type ScoresFilterMenuEntry,
 } from '@/data/scores/scoresFilters';
 import { colors, spacing } from '@/theme';
 
@@ -62,51 +65,91 @@ function FilterSectionHeader({ label }: { label: string }) {
   );
 }
 
-function renderMenuEntry(
-  entry: ScoresFilterMenuEntry,
-  selected: ScoresFilterId,
-  onSelect: (id: ScoresFilterId) => void,
-  onClose: () => void,
-  key: string,
+function scrollFilterListToIndex(
+  listRef: RefObject<FlatList<FlatScoresFilterItem> | null>,
+  index: number,
+  animated = false,
 ) {
-  if (entry.type === 'option') {
-    const { option } = entry;
-    return (
-      <FilterOptionRow
-        key={key}
-        label={option.label}
-        selected={selected === option.id}
-        onPress={() => {
-          onSelect(option.id);
-          onClose();
-        }}
-      />
-    );
-  }
+  if (index < 0) return;
 
-  return (
-    <View key={key}>
-      <FilterSectionHeader label={entry.label} />
-      {entry.options.map((option) => (
-        <FilterOptionRow
-          key={option.id}
-          label={option.label}
-          selected={selected === option.id}
-          onPress={() => {
-            onSelect(option.id);
-            onClose();
-          }}
-        />
-      ))}
-    </View>
-  );
+  listRef.current?.scrollToIndex({
+    index,
+    animated,
+    viewPosition: 0.5,
+  });
 }
 
 export function GameFilterDropdown({ selected, onSelect, style }: GameFilterDropdownProps) {
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
+  const listRef = useRef<FlatList<FlatScoresFilterItem>>(null);
 
   const selectedLabel = getScoresFilterLabel(selected);
+  const selectedIndex = useMemo(
+    () => findScoresFilterMenuIndex(FLAT_SCORES_FILTER_MENU, selected),
+    [selected],
+  );
+
+  const getItemLayout = useCallback(
+    (_data: ArrayLike<FlatScoresFilterItem> | null | undefined, index: number) => {
+      let offset = 0;
+      for (let i = 0; i < index; i++) {
+        const item = FLAT_SCORES_FILTER_MENU[i];
+        if (item) offset += getScoresFilterMenuItemHeight(item);
+      }
+
+      const item = FLAT_SCORES_FILTER_MENU[index];
+      const length = item ? getScoresFilterMenuItemHeight(item) : 0;
+
+      return { length, offset, index };
+    },
+    [],
+  );
+
+  const handleScrollToIndexFailed = useCallback(
+    (info: { index: number; averageItemLength: number }) => {
+      const offset = Math.max(0, info.averageItemLength * info.index);
+      listRef.current?.scrollToOffset({ offset, animated: false });
+
+      requestAnimationFrame(() => {
+        scrollFilterListToIndex(listRef, info.index, false);
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!open || selectedIndex < 0) return;
+
+    const frame = requestAnimationFrame(() => {
+      scrollFilterListToIndex(listRef, selectedIndex, false);
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [open, selectedIndex]);
+
+  const closeMenu = useCallback(() => setOpen(false), []);
+
+  const renderItem = useCallback<ListRenderItem<FlatScoresFilterItem>>(
+    ({ item }) => {
+      if (item.type === 'section-header') {
+        return <FilterSectionHeader label={item.label} />;
+      }
+
+      const isSelected = selected === item.option.id;
+      return (
+        <FilterOptionRow
+          label={item.option.label}
+          selected={isSelected}
+          onPress={() => {
+            onSelect(item.option.id);
+            closeMenu();
+          }}
+        />
+      );
+    },
+    [closeMenu, onSelect, selected],
+  );
 
   return (
     <>
@@ -131,38 +174,42 @@ export function GameFilterDropdown({ selected, onSelect, style }: GameFilterDrop
         animationType="slide"
         transparent
         statusBarTranslucent={Platform.OS === 'android'}
-        onRequestClose={() => setOpen(false)}>
+        onRequestClose={closeMenu}>
         <View style={dropdownStyles.modalRoot}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Close filter menu"
             style={dropdownStyles.backdrop}
-            onPress={() => setOpen(false)}
+            onPress={closeMenu}
           />
 
           <View style={[dropdownStyles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
             <View style={dropdownStyles.sheetHandle} />
             <View style={dropdownStyles.sheetHeader}>
-              <Text style={dropdownStyles.sheetTitle}>Filter games</Text>
+              <Text style={dropdownStyles.sheetTitle}>League & conference</Text>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Close"
                 hitSlop={8}
-                onPress={() => setOpen(false)}
+                onPress={closeMenu}
                 style={dropdownStyles.closeButton}>
                 <Ionicons name="close" size={22} color={colors.textSecondary} />
               </Pressable>
             </View>
 
-            <ScrollView
+            <FlatList
+              ref={listRef}
+              data={FLAT_SCORES_FILTER_MENU}
+              keyExtractor={(item) => item.key}
+              renderItem={renderItem}
               style={dropdownStyles.sheetScroll}
               contentContainerStyle={dropdownStyles.sheetScrollContent}
               showsVerticalScrollIndicator={false}
-              bounces={false}>
-              {SCORES_FILTER_MENU.map((entry, index) =>
-                renderMenuEntry(entry, selected, onSelect, () => setOpen(false), `filter-${index}`),
-              )}
-            </ScrollView>
+              bounces={false}
+              initialScrollIndex={selectedIndex >= 0 ? selectedIndex : undefined}
+              getItemLayout={getItemLayout}
+              onScrollToIndexFailed={handleScrollToIndexFailed}
+            />
           </View>
         </View>
       </Modal>

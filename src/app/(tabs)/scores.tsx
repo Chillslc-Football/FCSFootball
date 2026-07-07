@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -11,16 +11,21 @@ import { ScoresGameCard } from '@/components/ScoresGameCard';
 import { Screen } from '@/components/Screen';
 import { WeekDropdown } from '@/components/WeekDropdown';
 import { espnScoresProvider } from '@/data/providers/espnProvider';
-import { mergeStaticRankingsOntoGames } from '@/data/providers/rankingMerge';
+import { mergeScoresTabRankings } from '@/data/providers/rankingMerge';
 import {
-  prioritizeFavoriteScoreGames,
+  prioritizeFavoriteGamesWithinOrder,
 } from '@/data/scores/prioritizeFavoriteScoreGames';
+import {
+  useScoresLiveRefresh,
+  type ScoresSilentRefreshOptions,
+} from '@/data/scores/useScoresLiveRefresh';
 import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
 import { registerEspnGames } from '@/data/teams/teamGamesStore';
 import {
   applyScoresFilter,
   DEFAULT_SCORES_FILTER,
   getScoresFilterSupport,
+  resolveScoresLeagueFromFilter,
   type ScoresFilterId,
 } from '@/data/scores/scoresFilters';
 import { colors, spacing, typography } from '@/theme';
@@ -65,52 +70,61 @@ export default function ScoresScreen() {
   const { favorites, loaded: favoritesLoaded } = useFavoriteTeams();
   const [weekId, setWeekId] = useState<ScheduleWeekId>(DEFAULT_SCORES_WEEK);
   const [filterId, setFilterId] = useState<ScoresFilterId>(DEFAULT_SCORES_FILTER);
+  const leagueFilter = useMemo(() => resolveScoresLeagueFromFilter(filterId), [filterId]);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [games, setGames] = useState<EspnNormalizedGame[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sourceLabel, setSourceLabel] = useState('');
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadGames = useCallback(async (options?: ScoresSilentRefreshOptions) => {
+    const silent = options?.silent ?? false;
 
-    async function loadGames() {
+    if (!silent) {
       setLoadState('loading');
       setErrorMessage(null);
-
-      try {
-        const response = await espnScoresProvider.getWeekGames(weekId);
-        if (cancelled) return;
-
-        const merged = await mergeStaticRankingsOntoGames(response.data.games);
-        if (cancelled) return;
-
-        setGames(merged.games);
-        registerEspnGames(merged.games);
-        setSourceLabel(`${response.data.weekLabel} · ESPN scoreboard`);
-        setLoadState('success');
-      } catch (err) {
-        if (cancelled) return;
-        setGames([]);
-        setErrorMessage(
-          err instanceof Error ? err.message : 'Could not load FCS scores from ESPN.',
-        );
-        setLoadState('error');
-      }
     }
 
-    void loadGames();
+    try {
+      const response = await espnScoresProvider.getWeekGames(weekId, {
+        league: leagueFilter,
+        forceRefresh: options?.forceRefresh,
+      });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [weekId]);
+      const merged = await mergeScoresTabRankings(response.data.games, leagueFilter);
+
+      setGames(merged.games);
+      registerEspnGames(merged.games);
+      setSourceLabel(`${response.data.weekLabel} · ESPN scoreboard`);
+      setLoadState('success');
+    } catch (err) {
+      if (silent) {
+        return;
+      }
+
+      setGames([]);
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Could not load scores from ESPN.',
+      );
+      setLoadState('error');
+    }
+  }, [weekId, leagueFilter]);
+
+  useEffect(() => {
+    void loadGames();
+  }, [loadGames]);
 
   const filterSupport = getScoresFilterSupport(filterId);
 
   const filteredGames = useMemo(
-    () => applyScoresFilter(games, filterId),
-    [games, filterId],
+    () => applyScoresFilter(games, filterId, { league: leagueFilter }),
+    [games, filterId, leagueFilter],
   );
+
+  useScoresLiveRefresh({
+    visibleGames: filteredGames,
+    loadGames,
+    enabled: loadState === 'success',
+  });
 
   const dateGroups = useMemo(() => {
     const baseGroups = groupScoresByDate(filteredGames);
@@ -118,17 +132,10 @@ export default function ScoresScreen() {
       return baseGroups;
     }
 
-    const orderedGames = baseGroups.flatMap((group) => group.games);
-    const { favoriteGames, otherGames } = prioritizeFavoriteScoreGames(orderedGames, favorites);
-
-    if (favoriteGames.length === 0) {
-      return baseGroups;
-    }
-
-    return [
-      { date: '__favorites__', label: '', games: favoriteGames },
-      ...groupScoresByDate(otherGames),
-    ];
+    return baseGroups.map((group) => ({
+      ...group,
+      games: prioritizeFavoriteGamesWithinOrder(group.games, favorites),
+    }));
   }, [filteredGames, favorites, favoritesLoaded]);
 
   const isPlaceholderFilter = filterSupport === 'placeholder';
@@ -139,14 +146,14 @@ export default function ScoresScreen() {
   return (
     <Screen denseTop>
       <View style={styles.dropdownStack}>
-        <GameFilterDropdown selected={filterId} onSelect={setFilterId} />
         <WeekDropdown selected={weekId} onSelect={setWeekId} />
+        <GameFilterDropdown selected={filterId} onSelect={setFilterId} />
       </View>
 
       {loadState === 'loading' ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator color={colors.primary} size="large" />
-          <Text style={styles.loadingText}>Loading FCS scores…</Text>
+          <Text style={styles.loadingText}>Loading scores…</Text>
         </View>
       ) : null}
 
@@ -170,19 +177,17 @@ export default function ScoresScreen() {
               </Text>
               <Text style={styles.emptyText}>
                 {isPlaceholderFilter
-                  ? 'This filter needs additional ESPN or poll data that is not available on the FCS scoreboard feed yet.'
+                  ? 'This filter needs additional ESPN or poll data that is not available on the scoreboard feed yet.'
                   : noGamesLoaded
-                    ? `ESPN returned 0 games for ${sourceLabel}. Try another week.`
-                    : `${games.length} game${games.length === 1 ? '' : 's'} loaded, but this filter removed all of them. Try All FCS or another conference.`}
+                    ? `ESPN returned 0 games for ${sourceLabel}. Try another week or filter.`
+                    : `${games.length} game${games.length === 1 ? '' : 's'} loaded, but this filter removed all of them. Try another filter.`}
               </Text>
             </View>
           ) : (
             <View style={styles.groupList}>
               {dateGroups.map((group) => (
                 <View key={group.date} style={styles.dateSection}>
-                  {group.label ? (
-                    <Text style={styles.dateHeader}>{group.label}</Text>
-                  ) : null}
+                  <Text style={styles.dateHeader}>{group.label}</Text>
                   <View style={styles.scoreboardList}>
                     {group.games.map((game, index) => (
                       <ScoresGameCard

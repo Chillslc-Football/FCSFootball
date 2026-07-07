@@ -5,8 +5,16 @@ import type { FetchWithTimeoutOptions } from '@/data/providers/espnFetch';
 export const ESPN_SCOREBOARD_BASE =
   'https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard';
 
-/** FCS/I-AA default — groups=81 only. */
+/** FCS/I-AA — groups=81. */
 export const ESPN_FCS_SCOREBOARD_URL = `${ESPN_SCOREBOARD_BASE}?groups=81`;
+
+/** FBS/I-A — groups=80. */
+export const ESPN_FBS_SCOREBOARD_URL = `${ESPN_SCOREBOARD_BASE}?groups=80`;
+
+export type EspnScoreboardGroupId = 80 | 81;
+
+export const ESPN_SCOREBOARD_GROUP_FCS = 81 as const;
+export const ESPN_SCOREBOARD_GROUP_FBS = 80 as const;
 
 export type EspnWeekPresetId = 'opening-slate' | 'week-0' | 'week-1' | 'week-2';
 

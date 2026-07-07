@@ -35,7 +35,7 @@ function DiagnosticRow({ label, value }: { label: string; value: string }) {
 export function GameCardDevDiagnostics({ game }: GameCardDevDiagnosticsProps) {
   if (!__DEV__) return null;
 
-  const formattedLocalTime = formatGameKickoffTime(game.startTime);
+  const formattedLocalTime = formatGameKickoffTime(game);
 
   return (
     <View style={styles.panel}>

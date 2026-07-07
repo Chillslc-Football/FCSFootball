@@ -39,3 +39,15 @@ export function prioritizeFavoriteScoreGames(
 
   return { favoriteGames, otherGames };
 }
+
+/**
+ * Stable partition within one ordered list: favorites first, then all others.
+ * Returns a new array — does not mutate the input.
+ */
+export function prioritizeFavoriteGamesWithinOrder(
+  orderedGames: readonly EspnNormalizedGame[],
+  favorites: FavoriteTeam[],
+): EspnNormalizedGame[] {
+  const { favoriteGames, otherGames } = prioritizeFavoriteScoreGames(orderedGames, favorites);
+  return [...favoriteGames, ...otherGames];
+}

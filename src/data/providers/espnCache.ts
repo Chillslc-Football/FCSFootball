@@ -114,9 +114,12 @@ export function buildEspnTodayCacheKey(dateIso: string): string {
   return `espn:today:${dateIso}`;
 }
 
-/** Logical cache key for getWeekGames — one entry per configured week. */
-export function buildEspnWeekCacheKey(weekId: string): string {
-  return `espn:week:${weekId}`;
+/** Logical cache key for getWeekGames — one entry per configured week and league scope. */
+export function buildEspnWeekCacheKey(
+  weekId: string,
+  league: string = 'fcs',
+): string {
+  return `espn:week:${weekId}:${league}`;
 }
 
 /** Scoreboard endpoint URLs are also valid cache keys for per-date fetches. */

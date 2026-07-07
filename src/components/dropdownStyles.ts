@@ -2,6 +2,16 @@ import { StyleSheet } from 'react-native';
 
 import { colors, spacing, typography } from '@/theme';
 
+const BODY_LINE_HEIGHT =
+  typeof typography.body.lineHeight === 'number' ? typography.body.lineHeight : 24;
+
+/** Fixed row height for FlatList scroll positioning — matches optionRow padding + label. */
+export const DROPDOWN_OPTION_ROW_HEIGHT =
+  spacing.md * 2 + BODY_LINE_HEIGHT + StyleSheet.hairlineWidth;
+
+/** Fixed row height for section headers in filter dropdowns. */
+export const DROPDOWN_SECTION_HEADER_HEIGHT = spacing.md + spacing.xs + 16;
+
 /** Shared trigger + sheet option styles for Scores dropdowns. */
 export const dropdownStyles = StyleSheet.create({
   trigger: {

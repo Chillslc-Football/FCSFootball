@@ -9,6 +9,8 @@ export type ProviderResponse<T = unknown> = {
   timestamp: string;
 };
 
+export type ScoresLeagueFilterId = 'fcs' | 'fbs' | 'all';
+
 export type EspnFetchOptions = {
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -16,6 +18,8 @@ export type EspnFetchOptions = {
   dateIso?: string;
   /** Bypass in-memory ESPN cache and refetch from the network. */
   forceRefresh?: boolean;
+  /** Scores tab league scope — defaults to FCS-only. */
+  league?: ScoresLeagueFilterId;
 };
 
 /** Official FCS Top 25 page — rankings source of truth (not ESPN). */

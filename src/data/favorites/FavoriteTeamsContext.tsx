@@ -9,6 +9,7 @@ import {
 } from 'react';
 
 import {
+  addFavoriteTeam,
   favoriteTeamMatchesStored,
   loadFavoriteTeams,
   toggleFavoriteTeam,
@@ -20,6 +21,7 @@ type FavoriteTeamsContextValue = {
   loaded: boolean;
   isFavorite: (teamKey: string, teamName?: string) => boolean;
   toggleFavorite: (team: FavoriteTeam) => Promise<void>;
+  addFavorite: (team: FavoriteTeam) => Promise<void>;
 };
 
 const FavoriteTeamsContext = createContext<FavoriteTeamsContextValue | null>(null);
@@ -75,9 +77,21 @@ export function FavoriteTeamsProvider({ children }: { children: ReactNode }) {
     [favorites],
   );
 
+  const addFavorite = useCallback(
+    async (team: FavoriteTeam) => {
+      try {
+        const next = await addFavoriteTeam(team, favorites);
+        setFavorites(next);
+      } catch (error) {
+        console.warn('[FavoriteTeamsProvider] addFavorite failed:', error);
+      }
+    },
+    [favorites],
+  );
+
   const value = useMemo(
-    () => ({ favorites, loaded, isFavorite, toggleFavorite }),
-    [favorites, loaded, isFavorite, toggleFavorite],
+    () => ({ favorites, loaded, isFavorite, toggleFavorite, addFavorite }),
+    [favorites, loaded, isFavorite, toggleFavorite, addFavorite],
   );
 
   return (

@@ -145,7 +145,7 @@ export function ScoresGameCard({ game, isLast = false }: ScoresGameCardProps) {
     ? String(game.homeScore ?? '—')
     : game.homeRecord?.trim() || undefined;
 
-  const kickoffLabel = formatGameKickoffTime(game.startTime);
+  const kickoffLabel = formatGameKickoffTime(game);
   const isInProgress = game.normalizedStatus === 'in_progress';
   const isFinal = game.normalizedStatus === 'final';
 

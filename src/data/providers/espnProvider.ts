@@ -11,21 +11,30 @@ import {
   parseEspnScoreboardNormalized,
   toRawRecord,
 } from '@/data/providers/espnParser';
-import { getScheduleWeekConfig } from '@/data/providers/espnScheduleWeek';
-import type { EspnScoresProvider, EspnFetchOptions, ProviderResponse } from '@/data/providers/types';
+import { getScheduleWeekConfig, getScheduleWeekConfigForGroup, resolveEspnSourceWeekIds } from '@/data/providers/espnScheduleWeek';
+import type { EspnScoresProvider, EspnFetchOptions, ProviderResponse, ScoresLeagueFilterId } from '@/data/providers/types';
 import type { FetchWithTimeoutOptions } from '@/data/providers/espnFetch';
 import type { EspnNormalizedGame, EspnTodayGamesPayload, EspnWeekGamesPayload, ScheduleWeekId } from '@/types';
 
 /** FCS/I-AA scoreboard — scores, schedule, status, broadcast, IDs (not rankings). */
 export {
   ESPN_FCS_SCOREBOARD_URL,
+  ESPN_FBS_SCOREBOARD_URL,
   ESPN_SCOREBOARD_BASE,
+  ESPN_SCOREBOARD_GROUP_FBS,
+  ESPN_SCOREBOARD_GROUP_FCS,
   buildEspnWeekScoreboardUrl,
 } from '@/data/providers/espnWeekQuery';
-export type { EspnWeekPresetId } from '@/data/providers/espnWeekQuery';
+export type { EspnScoreboardGroupId, EspnWeekPresetId } from '@/data/providers/espnWeekQuery';
 
 import { buildEspnWeekScoreboardUrl } from '@/data/providers/espnWeekQuery';
-import { ESPN_FCS_SCOREBOARD_URL } from '@/data/providers/espnWeekQuery';
+import {
+  ESPN_FCS_SCOREBOARD_URL,
+  ESPN_FBS_SCOREBOARD_URL,
+  ESPN_SCOREBOARD_GROUP_FBS,
+  ESPN_SCOREBOARD_GROUP_FCS,
+  type EspnScoreboardGroupId,
+} from '@/data/providers/espnWeekQuery';
 
 /** Convert YYYY-MM-DD to ESPN dates= param (YYYYMMDD). */
 export function formatEspnDateParam(isoDate: string): string {
@@ -41,12 +50,25 @@ export function getLocalTodayIsoDate(): string {
   return `${year}-${month}-${day}`;
 }
 
-/** Build FCS scoreboard URL with optional date filter. */
-export function buildEspnFcsScoreboardUrl(dateIso?: string): string {
+/** Build ESPN scoreboard URL for a division group with optional date filter. */
+export function buildEspnGroupScoreboardUrl(
+  groupId: EspnScoreboardGroupId,
+  dateIso?: string,
+): string {
+  const base =
+    groupId === ESPN_SCOREBOARD_GROUP_FBS
+      ? ESPN_FBS_SCOREBOARD_URL
+      : ESPN_FCS_SCOREBOARD_URL;
+
   if (!dateIso || !/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
-    return ESPN_FCS_SCOREBOARD_URL;
+    return base;
   }
-  return `${ESPN_FCS_SCOREBOARD_URL}&dates=${formatEspnDateParam(dateIso)}`;
+  return `${base}&dates=${formatEspnDateParam(dateIso)}`;
+}
+
+/** @deprecated Use buildEspnGroupScoreboardUrl — FCS-only alias. */
+export function buildEspnFcsScoreboardUrl(dateIso?: string): string {
+  return buildEspnGroupScoreboardUrl(ESPN_SCOREBOARD_GROUP_FCS, dateIso);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -86,11 +108,23 @@ async function fetchScoreboardGames(
   );
 }
 
-async function loadWeekGamesPayload(
+function resolveEspnWeekGroups(league: ScoresLeagueFilterId = 'fcs'): EspnScoreboardGroupId[] {
+  switch (league) {
+    case 'fbs':
+      return [ESPN_SCOREBOARD_GROUP_FBS];
+    case 'all':
+      return [ESPN_SCOREBOARD_GROUP_FCS, ESPN_SCOREBOARD_GROUP_FBS];
+    default:
+      return [ESPN_SCOREBOARD_GROUP_FCS];
+  }
+}
+
+async function loadWeekGamesPayloadForWeek(
   weekId: ScheduleWeekId,
+  groupId: EspnScoreboardGroupId,
   fetchOptions: FetchWithTimeoutOptions & { forceRefresh?: boolean },
 ): Promise<EspnWeekGamesPayload> {
-  const config = getScheduleWeekConfig(weekId);
+  const config = getScheduleWeekConfigForGroup(weekId, groupId);
 
   if (config.fetchStrategy === 'week_query') {
     const endpoint =
@@ -101,14 +135,37 @@ async function loadWeekGamesPayload(
       throw new Error(`No scoreboard URL configured for ${config.title}.`);
     }
 
-    const { games, raw } = await fetchScoreboardGames(endpoint, fetchOptions);
+    const { games: weekGames, raw } = await fetchScoreboardGames(endpoint, fetchOptions);
+    const fallbackDates = config.dateRangeIso ?? [];
+
+    if (weekGames.length === 0 && fallbackDates.length > 0) {
+      const fallbackGames: EspnNormalizedGame[] = [];
+      const rawResponses: Record<string, unknown>[] = [raw];
+
+      for (const dateIso of fallbackDates) {
+        const dateEndpoint = buildEspnGroupScoreboardUrl(groupId, dateIso);
+        const { games, raw: dateRaw } = await fetchScoreboardGames(dateEndpoint, fetchOptions);
+        fallbackGames.push(...games);
+        rawResponses.push(dateRaw);
+      }
+
+      return {
+        weekId,
+        weekLabel: config.displayLabel,
+        fetchStrategy: 'week_query',
+        fetchNotes: `${config.fetchNotes} · date fallback ${fallbackDates.join(', ')}`,
+        games: mergeGamesById(fallbackGames),
+        endpoint: `${endpoint} | ${fallbackDates.map((date) => buildEspnGroupScoreboardUrl(groupId, date)).join(' | ')}`,
+        raw: { strategy: 'week_query_with_date_fallback', week: raw, dates: rawResponses },
+      };
+    }
 
     return {
       weekId,
       weekLabel: config.displayLabel,
       fetchStrategy: 'week_query',
       fetchNotes: config.fetchNotes,
-      games,
+      games: weekGames,
       endpoint,
       raw,
     };
@@ -124,7 +181,7 @@ async function loadWeekGamesPayload(
   const rawResponses: Record<string, unknown>[] = [];
 
   for (const dateIso of dates) {
-    const endpoint = buildEspnFcsScoreboardUrl(dateIso);
+    const endpoint = buildEspnGroupScoreboardUrl(groupId, dateIso);
     endpoints.push(endpoint);
     const { games, raw } = await fetchScoreboardGames(endpoint, fetchOptions);
     mergedGames.push(...games);
@@ -139,6 +196,70 @@ async function loadWeekGamesPayload(
     games: mergeGamesById(mergedGames),
     endpoint: endpoints.join(' | '),
     raw: { strategy: 'date_range', dates, responses: rawResponses },
+  };
+}
+
+async function loadWeekGamesPayloadForVisibleWeek(
+  weekId: ScheduleWeekId,
+  groupId: EspnScoreboardGroupId,
+  fetchOptions: FetchWithTimeoutOptions & { forceRefresh?: boolean },
+): Promise<EspnWeekGamesPayload> {
+  const sourceWeekIds = resolveEspnSourceWeekIds(weekId);
+
+  if (sourceWeekIds.length === 1) {
+    return loadWeekGamesPayloadForWeek(weekId, groupId, fetchOptions);
+  }
+
+  const displayConfig = getScheduleWeekConfigForGroup(weekId, groupId);
+  const results = await Promise.all(
+    sourceWeekIds.map((sourceWeekId) =>
+      loadWeekGamesPayloadForWeek(sourceWeekId, groupId, fetchOptions),
+    ),
+  );
+
+  return {
+    weekId,
+    weekLabel: displayConfig.displayLabel,
+    fetchStrategy: 'week_query',
+    fetchNotes: `Combined ESPN weeks 0+1 · ${results.map((result) => result.fetchNotes).join(' · ')}`,
+    games: mergeGamesById(results.flatMap((result) => result.games)),
+    endpoint: results.map((result) => result.endpoint).join(' | '),
+    raw: {
+      strategy: 'combined',
+      sourceWeekIds,
+      responses: results.map((result) => result.raw),
+    },
+  };
+}
+
+async function loadWeekGamesPayload(
+  weekId: ScheduleWeekId,
+  league: ScoresLeagueFilterId,
+  fetchOptions: FetchWithTimeoutOptions & { forceRefresh?: boolean },
+): Promise<EspnWeekGamesPayload> {
+  const groupIds = resolveEspnWeekGroups(league);
+
+  if (groupIds.length === 1) {
+    return loadWeekGamesPayloadForVisibleWeek(weekId, groupIds[0], fetchOptions);
+  }
+
+  const displayConfig = getScheduleWeekConfig(weekId);
+  const results = await Promise.all(
+    groupIds.map((groupId) => loadWeekGamesPayloadForVisibleWeek(weekId, groupId, fetchOptions)),
+  );
+
+  return {
+    weekId,
+    weekLabel: displayConfig.displayLabel,
+    fetchStrategy: 'week_query',
+    fetchNotes: `FCS+FBS · ${results.map((result) => result.fetchNotes).join(' · ')}`,
+    games: mergeGamesById(results.flatMap((result) => result.games)),
+    endpoint: results.map((result) => result.endpoint).join(' | '),
+    raw: {
+      strategy: 'combined_leagues',
+      league,
+      responses: results.map((result) => result.raw),
+    },
   };
 }
 
@@ -191,6 +312,7 @@ export class EspnScoresProviderImpl implements EspnScoresProvider {
     options?: EspnFetchOptions,
   ): Promise<ProviderResponse<EspnWeekGamesPayload>> {
     const start = Date.now();
+    const league = options?.league ?? 'fcs';
     const fetchOptions: FetchWithTimeoutOptions & { forceRefresh?: boolean } = {
       signal: options?.signal,
       timeoutMs: options?.timeoutMs,
@@ -199,8 +321,8 @@ export class EspnScoresProviderImpl implements EspnScoresProvider {
 
     try {
       const payload = await getOrFetchEspnCached(
-        buildEspnWeekCacheKey(weekId),
-        () => loadWeekGamesPayload(weekId, fetchOptions),
+        buildEspnWeekCacheKey(weekId, league),
+        () => loadWeekGamesPayload(weekId, league, fetchOptions),
         {
           forceRefresh: options?.forceRefresh,
           ttlMs: (data) => resolveEspnCacheTtlMs(data.games),

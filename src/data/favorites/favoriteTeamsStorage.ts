@@ -123,6 +123,29 @@ export async function saveFavoriteTeams(teams: FavoriteTeam[]): Promise<void> {
   }
 }
 
+export async function addFavoriteTeam(
+  team: FavoriteTeam,
+  current?: FavoriteTeam[],
+): Promise<FavoriteTeam[]> {
+  try {
+    const existing = current ?? (await loadFavoriteTeams());
+    const alreadySaved = existing.some((entry) =>
+      favoriteTeamMatchesStored(entry, team.key, team.name),
+    );
+
+    if (alreadySaved) {
+      return existing;
+    }
+
+    const next = [...existing, { ...team, savedAt: new Date().toISOString() }];
+    await saveFavoriteTeams(next);
+    return next;
+  } catch (error) {
+    console.warn('[favoriteTeamsStorage] addFavoriteTeam failed:', error);
+    return current ?? loadFavoriteTeams();
+  }
+}
+
 export async function toggleFavoriteTeam(
   team: FavoriteTeam,
   current?: FavoriteTeam[],

@@ -53,6 +53,10 @@ export type EspnNormalizedGame = {
   homeConference?: string;
   /** Human-readable ESPN status description */
   status: string;
+  /** ESPN status.type.shortDetail — e.g. "9/6 - 12:00 PM EDT" */
+  statusShortDetail?: string;
+  /** ESPN status.type.detail — e.g. "Sat, September 6th at 12:00 PM EDT" */
+  statusDetail?: string;
   /** Mapped internal Game.status when ESPN state is recognized */
   normalizedStatus?: Game['status'];
   startTime: string;
@@ -69,6 +73,9 @@ export type EspnNormalizedGame = {
   groupInfo?: string;
   /** Core internal Game when required ids + status are present */
   game?: Game;
+  /** ESPN curatedRank (1–25) when present — typically FBS AP poll */
+  awayEspnCuratedRank?: number;
+  homeEspnCuratedRank?: number;
   /** NCAA Top 25 rank when matched from static poll */
   awayRank?: number;
   homeRank?: number;
@@ -212,7 +219,8 @@ export type ScheduleWeekId =
   | 'week-13'
   | 'week-14'
   | 'week-15'
-  | 'week-16';
+  | 'week-16'
+  | 'week-17';
 
 export type EspnWeekGamesPayload = {
   weekId: ScheduleWeekId;
