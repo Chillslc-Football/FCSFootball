@@ -39,3 +39,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+passwords.txt
+env.local
+supabase/.temp/
+.env
+.env.*
+!.env.example
