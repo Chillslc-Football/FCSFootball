@@ -45,3 +45,6 @@ supabase/.temp/
 .env
 .env.*
 !.env.example
+passwords.txt
+env.local
+supabase/.temp/
