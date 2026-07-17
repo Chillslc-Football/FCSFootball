@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControlProps, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing, typography } from '@/theme';
@@ -9,15 +9,17 @@ type ScreenProps = {
   subtitle?: string;
   /** Tighter top padding when the tab/header bar already shows the screen title. */
   denseTop?: boolean;
+  refreshControl?: React.ReactElement<RefreshControlProps>;
   children?: ReactNode;
 };
 
-export function Screen({ title, subtitle, denseTop = false, children }: ScreenProps) {
+export function Screen({ title, subtitle, denseTop = false, refreshControl, children }: ScreenProps) {
   const insets = useSafeAreaInsets();
 
   return (
     <View style={[styles.container, !denseTop && { paddingTop: insets.top }]}>
       <ScrollView
+        refreshControl={refreshControl}
         contentContainerStyle={[styles.content, denseTop && styles.contentDenseTop]}
         showsVerticalScrollIndicator={false}>
         {title ? <Text style={styles.title}>{title}</Text> : null}

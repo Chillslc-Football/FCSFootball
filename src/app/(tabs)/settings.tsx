@@ -8,6 +8,16 @@ export default function SettingsScreen() {
   return (
     <Screen title="Settings" subtitle="App preferences and configuration.">
       <View style={styles.section}>
+        <Text style={styles.sectionTitle}>News</Text>
+        <Link href={'/(tabs)/news' as Href} asChild>
+          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+            <Text style={styles.rowTitle}>FCS News</Text>
+            <Text style={styles.rowSubtitle}>HERO Sports headlines — opens articles externally</Text>
+          </Pressable>
+        </Link>
+      </View>
+
+      <View style={styles.section}>
         <Text style={styles.sectionTitle}>Developer</Text>
         <Link href={'/developer' as Href} asChild>
           <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
@@ -35,6 +45,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   section: {
     gap: spacing.sm,
+    marginBottom: spacing.lg,
   },
   sectionTitle: {
     ...typography.label,

@@ -2,6 +2,11 @@ import {
   DROPDOWN_OPTION_ROW_HEIGHT,
   DROPDOWN_SECTION_HEADER_HEIGHT,
 } from '@/components/dropdownStyles';
+import type { ConferenceId } from '@/data/conferences/conferenceList';
+import {
+  getFbsConferenceOptions,
+  getFcsConferenceOptions,
+} from '@/data/conferences/conferenceList';
 import {
   conferenceRecordMatchesPatterns,
   lookupEspnConference,
@@ -97,94 +102,48 @@ const FBS_TOP_25_OPTION: ScoresFilterOption = {
   support: 'full',
 };
 
-const FCS_CONFERENCE_OPTIONS = (
-  [
-    { id: 'big-sky', label: 'Big Sky', description: 'Big Sky Conference teams', support: 'full' },
-    {
-      id: 'big-south-ovc',
-      label: 'Big South OVC',
-      description: 'Big South-OVC Football Association teams',
-      support: 'full',
-    },
-    { id: 'caa', label: 'CAA', description: 'Coastal Athletic Association teams', support: 'full' },
-    { id: 'ivy', label: 'Ivy League', description: 'Ivy League teams', support: 'full' },
-    { id: 'meac', label: 'MEAC', description: 'Mid-Eastern Athletic Conference teams', support: 'full' },
-    {
-      id: 'mvfc',
-      label: 'MVFC',
-      description: 'Missouri Valley Football Conference teams',
-      support: 'full',
-    },
-    { id: 'nec', label: 'NEC', description: 'Northeast Conference teams', support: 'full' },
-    { id: 'patriot', label: 'Patriot', description: 'Patriot League teams', support: 'full' },
-    { id: 'pioneer', label: 'Pioneer', description: 'Pioneer Football League teams', support: 'full' },
-    { id: 'southland', label: 'Southland', description: 'Southland Conference teams', support: 'full' },
-    { id: 'southern', label: 'Southern', description: 'Southern Conference teams', support: 'full' },
-    { id: 'swac', label: 'SWAC', description: 'Southwestern Athletic Conference teams', support: 'full' },
-    {
-      id: 'united-athletic',
-      label: 'United Athletic',
-      description: 'United Athletic Conference teams',
-      support: 'full',
-    },
-  ] satisfies ScoresFilterOption[]
-).sort((a, b) => a.label.localeCompare(b.label));
+const FCS_CONFERENCE_TO_SCORES_FILTER: Partial<Record<ConferenceId, ScoresFilterId>> = {
+  'ivy-league': 'ivy',
+};
 
-const FBS_CONFERENCE_OPTIONS = (
-  [
-    { id: 'fbs-acc', label: 'ACC', description: 'Atlantic Coast Conference FBS teams', support: 'full' },
-    {
-      id: 'fbs-american',
-      label: 'American',
-      description: 'American Athletic Conference FBS teams',
-      support: 'full',
-    },
-    {
-      id: 'fbs-big-12',
-      label: 'Big 12',
-      description: 'Big 12 Conference FBS teams',
-      support: 'full',
-    },
-    {
-      id: 'fbs-big-ten',
-      label: 'Big Ten',
-      description: 'Big Ten Conference FBS teams',
-      support: 'full',
-    },
-    {
-      id: 'fbs-cusa',
-      label: 'Conference USA',
-      description: 'Conference USA FBS teams',
-      support: 'full',
-    },
-    {
-      id: 'fbs-independents',
-      label: 'Independents',
-      description: 'FBS independent teams',
-      support: 'full',
-    },
-    { id: 'fbs-mac', label: 'MAC', description: 'Mid-American Conference FBS teams', support: 'full' },
-    {
-      id: 'fbs-mountain-west',
-      label: 'Mountain West',
-      description: 'Mountain West Conference FBS teams',
-      support: 'full',
-    },
-    {
-      id: 'fbs-pac-12',
-      label: 'Pac 12',
-      description: 'Pac-12 Conference FBS teams',
-      support: 'full',
-    },
-    { id: 'fbs-sec', label: 'SEC', description: 'Southeastern Conference FBS teams', support: 'full' },
-    {
-      id: 'fbs-sun-belt',
-      label: 'Sun Belt',
-      description: 'Sun Belt Conference FBS teams',
-      support: 'full',
-    },
-  ] satisfies ScoresFilterOption[]
-).sort((a, b) => a.label.localeCompare(b.label));
+const FBS_CONFERENCE_TO_SCORES_FILTER: Partial<Record<ConferenceId, ScoresFilterId>> = {
+  'conference-usa': 'fbs-cusa',
+  independents: 'fbs-independents',
+  mac: 'fbs-mac',
+  sec: 'fbs-sec',
+  'big-ten': 'fbs-big-ten',
+  'big-12': 'fbs-big-12',
+  acc: 'fbs-acc',
+  'pac-12': 'fbs-pac-12',
+  american: 'fbs-american',
+  'mountain-west': 'fbs-mountain-west',
+  'sun-belt': 'fbs-sun-belt',
+};
+
+function toFcsScoresFilterId(conferenceId: ConferenceId): ScoresFilterId {
+  return (FCS_CONFERENCE_TO_SCORES_FILTER[conferenceId] ?? conferenceId) as ScoresFilterId;
+}
+
+function toFbsScoresFilterId(conferenceId: ConferenceId): ScoresFilterId {
+  return (FBS_CONFERENCE_TO_SCORES_FILTER[conferenceId] ??
+    `fbs-${conferenceId}`) as ScoresFilterId;
+}
+
+const FCS_CONFERENCE_OPTIONS: ScoresFilterOption[] = getFcsConferenceOptions()
+  .filter((option) => option.id !== 'fcs-independents')
+  .map((option) => ({
+    id: toFcsScoresFilterId(option.id),
+    label: option.label,
+    description: `${option.label} teams`,
+    support: 'full' as ScoresFilterSupport,
+  }));
+
+const FBS_CONFERENCE_OPTIONS: ScoresFilterOption[] = getFbsConferenceOptions().map((option) => ({
+  id: toFbsScoresFilterId(option.id),
+  label: option.label,
+  description: `${option.label} teams`,
+  support: 'full' as ScoresFilterSupport,
+}));
 
 const FCS_OPTIONS: ScoresFilterOption[] = [
   ALL_FCS_OPTION,

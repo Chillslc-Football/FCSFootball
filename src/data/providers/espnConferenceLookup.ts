@@ -154,6 +154,12 @@ const ESPN_CONFERENCE_BY_ID: Record<string, EspnConferenceRecord> = {
     division: 'fcs',
     aliases: ['big south ovc', 'ovc big south', 'ohio valley', 'big south'],
   },
+  '22': {
+    id: '22',
+    name: 'Ivy League',
+    division: 'fcs',
+    aliases: ['ivy'],
+  },
 };
 
 export function lookupEspnConference(conferenceId: string | undefined): EspnConferenceRecord | undefined {

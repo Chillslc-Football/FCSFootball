@@ -273,3 +273,25 @@ export type EspnTodayGamesPayload = {
   raw: Record<string, unknown>;
   endpoint: string;
 };
+
+export type ConferenceStandingEntry = {
+  teamId?: string;
+  displayName: string;
+  shortDisplayName: string;
+  abbreviation?: string;
+  logoUrl?: string;
+  conferenceRecord: string;
+  overallRecord: string;
+  conferenceWins: number;
+  conferenceLosses: number;
+  conferenceWinPct: number;
+  overallWinPct: number;
+  espnOrder: number;
+};
+
+export type ConferenceStandingsPayload = {
+  conferenceId: string;
+  conferenceName?: string;
+  entries: ConferenceStandingEntry[];
+  unavailable?: boolean;
+};

@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
+  FlatList,
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   Text,
   View,
+  type ListRenderItem,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -15,9 +16,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DROPDOWN_CHEVRON_SIZE, dropdownStyles } from '@/components/dropdownStyles';
 import {
   CONFERENCE_MENU,
+  findConferenceMenuIndex,
+  flattenConferenceMenu,
   getConferenceLabel,
+  getConferenceMenuItemHeight,
   type ConferenceId,
-  type ConferenceMenuEntry,
+  type FlatConferenceMenuItem,
 } from '@/data/conferences/conferenceList';
 import { colors, spacing } from '@/theme';
 
@@ -26,6 +30,8 @@ type ConferenceDropdownProps = {
   onSelect: (id: ConferenceId) => void;
   style?: StyleProp<ViewStyle>;
 };
+
+const FLAT_CONFERENCE_MENU = flattenConferenceMenu(CONFERENCE_MENU);
 
 function ConferenceOptionRow({
   label,
@@ -62,35 +68,91 @@ function ConferenceSectionHeader({ label }: { label: string }) {
   );
 }
 
-function renderMenuEntry(
-  entry: ConferenceMenuEntry,
-  selected: ConferenceId,
-  onSelect: (id: ConferenceId) => void,
-  onClose: () => void,
-  key: string,
+function scrollConferenceListToIndex(
+  listRef: RefObject<FlatList<FlatConferenceMenuItem> | null>,
+  index: number,
+  animated = false,
 ) {
-  if (entry.type === 'header') {
-    return <ConferenceSectionHeader key={key} label={entry.label} />;
-  }
+  if (index < 0) return;
 
-  const { option } = entry;
-  return (
-    <ConferenceOptionRow
-      key={key}
-      label={option.label}
-      selected={selected === option.id}
-      onPress={() => {
-        onSelect(option.id);
-        onClose();
-      }}
-    />
-  );
+  listRef.current?.scrollToIndex({
+    index,
+    animated,
+    viewPosition: 0.5,
+  });
 }
 
 export function ConferenceDropdown({ selected, onSelect, style }: ConferenceDropdownProps) {
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
+  const listRef = useRef<FlatList<FlatConferenceMenuItem>>(null);
   const selectedLabel = getConferenceLabel(selected);
+
+  const selectedIndex = useMemo(
+    () => findConferenceMenuIndex(selected, CONFERENCE_MENU),
+    [selected],
+  );
+
+  const getItemLayout = useCallback(
+    (_data: ArrayLike<FlatConferenceMenuItem> | null | undefined, index: number) => {
+      let offset = 0;
+      for (let i = 0; i < index; i++) {
+        const item = FLAT_CONFERENCE_MENU[i];
+        if (item) offset += getConferenceMenuItemHeight(item);
+      }
+
+      const item = FLAT_CONFERENCE_MENU[index];
+      const length = item ? getConferenceMenuItemHeight(item) : 0;
+
+      return { length, offset, index };
+    },
+    [],
+  );
+
+  const handleScrollToIndexFailed = useCallback(
+    (info: { index: number; averageItemLength: number }) => {
+      const offset = Math.max(0, info.averageItemLength * info.index);
+      listRef.current?.scrollToOffset({ offset, animated: false });
+
+      requestAnimationFrame(() => {
+        scrollConferenceListToIndex(listRef, info.index, false);
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!open || selectedIndex < 0) return;
+
+    const frame = requestAnimationFrame(() => {
+      scrollConferenceListToIndex(listRef, selectedIndex, false);
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [open, selectedIndex]);
+
+  const closeMenu = useCallback(() => setOpen(false), []);
+
+  const renderItem = useCallback<ListRenderItem<FlatConferenceMenuItem>>(
+    ({ item }) => {
+      if (item.type === 'section-header') {
+        return <ConferenceSectionHeader label={item.label} />;
+      }
+
+      const isSelected = selected === item.option.id;
+      return (
+        <ConferenceOptionRow
+          label={item.option.label}
+          selected={isSelected}
+          onPress={() => {
+            onSelect(item.option.id);
+            closeMenu();
+          }}
+        />
+      );
+    },
+    [closeMenu, onSelect, selected],
+  );
 
   return (
     <>
@@ -115,13 +177,13 @@ export function ConferenceDropdown({ selected, onSelect, style }: ConferenceDrop
         animationType="slide"
         transparent
         statusBarTranslucent={Platform.OS === 'android'}
-        onRequestClose={() => setOpen(false)}>
+        onRequestClose={closeMenu}>
         <View style={dropdownStyles.modalRoot}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Close conference menu"
             style={dropdownStyles.backdrop}
-            onPress={() => setOpen(false)}
+            onPress={closeMenu}
           />
 
           <View style={[dropdownStyles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
@@ -132,21 +194,25 @@ export function ConferenceDropdown({ selected, onSelect, style }: ConferenceDrop
                 accessibilityRole="button"
                 accessibilityLabel="Close"
                 hitSlop={8}
-                onPress={() => setOpen(false)}
+                onPress={closeMenu}
                 style={dropdownStyles.closeButton}>
                 <Ionicons name="close" size={22} color={colors.textSecondary} />
               </Pressable>
             </View>
 
-            <ScrollView
+            <FlatList
+              ref={listRef}
+              data={FLAT_CONFERENCE_MENU}
+              keyExtractor={(item) => item.key}
+              renderItem={renderItem}
               style={dropdownStyles.sheetScroll}
               contentContainerStyle={dropdownStyles.sheetScrollContent}
               showsVerticalScrollIndicator={false}
-              bounces={false}>
-              {CONFERENCE_MENU.map((entry, index) =>
-                renderMenuEntry(entry, selected, onSelect, () => setOpen(false), `${entry.type}-${index}`),
-              )}
-            </ScrollView>
+              bounces={false}
+              initialScrollIndex={selectedIndex >= 0 ? selectedIndex : undefined}
+              getItemLayout={getItemLayout}
+              onScrollToIndexFailed={handleScrollToIndexFailed}
+            />
           </View>
         </View>
       </Modal>

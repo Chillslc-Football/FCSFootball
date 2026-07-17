@@ -1,11 +1,9 @@
 import {
   CONFERENCE_OPTIONS,
+  matchConferenceIdFromDisplayText,
   type ConferenceId,
 } from '@/data/conferences/conferenceList';
-import {
-  lookupEspnConference,
-  normalizeConferenceText,
-} from '@/data/providers/espnConferenceLookup';
+import { lookupEspnConference } from '@/data/providers/espnConferenceLookup';
 
 const ESPN_NUMERIC_ID_TO_CONFERENCE_ID: Record<string, ConferenceId> = {
   '1': 'acc',
@@ -17,6 +15,8 @@ const ESPN_NUMERIC_ID_TO_CONFERENCE_ID: Record<string, ConferenceId> = {
   '15': 'mac',
   '17': 'mountain-west',
   '18': 'independents',
+  '22': 'ivy-league',
+  '32': 'fcs-independents',
   '37': 'sun-belt',
   '151': 'american',
   '20': 'big-sky',
@@ -33,19 +33,6 @@ const ESPN_NUMERIC_ID_TO_CONFERENCE_ID: Record<string, ConferenceId> = {
   '179': 'big-south-ovc',
 };
 
-function matchConferenceIdFromText(text: string): ConferenceId | undefined {
-  const normalized = normalizeConferenceText(text);
-  if (!normalized) return undefined;
-
-  for (const option of CONFERENCE_OPTIONS) {
-    const labelNorm = normalizeConferenceText(option.label);
-    if (normalized === labelNorm) return option.id;
-    if (normalized.includes(labelNorm) || labelNorm.includes(normalized)) return option.id;
-  }
-
-  return undefined;
-}
-
 /** Map a team conference field (ESPN id or display name) to a Conferences tab id. */
 export function resolveConferenceId(raw: string | undefined): ConferenceId | undefined {
   const trimmed = raw?.trim();
@@ -57,15 +44,15 @@ export function resolveConferenceId(raw: string | undefined): ConferenceId | und
 
     const espnRecord = lookupEspnConference(trimmed);
     if (espnRecord) {
-      const fromName = matchConferenceIdFromText(espnRecord.name);
+      const fromName = matchConferenceIdFromDisplayText(espnRecord.name);
       if (fromName) return fromName;
 
       for (const alias of espnRecord.aliases) {
-        const fromAlias = matchConferenceIdFromText(alias);
+        const fromAlias = matchConferenceIdFromDisplayText(alias);
         if (fromAlias) return fromAlias;
       }
     }
   }
 
-  return matchConferenceIdFromText(trimmed);
+  return matchConferenceIdFromDisplayText(trimmed);
 }
