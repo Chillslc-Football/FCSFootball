@@ -14,12 +14,13 @@ import {
   loadFavoriteTeams,
   toggleFavoriteTeam,
 } from '@/data/favorites/favoriteTeamsStorage';
+import { reconcileFavoritesOnLaunch, syncFavoritesToBackend } from '@/data/notifications/favoritesSync';
 import type { FavoriteTeam } from '@/types/favorites';
 
 type FavoriteTeamsContextValue = {
   favorites: FavoriteTeam[];
   loaded: boolean;
-  isFavorite: (teamKey: string, teamName?: string) => boolean;
+  isFavorite: (teamId?: string, teamName?: string, abbreviation?: string) => boolean;
   toggleFavorite: (team: FavoriteTeam) => Promise<void>;
   addFavorite: (team: FavoriteTeam) => Promise<void>;
 };
@@ -38,6 +39,7 @@ export function FavoriteTeamsProvider({ children }: { children: ReactNode }) {
         const teams = await loadFavoriteTeams();
         if (cancelled) return;
         setFavorites(teams);
+        void reconcileFavoritesOnLaunch(teams);
       } catch (error) {
         console.warn('[FavoriteTeamsProvider] failed to load favorites:', error);
         if (!cancelled) setFavorites([]);
@@ -54,9 +56,12 @@ export function FavoriteTeamsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const isFavorite = useCallback(
-    (teamKey: string, teamName?: string) => {
+    (teamId?: string, teamName?: string, abbreviation?: string) => {
       try {
-        return favorites.some((entry) => favoriteTeamMatchesStored(entry, teamKey, teamName));
+        if (!teamId && !teamName && !abbreviation) return false;
+        return favorites.some((entry) =>
+          favoriteTeamMatchesStored(entry, teamId, teamName, abbreviation),
+        );
       } catch (error) {
         console.warn('[FavoriteTeamsProvider] isFavorite failed:', error);
         return false;
@@ -70,6 +75,7 @@ export function FavoriteTeamsProvider({ children }: { children: ReactNode }) {
       try {
         const next = await toggleFavoriteTeam(team, favorites);
         setFavorites(next);
+        void syncFavoritesToBackend(next);
       } catch (error) {
         console.warn('[FavoriteTeamsProvider] toggleFavorite failed:', error);
       }
@@ -82,6 +88,7 @@ export function FavoriteTeamsProvider({ children }: { children: ReactNode }) {
       try {
         const next = await addFavoriteTeam(team, favorites);
         setFavorites(next);
+        void syncFavoritesToBackend(next);
       } catch (error) {
         console.warn('[FavoriteTeamsProvider] addFavorite failed:', error);
       }

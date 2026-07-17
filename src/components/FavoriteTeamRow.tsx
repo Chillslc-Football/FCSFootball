@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import { FavoriteStar } from '@/components/FavoriteStar';
 import { TeamLogo } from '@/components/TeamLogo';
 import { openWatchOnEspn, resolveEspnWatchTargets } from '@/data/providers/espnWatchLinks';
 import {
@@ -113,6 +114,15 @@ export function FavoriteTeamRow({ favorite, allGames, isLast = false }: Favorite
           <Text style={styles.teamName} numberOfLines={1}>
             {displayName}
           </Text>
+          <FavoriteStar
+            teamId={enriched.espnTeamId ?? enriched.key}
+            teamName={enriched.name}
+            abbreviation={enriched.abbreviation}
+            logoUrl={enriched.logoUrl}
+            conference={enriched.conference}
+            rank={enriched.rank}
+            record={enriched.record}
+          />
           {enriched.record ? (
             <Text style={styles.recordText}>{enriched.record}</Text>
           ) : null}

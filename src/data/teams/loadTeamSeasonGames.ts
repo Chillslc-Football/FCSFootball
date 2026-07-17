@@ -44,20 +44,28 @@ export function resetSeasonGamesLoad(): void {
 }
 
 /** Fetch all configured ESPN scoreboard weeks once per session and merge into cache. */
-export async function ensureSeasonGamesLoaded(): Promise<EspnNormalizedGame[]> {
+export async function ensureSeasonGamesLoaded(options?: {
+  forceRefresh?: boolean;
+}): Promise<EspnNormalizedGame[]> {
+  if (options?.forceRefresh) {
+    seasonLoadPromise = null;
+  }
+
   if (seasonLoadPromise) {
     return seasonLoadPromise;
   }
 
   seasonLoadPromise = (async () => {
     try {
-      const existing = getAllCachedEspnGames();
+      const existing = options?.forceRefresh ? [] : getAllCachedEspnGames();
       const seen = new Set(existing.map((game) => game.id));
       const collected: EspnNormalizedGame[] = [...existing];
 
       const responses = await Promise.all(
         SCORES_WEEK_OPTIONS.map((option) =>
-          espnScoresProvider.getWeekGames(option.id).catch(() => null),
+          espnScoresProvider
+            .getWeekGames(option.id, { forceRefresh: options?.forceRefresh })
+            .catch(() => null),
         ),
       );
 

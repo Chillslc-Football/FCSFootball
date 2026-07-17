@@ -1,9 +1,13 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useMemo } from 'react';
 import { useRouter } from 'expo-router';
 
+import { FavoriteStar } from '@/components/FavoriteStar';
 import { TeamLogo } from '@/components/TeamLogo';
 import type { ConferenceId } from '@/data/conferences/conferenceList';
+import { sortConferenceStandingsByFavorites } from '@/data/conferences/sortConferenceStandingsByFavorites';
 import { useConferenceStandings } from '@/data/conferences/useConferenceStandings';
+import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
 import { colors, spacing, typography } from '@/theme';
 import { buildTeamHref } from '@/utils/teamId';
 import type { ConferenceStandingEntry } from '@/types';
@@ -19,6 +23,14 @@ function StandingsHeaderRow() {
       <Text style={[styles.headerCell, styles.teamHeader]}>TEAM</Text>
       <Text style={styles.headerCell}>CONF</Text>
       <Text style={styles.headerCell}>OVERALL</Text>
+    </View>
+  );
+}
+
+export function ConferenceStandingsTableHeader() {
+  return (
+    <View style={styles.stickyTableHeader}>
+      <StandingsHeaderRow />
     </View>
   );
 }
@@ -44,6 +56,7 @@ function StandingsRow({ entry }: { entry: ConferenceStandingEntry }) {
         <Text style={styles.teamName} numberOfLines={1}>
           {entry.shortDisplayName}
         </Text>
+        <FavoriteStar teamId={entry.teamId} teamName={entry.displayName} />
       </View>
       <Text style={styles.recordCell}>{entry.conferenceRecord}</Text>
       <Text style={styles.recordCell}>{entry.overallRecord}</Text>
@@ -55,7 +68,13 @@ export function ConferenceStandingsSection({
   conferenceId: _conferenceId,
   standings,
 }: ConferenceStandingsSectionProps) {
+  const { isFavorite, favorites } = useFavoriteTeams();
   const { loadState, entries, unavailable, errorMessage } = standings;
+
+  const sortedEntries = useMemo(
+    () => sortConferenceStandingsByFavorites(entries, isFavorite),
+    [entries, isFavorite, favorites],
+  );
 
   if (loadState === 'loading') {
     return (
@@ -85,11 +104,10 @@ export function ConferenceStandingsSection({
 
   return (
     <View style={styles.table}>
-      <StandingsHeaderRow />
-      {entries.map((entry, index) => (
+      {sortedEntries.map((entry, index) => (
         <View
           key={entry.teamId ?? `${entry.displayName}-${index}`}
-          style={index < entries.length - 1 ? styles.rowDivider : undefined}>
+          style={index < sortedEntries.length - 1 ? styles.rowDivider : undefined}>
           <StandingsRow entry={entry} />
         </View>
       ))}
@@ -144,6 +162,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
+  },
+  stickyTableHeader: {
+    backgroundColor: colors.surface,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    marginHorizontal: spacing.lg,
   },
   row: {
     flexDirection: 'row',

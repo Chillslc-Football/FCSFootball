@@ -2,28 +2,18 @@ import { useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { ConferenceScheduleGameRow } from '@/components/conferences/ConferenceScheduleGameRow';
-import { ConferenceWeekScroller } from '@/components/conferences/ConferenceWeekScroller';
 import { groupConferenceGamesByDate } from '@/data/conferences/groupConferenceGamesByDate';
-import { useConferenceWeekSchedule } from '@/data/conferences/useConferenceWeekSchedule';
-import type { ConferenceId } from '@/data/conferences/conferenceList';
+import type { useConferenceWeekSchedule } from '@/data/conferences/useConferenceWeekSchedule';
 import { colors, spacing, typography } from '@/theme';
-import type { ScheduleWeekId } from '@/types';
 
 type ConferenceScheduleSectionProps = {
-  conferenceId: ConferenceId;
-  selectedWeek: ScheduleWeekId;
-  onSelectWeek: (weekId: ScheduleWeekId) => void;
+  schedule: ReturnType<typeof useConferenceWeekSchedule>;
 };
 
 export function ConferenceScheduleSection({
-  conferenceId,
-  selectedWeek,
-  onSelectWeek,
+  schedule,
 }: ConferenceScheduleSectionProps) {
-  const { loadState, games, filteredGames, errorMessage } = useConferenceWeekSchedule(
-    conferenceId,
-    selectedWeek,
-  );
+  const { loadState, games, filteredGames, errorMessage } = schedule;
 
   const dateGroups = useMemo(
     () => groupConferenceGamesByDate(filteredGames),
@@ -32,8 +22,6 @@ export function ConferenceScheduleSection({
 
   return (
     <View style={styles.section}>
-      <ConferenceWeekScroller selectedWeek={selectedWeek} onSelectWeek={onSelectWeek} />
-
       {loadState === 'loading' ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator color={colors.primary} size="large" />

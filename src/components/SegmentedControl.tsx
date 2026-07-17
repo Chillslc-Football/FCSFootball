@@ -5,6 +5,7 @@ import { colors, spacing, typography } from '@/theme';
 export type SegmentedControlOption<T extends string> = {
   id: T;
   label: string;
+  accessibilityLabel?: string;
 };
 
 type SegmentedControlProps<T extends string> = {
@@ -33,6 +34,7 @@ export function SegmentedControl<T extends string>({
           <Pressable
             key={option.id}
             accessibilityRole="tab"
+            accessibilityLabel={option.accessibilityLabel ?? option.label}
             accessibilityState={{ selected: isActive }}
             onPress={() => onSelect(option.id)}
             style={[styles.segment, isActive && styles.segmentActive]}>

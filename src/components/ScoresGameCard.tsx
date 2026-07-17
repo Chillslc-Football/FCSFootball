@@ -2,7 +2,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import { GameAlertBell } from '@/components/GameAlertBell';
+import { FavoriteStar } from '@/components/FavoriteStar';
 import { TeamLogo } from '@/components/TeamLogo';
+import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
 import { openWatchOnEspn, resolveEspnWatchTargets } from '@/data/providers/espnWatchLinks';
 import { toGameStatus } from '@/data/providers/espnTodayMapper';
 import { colors, spacing, typography } from '@/theme';
@@ -28,6 +31,14 @@ type TeamLineProps = {
   isWinner?: boolean;
   onRightPress?: () => void;
   rightTappable?: boolean;
+  favoriteTeamId?: string;
+  favoriteTeamName: string;
+  isFavorite: boolean;
+  favoriteAbbreviation?: string;
+  favoriteLogoUrl?: string;
+  favoriteConference?: string;
+  favoriteRank?: number;
+  favoriteRecord?: string;
 };
 
 function TeamLine({
@@ -42,6 +53,14 @@ function TeamLine({
   isWinner,
   onRightPress,
   rightTappable = false,
+  favoriteTeamId,
+  favoriteTeamName,
+  isFavorite,
+  favoriteAbbreviation,
+  favoriteLogoUrl,
+  favoriteConference,
+  favoriteRank,
+  favoriteRecord,
 }: TeamLineProps) {
   const router = useRouter();
 
@@ -57,6 +76,16 @@ function TeamLine({
           {rank != null ? `${rank} ${teamName}` : teamName}
         </Text>
       </Pressable>
+      <FavoriteStar
+        teamId={favoriteTeamId}
+        teamName={favoriteTeamName}
+        isFavorite={isFavorite}
+        abbreviation={favoriteAbbreviation}
+        logoUrl={favoriteLogoUrl}
+        conference={favoriteConference}
+        rank={favoriteRank}
+        record={favoriteRecord}
+      />
       {rightValue ? (
         rightTappable && onRightPress ? (
           <Pressable
@@ -112,6 +141,10 @@ function CompactWatchLabel({ game }: { game: EspnNormalizedGame }) {
 }
 
 export function ScoresGameCard({ game, isLast = false }: ScoresGameCardProps) {
+  const { isFavorite: lookupFavorite } = useFavoriteTeams();
+  const awayIsFavorite = lookupFavorite(game.awayTeamId, game.awayTeam, game.awayAbbreviation);
+  const homeIsFavorite = lookupFavorite(game.homeTeamId, game.homeTeam, game.homeAbbreviation);
+
   const status = toGameStatus(game);
   const showScore = status === 'live' || status === 'final';
   const watchResolution = useMemo(() => resolveEspnWatchTargets(game), [game]);
@@ -152,6 +185,7 @@ export function ScoresGameCard({ game, isLast = false }: ScoresGameCardProps) {
   return (
     <View style={[styles.row, !isLast && styles.rowBorder]}>
       <View style={styles.leftMeta}>
+        <GameAlertBell game={game} />
         {isInProgress ? (
           <Text style={[styles.leftMetaText, styles.leftMetaLive]} numberOfLines={2}>
             {game.status}
@@ -165,6 +199,7 @@ export function ScoresGameCard({ game, isLast = false }: ScoresGameCardProps) {
 
       <View style={styles.matchup}>
         <TeamLine
+          key={game.awayTeamId ?? `away-${game.awayTeam}`}
           logoName={game.awayTeam}
           abbreviation={game.awayAbbreviation}
           logoUrl={game.awayLogoUrl}
@@ -176,8 +211,17 @@ export function ScoresGameCard({ game, isLast = false }: ScoresGameCardProps) {
           isWinner={awayWinner}
           onRightPress={openWatch}
           rightTappable={showScore && canOpenWatch}
+          favoriteTeamId={game.awayTeamId}
+          favoriteTeamName={game.awayTeam}
+          isFavorite={awayIsFavorite}
+          favoriteAbbreviation={game.awayAbbreviation}
+          favoriteLogoUrl={game.awayLogoUrl}
+          favoriteConference={game.awayConference}
+          favoriteRank={awayRank}
+          favoriteRecord={game.awayRecord}
         />
         <TeamLine
+          key={game.homeTeamId ?? `home-${game.homeTeam}`}
           logoName={game.homeTeam}
           abbreviation={game.homeAbbreviation}
           logoUrl={game.homeLogoUrl}
@@ -189,6 +233,14 @@ export function ScoresGameCard({ game, isLast = false }: ScoresGameCardProps) {
           isWinner={homeWinner}
           onRightPress={openWatch}
           rightTappable={showScore && canOpenWatch}
+          favoriteTeamId={game.homeTeamId}
+          favoriteTeamName={game.homeTeam}
+          isFavorite={homeIsFavorite}
+          favoriteAbbreviation={game.homeAbbreviation}
+          favoriteLogoUrl={game.homeLogoUrl}
+          favoriteConference={game.homeConference}
+          favoriteRank={homeRank}
+          favoriteRecord={game.homeRecord}
         />
         <CompactWatchLabel game={game} />
       </View>
@@ -212,6 +264,8 @@ const styles = StyleSheet.create({
     width: 52,
     paddingTop: 2,
     flexShrink: 0,
+    alignItems: 'flex-start',
+    gap: 2,
   },
   leftMetaText: {
     fontSize: 12,

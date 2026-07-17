@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -8,20 +9,56 @@ import {
 
 import { NewsArticleCard } from '@/components/NewsArticleCard';
 import { Screen } from '@/components/Screen';
+import { SegmentedControl } from '@/components/SegmentedControl';
 import { useHeroSportsNews } from '@/data/news/useHeroSportsNews';
+import { useTheAnalystNews } from '@/data/news/useTheAnalystNews';
 import { colors, spacing, typography } from '@/theme';
+import type { NewsSource } from '@/types/news';
+
+const NEWS_SOURCE_OPTIONS: { id: NewsSource; label: string }[] = [
+  { id: 'HERO Sports', label: 'HERO Sports' },
+  { id: 'The Analyst', label: 'The Analyst' },
+];
 
 export default function NewsScreen() {
-  const { articles, loadState, refreshing, isStale, errorMessage, onPullToRefresh } =
-    useHeroSportsNews();
+  const [selectedSource, setSelectedSource] = useState<NewsSource>('HERO Sports');
+  const heroNews = useHeroSportsNews();
+  const analystNews = useTheAnalystNews();
+
+  const activeNews = selectedSource === 'HERO Sports' ? heroNews : analystNews;
+  const { articles, loadState, refreshing, isStale, errorMessage, onPullToRefresh } = activeNews;
 
   const showEmpty = loadState === 'success' && articles.length === 0;
   const showError = loadState === 'error' && articles.length === 0;
 
+  const loadingMessage =
+    selectedSource === 'HERO Sports'
+      ? 'Loading FCS news…'
+      : 'Loading The Analyst FCS news…';
+
+  const emptyMessage =
+    selectedSource === 'HERO Sports'
+      ? 'No FCS news articles are available right now.'
+      : 'No FCS news articles from The Analyst are available right now.';
+
+  const errorMessageTitle =
+    selectedSource === 'HERO Sports'
+      ? 'FCS news could not be loaded. Pull down to try again.'
+      : 'The Analyst news could not be loaded. Pull down to try again.';
+
   return (
     <Screen
-      title="News"
-      subtitle="FCS headlines from HERO Sports."
+      denseTop
+      subtitle="FCS headlines from HERO Sports and The Analyst."
+      stickyHeader={
+        <SegmentedControl
+          options={NEWS_SOURCE_OPTIONS}
+          selected={selectedSource}
+          onSelect={setSelectedSource}
+          accessibilityLabel="News source"
+          style={styles.sourceSelector}
+        />
+      }
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -33,15 +70,13 @@ export default function NewsScreen() {
       {loadState === 'loading' && articles.length === 0 ? (
         <View style={styles.centerBox}>
           <ActivityIndicator color={colors.primary} size="large" />
-          <Text style={styles.centerText}>Loading FCS news…</Text>
+          <Text style={styles.centerText}>{loadingMessage}</Text>
         </View>
       ) : null}
 
       {showError ? (
         <View style={styles.messageBox}>
-          <Text style={styles.messageTitle}>
-            FCS news could not be loaded. Pull down to try again.
-          </Text>
+          <Text style={styles.messageTitle}>{errorMessageTitle}</Text>
           {errorMessage ? <Text style={styles.messageDetail}>{errorMessage}</Text> : null}
         </View>
       ) : null}
@@ -54,7 +89,7 @@ export default function NewsScreen() {
 
       {showEmpty ? (
         <View style={styles.messageBox}>
-          <Text style={styles.messageTitle}>No FCS news articles are available right now.</Text>
+          <Text style={styles.messageTitle}>{emptyMessage}</Text>
         </View>
       ) : null}
 
@@ -62,7 +97,7 @@ export default function NewsScreen() {
         <View style={styles.list}>
           {articles.map((article, index) => (
             <NewsArticleCard
-              key={article.id}
+              key={`${article.source}-${article.id}`}
               article={article}
               isLast={index === articles.length - 1}
             />
@@ -74,6 +109,9 @@ export default function NewsScreen() {
 }
 
 const styles = StyleSheet.create({
+  sourceSelector: {
+    marginTop: spacing.sm,
+  },
   list: {
     borderRadius: 8,
     borderWidth: 1,

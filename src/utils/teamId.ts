@@ -13,6 +13,13 @@ export function isEspnTeamId(key: string): boolean {
   return /^\d+$/.test(key);
 }
 
+/** Normalize ESPN numeric team IDs to consistent string form for comparisons. */
+export function normalizeEspnTeamId(value: unknown): string | undefined {
+  if (value == null || value === '') return undefined;
+  const str = String(value).trim();
+  return isEspnTeamId(str) ? str : undefined;
+}
+
 function isSyntheticFallbackTeamId(teamId: string): boolean {
   return /\d+-(away|home)$/.test(teamId);
 }
@@ -33,10 +40,11 @@ export function teamMatchesKey(
   teamName: string,
   key: string,
 ): boolean {
-  const normalizedKey = decodeURIComponent(key).toLowerCase();
+  const normalizedKey = decodeURIComponent(key).trim().toLowerCase();
 
   if (isEspnTeamId(normalizedKey)) {
-    return teamId === normalizedKey;
+    const normalizedTeamId = normalizeEspnTeamId(teamId);
+    return normalizedTeamId === normalizedKey;
   }
 
   return slugifyTeamName(teamName) === normalizedKey;

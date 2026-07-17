@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 
 import { isValidHeroSportsArticleUrl } from '@/data/news/heroSportsNewsProvider';
+import { isValidTheAnalystArticleUrl } from '@/data/news/theAnalystNewsProvider';
 import { colors, spacing, typography } from '@/theme';
 import type { NewsArticle } from '@/types/news';
 
@@ -17,6 +18,13 @@ type NewsArticleCardProps = {
   article: NewsArticle;
   isLast?: boolean;
 };
+
+function isValidNewsArticleUrl(article: NewsArticle): boolean {
+  if (article.source === 'HERO Sports') {
+    return isValidHeroSportsArticleUrl(article.url);
+  }
+  return isValidTheAnalystArticleUrl(article.url);
+}
 
 function formatPublishedDate(isoDate?: string): string | undefined {
   if (!isoDate) return undefined;
@@ -43,7 +51,7 @@ export function NewsArticleCard({ article, isLast = false }: NewsArticleCardProp
   const metaParts = [article.author, dateLabel].filter(Boolean);
 
   async function handlePress() {
-    if (!isValidHeroSportsArticleUrl(article.url) || opening) return;
+    if (!isValidNewsArticleUrl(article) || opening) return;
 
     setOpening(true);
     try {
@@ -62,7 +70,7 @@ export function NewsArticleCard({ article, isLast = false }: NewsArticleCardProp
   return (
     <Pressable
       accessibilityRole="link"
-      accessibilityLabel={`Open ${article.title} on HERO Sports`}
+      accessibilityLabel={`Open ${article.title} on ${article.source}`}
       onPress={() => void handlePress()}
       style={({ pressed }) => [
         styles.card,
@@ -79,7 +87,7 @@ export function NewsArticleCard({ article, isLast = false }: NewsArticleCardProp
       ) : null}
 
       <View style={styles.content}>
-        <Text style={styles.source}>HERO Sports</Text>
+        <Text style={styles.source}>{article.source}</Text>
         <Text style={styles.title}>{article.title}</Text>
 
         {metaParts.length > 0 ? (

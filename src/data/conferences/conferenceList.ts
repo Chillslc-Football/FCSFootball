@@ -292,7 +292,29 @@ export function buildConferenceMenu(
   return menu;
 }
 
+/** Conferences tab dropdown — FCS section before FBS. */
+export function buildConferencesTabMenu(
+  extraOtherOptions: ConferenceOption[] = unrecognizedConferenceOptions,
+): ConferenceMenuEntry[] {
+  const menu: ConferenceMenuEntry[] = [
+    { type: 'header', label: 'FCS' },
+    ...getFcsConferenceOptions().map((option) => ({ type: 'option' as const, option })),
+    { type: 'header', label: 'FBS' },
+    ...getFbsConferenceOptions().map((option) => ({ type: 'option' as const, option })),
+  ];
+
+  const otherOptions = sortConferenceOptions(extraOtherOptions);
+  if (otherOptions.length > 0) {
+    menu.push({ type: 'header', label: 'Other' });
+    menu.push(...otherOptions.map((option) => ({ type: 'option' as const, option })));
+  }
+
+  return menu;
+}
+
 export const CONFERENCE_MENU: ConferenceMenuEntry[] = buildConferenceMenu();
+
+export const CONFERENCES_TAB_MENU: ConferenceMenuEntry[] = buildConferencesTabMenu();
 
 export type FlatConferenceMenuItem =
   | { type: 'section-header'; key: string; label: string }

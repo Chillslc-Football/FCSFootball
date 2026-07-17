@@ -1,8 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import { FavoriteStar } from '@/components/FavoriteStar';
+import { GameAlertBell } from '@/components/GameAlertBell';
 import { TeamLogo } from '@/components/TeamLogo';
 import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
 import { openWatchOnEspn, resolveEspnWatchTargets } from '@/data/providers/espnWatchLinks';
@@ -29,37 +30,15 @@ type TeamLineProps = {
   isWinner?: boolean;
   onRightPress?: () => void;
   rightTappable?: boolean;
-  favorited?: boolean;
-  onToggleFavorite?: () => void;
+  favoriteTeamId?: string;
+  favoriteTeamName: string;
+  isFavorite: boolean;
+  favoriteAbbreviation?: string;
+  favoriteLogoUrl?: string;
+  favoriteConference?: string;
+  favoriteRank?: number;
+  favoriteRecord?: string;
 };
-
-function CompactFavoriteStar({
-  favorited,
-  onPress,
-  teamName,
-}: {
-  favorited: boolean;
-  onPress: () => void;
-  teamName: string;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={
-        favorited ? `Remove ${teamName} from favorites` : `Add ${teamName} to favorites`
-      }
-      accessibilityState={{ selected: favorited }}
-      hitSlop={6}
-      onPress={onPress}
-      style={({ pressed }) => [styles.favoriteButton, pressed && styles.favoriteButtonPressed]}>
-      <Ionicons
-        name={favorited ? 'star' : 'star-outline'}
-        size={14}
-        color={favorited ? colors.primary : colors.textMuted}
-      />
-    </Pressable>
-  );
-}
 
 function TeamLine({
   logoName,
@@ -73,8 +52,14 @@ function TeamLine({
   isWinner,
   onRightPress,
   rightTappable = false,
-  favorited = false,
-  onToggleFavorite,
+  favoriteTeamId,
+  favoriteTeamName,
+  isFavorite,
+  favoriteAbbreviation,
+  favoriteLogoUrl,
+  favoriteConference,
+  favoriteRank,
+  favoriteRecord,
 }: TeamLineProps) {
   const router = useRouter();
 
@@ -90,13 +75,16 @@ function TeamLine({
           {rank != null ? `${rank} ${teamName}` : teamName}
         </Text>
       </Pressable>
-      {onToggleFavorite ? (
-        <CompactFavoriteStar
-          favorited={favorited}
-          onPress={onToggleFavorite}
-          teamName={navigationName}
-        />
-      ) : null}
+      <FavoriteStar
+        teamId={favoriteTeamId}
+        teamName={favoriteTeamName}
+        isFavorite={isFavorite}
+        abbreviation={favoriteAbbreviation}
+        logoUrl={favoriteLogoUrl}
+        conference={favoriteConference}
+        rank={favoriteRank}
+        record={favoriteRecord}
+      />
       {rightValue ? (
         rightTappable && onRightPress ? (
           <Pressable
@@ -152,7 +140,10 @@ function CompactWatchLabel({ game }: { game: EspnNormalizedGame }) {
 }
 
 export function ConferenceScheduleGameRow({ game, isLast = false }: ConferenceScheduleGameRowProps) {
-  const { isFavorite, toggleFavorite } = useFavoriteTeams();
+  const { isFavorite: lookupFavorite } = useFavoriteTeams();
+  const awayIsFavorite = lookupFavorite(game.awayTeamId, game.awayTeam, game.awayAbbreviation);
+  const homeIsFavorite = lookupFavorite(game.homeTeamId, game.homeTeam, game.homeAbbreviation);
+
   const status = toGameStatus(game);
   const showScore = status === 'live' || status === 'final';
   const watchResolution = useMemo(() => resolveEspnWatchTargets(game), [game]);
@@ -190,42 +181,10 @@ export function ConferenceScheduleGameRow({ game, isLast = false }: ConferenceSc
   const isInProgress = game.normalizedStatus === 'in_progress';
   const isFinal = game.normalizedStatus === 'final';
 
-  const awayKey = game.awayTeamId ?? game.awayTeam;
-  const homeKey = game.homeTeamId ?? game.homeTeam;
-  const awayFavorited = isFavorite(awayKey, game.awayTeam);
-  const homeFavorited = isFavorite(homeKey, game.homeTeam);
-
-  const toggleAwayFavorite = useCallback(() => {
-    void toggleFavorite({
-      key: awayKey,
-      espnTeamId: game.awayTeamId,
-      name: game.awayTeam,
-      abbreviation: game.awayAbbreviation,
-      logoUrl: game.awayLogoUrl,
-      conference: game.awayConference,
-      rank: awayRank,
-      record: game.awayRecord,
-      savedAt: new Date().toISOString(),
-    });
-  }, [awayKey, awayRank, game, toggleFavorite]);
-
-  const toggleHomeFavorite = useCallback(() => {
-    void toggleFavorite({
-      key: homeKey,
-      espnTeamId: game.homeTeamId,
-      name: game.homeTeam,
-      abbreviation: game.homeAbbreviation,
-      logoUrl: game.homeLogoUrl,
-      conference: game.homeConference,
-      rank: homeRank,
-      record: game.homeRecord,
-      savedAt: new Date().toISOString(),
-    });
-  }, [homeKey, homeRank, game, toggleFavorite]);
-
   return (
     <View style={[styles.row, !isLast && styles.rowBorder]}>
       <View style={styles.leftMeta}>
+        <GameAlertBell game={game} />
         {isInProgress ? (
           <Text style={[styles.leftMetaText, styles.leftMetaLive]} numberOfLines={2}>
             {game.status}
@@ -239,6 +198,7 @@ export function ConferenceScheduleGameRow({ game, isLast = false }: ConferenceSc
 
       <View style={styles.matchup}>
         <TeamLine
+          key={game.awayTeamId ?? `away-${game.awayTeam}`}
           logoName={game.awayTeam}
           abbreviation={game.awayAbbreviation}
           logoUrl={game.awayLogoUrl}
@@ -250,10 +210,17 @@ export function ConferenceScheduleGameRow({ game, isLast = false }: ConferenceSc
           isWinner={awayWinner}
           onRightPress={openWatch}
           rightTappable={showScore && canOpenWatch}
-          favorited={awayFavorited}
-          onToggleFavorite={toggleAwayFavorite}
+          favoriteTeamId={game.awayTeamId}
+          favoriteTeamName={game.awayTeam}
+          isFavorite={awayIsFavorite}
+          favoriteAbbreviation={game.awayAbbreviation}
+          favoriteLogoUrl={game.awayLogoUrl}
+          favoriteConference={game.awayConference}
+          favoriteRank={awayRank}
+          favoriteRecord={game.awayRecord}
         />
         <TeamLine
+          key={game.homeTeamId ?? `home-${game.homeTeam}`}
           logoName={game.homeTeam}
           abbreviation={game.homeAbbreviation}
           logoUrl={game.homeLogoUrl}
@@ -265,8 +232,14 @@ export function ConferenceScheduleGameRow({ game, isLast = false }: ConferenceSc
           isWinner={homeWinner}
           onRightPress={openWatch}
           rightTappable={showScore && canOpenWatch}
-          favorited={homeFavorited}
-          onToggleFavorite={toggleHomeFavorite}
+          favoriteTeamId={game.homeTeamId}
+          favoriteTeamName={game.homeTeam}
+          isFavorite={homeIsFavorite}
+          favoriteAbbreviation={game.homeAbbreviation}
+          favoriteLogoUrl={game.homeLogoUrl}
+          favoriteConference={game.homeConference}
+          favoriteRank={homeRank}
+          favoriteRecord={game.homeRecord}
         />
         <CompactWatchLabel game={game} />
       </View>
@@ -290,6 +263,8 @@ const styles = StyleSheet.create({
     width: 52,
     paddingTop: 2,
     flexShrink: 0,
+    alignItems: 'flex-start',
+    gap: 2,
   },
   leftMetaText: {
     fontSize: 12,
@@ -331,13 +306,6 @@ const styles = StyleSheet.create({
   },
   teamNameWinner: {
     fontWeight: '700',
-  },
-  favoriteButton: {
-    padding: 2,
-    flexShrink: 0,
-  },
-  favoriteButtonPressed: {
-    opacity: 0.7,
   },
   rightCol: {
     width: 36,

@@ -1,7 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { AddFavoriteTeamPicker } from '@/components/AddFavoriteTeamPicker';
 import { FavoriteTeamRow } from '@/components/FavoriteTeamRow';
@@ -14,6 +21,7 @@ import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
 import { mergeStaticRankingsOntoGames } from '@/data/providers/rankingMerge';
 import { ensureSeasonGamesLoaded } from '@/data/teams/loadTeamSeasonGames';
 import { registerEspnGames } from '@/data/teams/teamGamesStore';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { colors, spacing, typography } from '@/theme';
 import type { EspnNormalizedGame } from '@/types';
 
@@ -25,17 +33,23 @@ export default function FavoritesScreen() {
   const [games, setGames] = useState<EspnNormalizedGame[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const loadScheduleData = useCallback(async () => {
-    setLoadState('loading');
+  const loadScheduleData = useCallback(async (options?: { pullRefresh?: boolean }) => {
+    if (!options?.pullRefresh) {
+      setLoadState('loading');
+    }
 
     try {
-      const seasonGames = await ensureSeasonGamesLoaded();
+      const seasonGames = await ensureSeasonGamesLoaded({
+        forceRefresh: options?.pullRefresh,
+      });
       const merged = await mergeStaticRankingsOntoGames(seasonGames);
       setGames(merged.games);
       registerEspnGames(merged.games);
     } catch (error) {
       console.warn('[FavoritesScreen] schedule load failed; showing favorites without next games:', error);
-      setGames([]);
+      if (!options?.pullRefresh) {
+        setGames([]);
+      }
     } finally {
       setLoadState('success');
     }
@@ -53,6 +67,12 @@ export default function FavoritesScreen() {
 
   const pickableTeams = useMemo(() => buildPickableTeamsFromGames(games), [games]);
 
+  const { refreshing, onPullToRefresh } = usePullToRefresh(
+    useCallback(async () => {
+      await loadScheduleData({ pullRefresh: true });
+    }, [loadScheduleData]),
+  );
+
   const isLoading = !favoritesLoaded || loadState === 'loading';
   const showEmptyFavorites = favoritesLoaded && favorites.length === 0;
 
@@ -62,7 +82,16 @@ export default function FavoritesScreen() {
   }
 
   return (
-    <Screen denseTop>
+    <Screen
+      denseTop
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => void onPullToRefresh()}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }>
       {!isLoading ? (
         <Pressable
           accessibilityRole="button"

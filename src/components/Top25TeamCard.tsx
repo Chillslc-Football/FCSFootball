@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { TeamLogo } from '@/components/TeamLogo';
+import { FavoriteStar } from '@/components/FavoriteStar';
 import { TeamNameLink } from '@/components/TeamNameLink';
 import { colors, spacing, typography } from '@/theme';
 import type { GameLocation, NextGame, PollMovement, RankedTeam, TeamRecord } from '@/types';
@@ -89,11 +90,19 @@ export function Top25TeamCard({ item, logoUrl, espnTeamId }: Top25TeamCardProps)
           size="poll"
         />
         <View style={styles.info}>
-          <TeamNameLink
-            name={team.name}
-            teamId={espnTeamId ?? team.id}
-            style={styles.teamName}
-          />
+          <View style={styles.nameRow}>
+            <TeamNameLink
+              name={team.name}
+              teamId={espnTeamId ?? team.id}
+              style={styles.teamName}
+            />
+            <FavoriteStar
+              teamId={espnTeamId ?? team.id}
+              teamName={team.name}
+              abbreviation={team.abbreviation}
+              logoUrl={resolvedLogoUrl}
+            />
+          </View>
           <Text style={styles.record}>{formatRecord(record)}</Text>
         </View>
         <View style={styles.trailing}>
@@ -138,12 +147,19 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    minWidth: 0,
+    marginBottom: 2,
+  },
   teamName: {
     ...typography.body,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: 2,
     flex: undefined,
+    marginBottom: 0,
   },
   record: {
     ...typography.caption,

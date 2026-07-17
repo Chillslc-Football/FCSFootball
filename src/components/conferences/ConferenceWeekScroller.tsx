@@ -64,8 +64,7 @@ export function ConferenceWeekScroller({ selectedWeek, onSelectWeek }: Conferenc
 
 const styles = StyleSheet.create({
   scroller: {
-    marginHorizontal: -spacing.lg,
-    marginBottom: spacing.md,
+    marginBottom: 0,
   },
   content: {
     paddingHorizontal: spacing.lg,

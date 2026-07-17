@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import { FavoriteStar } from '@/components/FavoriteStar';
 import { TeamLogo } from '@/components/TeamLogo';
+import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
 import { openWatchOnEspn, resolveEspnWatchTargets } from '@/data/providers/espnWatchLinks';
 import { toGameStatus } from '@/data/providers/espnTodayMapper';
 import { colors, spacing, typography } from '@/theme';
@@ -25,6 +27,14 @@ type TeamLineProps = {
   teamId?: string;
   rightValue?: string;
   isWinner?: boolean;
+  favoriteTeamId?: string;
+  favoriteTeamName: string;
+  isFavorite: boolean;
+  favoriteAbbreviation?: string;
+  favoriteLogoUrl?: string;
+  favoriteConference?: string;
+  favoriteRank?: number;
+  favoriteRecord?: string;
 };
 
 function TeamLine({
@@ -37,6 +47,14 @@ function TeamLine({
   teamId,
   rightValue,
   isWinner,
+  favoriteTeamId,
+  favoriteTeamName,
+  isFavorite,
+  favoriteAbbreviation,
+  favoriteLogoUrl,
+  favoriteConference,
+  favoriteRank,
+  favoriteRecord,
 }: TeamLineProps) {
   const router = useRouter();
 
@@ -52,6 +70,16 @@ function TeamLine({
           {rank != null ? `${rank} ${teamName}` : teamName}
         </Text>
       </Pressable>
+      <FavoriteStar
+        teamId={favoriteTeamId}
+        teamName={favoriteTeamName}
+        isFavorite={isFavorite}
+        abbreviation={favoriteAbbreviation}
+        logoUrl={favoriteLogoUrl}
+        conference={favoriteConference}
+        rank={favoriteRank}
+        record={favoriteRecord}
+      />
       {rightValue ? <Text style={[styles.rightCol, isWinner && styles.rightColWinner]}>{rightValue}</Text> : null}
     </View>
   );
@@ -96,6 +124,10 @@ function CompactWatchLabel({ game }: { game: EspnNormalizedGame }) {
 }
 
 export function TeamScheduleGameRow({ game, isLast = false }: TeamScheduleGameRowProps) {
+  const { isFavorite: lookupFavorite } = useFavoriteTeams();
+  const awayIsFavorite = lookupFavorite(game.awayTeamId, game.awayTeam, game.awayAbbreviation);
+  const homeIsFavorite = lookupFavorite(game.homeTeamId, game.homeTeam, game.homeAbbreviation);
+
   const status = toGameStatus(game);
   const showScore = status === 'live' || status === 'final';
   const awayWinner =
@@ -130,6 +162,7 @@ export function TeamScheduleGameRow({ game, isLast = false }: TeamScheduleGameRo
     <View style={[styles.row, !isLast && styles.rowBorder]}>
       <View style={styles.matchup}>
         <TeamLine
+          key={game.awayTeamId ?? `away-${game.awayTeam}`}
           logoName={game.awayTeam}
           abbreviation={game.awayAbbreviation}
           logoUrl={game.awayLogoUrl}
@@ -139,8 +172,17 @@ export function TeamScheduleGameRow({ game, isLast = false }: TeamScheduleGameRo
           teamId={game.awayTeamId}
           rightValue={awayRight}
           isWinner={awayWinner}
+          favoriteTeamId={game.awayTeamId}
+          favoriteTeamName={game.awayTeam}
+          isFavorite={awayIsFavorite}
+          favoriteAbbreviation={game.awayAbbreviation}
+          favoriteLogoUrl={game.awayLogoUrl}
+          favoriteConference={game.awayConference}
+          favoriteRank={awayRank}
+          favoriteRecord={game.awayRecord}
         />
         <TeamLine
+          key={game.homeTeamId ?? `home-${game.homeTeam}`}
           logoName={game.homeTeam}
           abbreviation={game.homeAbbreviation}
           logoUrl={game.homeLogoUrl}
@@ -150,6 +192,14 @@ export function TeamScheduleGameRow({ game, isLast = false }: TeamScheduleGameRo
           teamId={game.homeTeamId}
           rightValue={homeRight}
           isWinner={homeWinner}
+          favoriteTeamId={game.homeTeamId}
+          favoriteTeamName={game.homeTeam}
+          isFavorite={homeIsFavorite}
+          favoriteAbbreviation={game.homeAbbreviation}
+          favoriteLogoUrl={game.homeLogoUrl}
+          favoriteConference={game.homeConference}
+          favoriteRank={homeRank}
+          favoriteRecord={game.homeRecord}
         />
       </View>
 

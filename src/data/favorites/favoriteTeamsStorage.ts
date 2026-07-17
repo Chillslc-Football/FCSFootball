@@ -1,7 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import {
+  buildFavoriteTeamIdentityLookup,
+  dedupeFavoriteTeams,
+  migrateLegacyFavoriteTeam,
+  teamSideMatchesFavorite,
+} from '@/data/favorites/favoriteTeamMatch';
+import { getAllCachedEspnGames } from '@/data/teams/teamGamesStore';
 import type { FavoriteTeam } from '@/types/favorites';
-import { teamMatchesKey } from '@/utils/teamId';
+import { normalizeEspnTeamId, slugifyTeamName } from '@/utils/teamId';
 import type { TeamProfile } from '@/data/teams/loadTeamSeasonGames';
 
 const STORAGE_KEY = 'fcsfootball.favoriteTeams.v1';
@@ -19,13 +26,17 @@ function isAsyncStorageReady(): boolean {
 function normalizeFavoriteTeam(value: unknown): FavoriteTeam | null {
   if (typeof value !== 'object' || value === null) return null;
   const record = value as Record<string, unknown>;
-  const key = typeof record.key === 'string' ? record.key.trim() : '';
+  const keyRaw = typeof record.key === 'string' ? record.key.trim() : '';
   const name = typeof record.name === 'string' ? record.name.trim() : '';
-  if (!key || !name) return null;
+  if (!keyRaw || !name) return null;
+
+  const espnTeamId =
+    normalizeEspnTeamId(record.espnTeamId) ?? normalizeEspnTeamId(keyRaw);
+  const key = espnTeamId ?? keyRaw;
 
   return {
     key,
-    espnTeamId: typeof record.espnTeamId === 'string' ? record.espnTeamId : undefined,
+    espnTeamId,
     name,
     abbreviation: typeof record.abbreviation === 'string' ? record.abbreviation : undefined,
     logoUrl: typeof record.logoUrl === 'string' ? record.logoUrl : undefined,
@@ -37,10 +48,17 @@ function normalizeFavoriteTeam(value: unknown): FavoriteTeam | null {
   };
 }
 
+function migrateLoadedFavorites(teams: FavoriteTeam[]): FavoriteTeam[] {
+  const lookup = buildFavoriteTeamIdentityLookup(getAllCachedEspnGames());
+  const migrated = teams.map((team) => migrateLegacyFavoriteTeam(team, lookup));
+  return dedupeFavoriteTeams(migrated);
+}
+
 export function favoriteTeamFromProfile(profile: TeamProfile, routeId: string): FavoriteTeam {
+  const espnTeamId = normalizeEspnTeamId(profile.espnTeamId) ?? normalizeEspnTeamId(routeId);
   return {
-    key: profile.espnTeamId ?? routeId,
-    espnTeamId: profile.espnTeamId,
+    key: espnTeamId ?? routeId,
+    espnTeamId,
     name: profile.displayName,
     abbreviation: profile.abbreviation,
     logoUrl: profile.logoUrl,
@@ -51,17 +69,38 @@ export function favoriteTeamFromProfile(profile: TeamProfile, routeId: string): 
   };
 }
 
+export function favoriteTeamFromEspnSide(side: {
+  teamId?: string;
+  teamName: string;
+  abbreviation?: string;
+  logoUrl?: string;
+  conference?: string;
+  rank?: number;
+  record?: string;
+}): FavoriteTeam {
+  const normalizedTeamId = normalizeEspnTeamId(side.teamId);
+  const key = normalizedTeamId ?? slugifyTeamName(side.teamName);
+  return {
+    key,
+    espnTeamId: normalizedTeamId,
+    name: side.teamName,
+    abbreviation: side.abbreviation,
+    logoUrl: side.logoUrl,
+    conference: side.conference,
+    rank: side.rank,
+    record: side.record,
+    savedAt: new Date().toISOString(),
+  };
+}
+
 export function favoriteTeamMatchesStored(
   favorite: FavoriteTeam,
-  teamKey: string,
+  teamId?: string,
   teamName?: string,
+  abbreviation?: string,
 ): boolean {
   try {
-    const key = decodeURIComponent(teamKey);
-    if (favorite.key === key || favorite.espnTeamId === key) return true;
-    if (teamName && teamMatchesKey(favorite.espnTeamId, favorite.name, key)) return true;
-    if (teamName && teamMatchesKey(undefined, teamName, favorite.key)) return true;
-    return false;
+    return teamSideMatchesFavorite(favorite, { teamId, teamName, abbreviation });
   } catch (error) {
     console.warn('[favoriteTeamsStorage] favoriteTeamMatchesStored failed:', error);
     return false;
@@ -71,7 +110,7 @@ export function favoriteTeamMatchesStored(
 export async function loadFavoriteTeams(): Promise<FavoriteTeam[]> {
   if (!isAsyncStorageReady()) {
     console.warn('[favoriteTeamsStorage] AsyncStorage is not available; using in-memory favorites');
-    return [...memoryFallback];
+    return migrateLoadedFavorites([...memoryFallback]);
   }
 
   try {
@@ -100,11 +139,18 @@ export async function loadFavoriteTeams(): Promise<FavoriteTeam[]> {
       .map(normalizeFavoriteTeam)
       .filter((team): team is FavoriteTeam => team != null);
 
-    memoryFallback = teams;
-    return teams;
+    const migrated = migrateLoadedFavorites(teams);
+    memoryFallback = migrated;
+
+    const needsPersist = JSON.stringify(teams) !== JSON.stringify(migrated);
+    if (needsPersist) {
+      await saveFavoriteTeams(migrated);
+    }
+
+    return migrated;
   } catch (error) {
     console.warn('[favoriteTeamsStorage] loadFavoriteTeams failed:', error);
-    return [...memoryFallback];
+    return migrateLoadedFavorites([...memoryFallback]);
   }
 }
 
@@ -130,14 +176,17 @@ export async function addFavoriteTeam(
   try {
     const existing = current ?? (await loadFavoriteTeams());
     const alreadySaved = existing.some((entry) =>
-      favoriteTeamMatchesStored(entry, team.key, team.name),
+      favoriteTeamMatchesStored(entry, team.espnTeamId ?? team.key, team.name, team.abbreviation),
     );
 
     if (alreadySaved) {
       return existing;
     }
 
-    const next = [...existing, { ...team, savedAt: new Date().toISOString() }];
+    const next = dedupeFavoriteTeams([
+      ...existing,
+      { ...team, savedAt: new Date().toISOString() },
+    ]);
     await saveFavoriteTeams(next);
     return next;
   } catch (error) {
@@ -153,13 +202,16 @@ export async function toggleFavoriteTeam(
   try {
     const existing = current ?? (await loadFavoriteTeams());
     const index = existing.findIndex((entry) =>
-      favoriteTeamMatchesStored(entry, team.key, team.name),
+      favoriteTeamMatchesStored(entry, team.espnTeamId ?? team.key, team.name, team.abbreviation),
     );
 
     const next =
       index >= 0
         ? existing.filter((_, i) => i !== index)
-        : [...existing, { ...team, savedAt: new Date().toISOString() }];
+        : dedupeFavoriteTeams([
+            ...existing,
+            { ...team, savedAt: new Date().toISOString() },
+          ]);
 
     await saveFavoriteTeams(next);
     return next;

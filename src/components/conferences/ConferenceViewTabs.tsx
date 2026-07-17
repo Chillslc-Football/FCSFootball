@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, spacing, typography } from '@/theme';
 
@@ -40,7 +40,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
-    marginBottom: spacing.md,
   },
   tab: {
     flex: 1,

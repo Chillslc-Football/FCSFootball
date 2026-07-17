@@ -55,16 +55,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="news"
+        options={{
+          title: 'News',
+          tabBarIcon: ({ color }) => <TabIcon name="newspaper" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
           tabBarIcon: ({ color }) => <TabIcon name="settings" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="news"
-        options={{
-          href: null,
         }}
       />
     </Tabs>

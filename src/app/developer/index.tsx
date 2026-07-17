@@ -30,6 +30,13 @@ export default function DeveloperScreen() {
           <Text style={styles.rowSubtitle}>Stats Perform FCS Top 25 — not connected yet</Text>
         </Pressable>
       </Link>
+
+      <Link href={'/developer/notification-test' as Href} asChild>
+        <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+          <Text style={styles.rowTitle}>Notification Test</Text>
+          <Text style={styles.rowSubtitle}>Local notification simulations (development only)</Text>
+        </Pressable>
+      </Link>
     </View>
   );
 }

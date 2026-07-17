@@ -21,33 +21,59 @@ export function useConferenceWeekSchedule(conferenceId: ConferenceId, weekId: Sc
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [games, setGames] = useState<EspnNormalizedGame[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const loadWeekGames = useCallback(async () => {
-    setLoadState('loading');
-    setErrorMessage(null);
-    setGames([]);
+  const loadWeekGames = useCallback(
+    async (options?: { pullRefresh?: boolean }) => {
+      const pullRefresh = options?.pullRefresh ?? false;
 
-    try {
-      const response = await espnScoresProvider.getWeekGames(weekId, {
-        league: fetchLeague,
-      });
+      if (!pullRefresh) {
+        setLoadState('loading');
+        setErrorMessage(null);
+        setGames([]);
+      }
 
-      const merged = await mergeScoresTabRankings(response.data.games, fetchLeague);
-      setGames(merged.games);
-      registerEspnGames(merged.games);
-      setLoadState('success');
-    } catch (err) {
-      setGames([]);
-      setErrorMessage(
-        err instanceof Error ? err.message : 'Could not load schedule from ESPN.',
-      );
-      setLoadState('error');
-    }
-  }, [weekId, fetchLeague]);
+      try {
+        const response = await espnScoresProvider.getWeekGames(weekId, {
+          league: fetchLeague,
+          forceRefresh: pullRefresh,
+        });
+
+        const merged = await mergeScoresTabRankings(response.data.games, fetchLeague);
+        setGames(merged.games);
+        registerEspnGames(merged.games);
+        setLoadState('success');
+        setErrorMessage(null);
+      } catch (err) {
+        if (pullRefresh) {
+          console.warn('[useConferenceWeekSchedule] pull refresh failed:', err);
+          return;
+        }
+
+        setGames([]);
+        setErrorMessage(
+          err instanceof Error ? err.message : 'Could not load schedule from ESPN.',
+        );
+        setLoadState('error');
+      }
+    },
+    [weekId, fetchLeague],
+  );
 
   useEffect(() => {
     void loadWeekGames();
   }, [loadWeekGames]);
+
+  const refresh = useCallback(async () => {
+    if (refreshing) return;
+
+    setRefreshing(true);
+    try {
+      await loadWeekGames({ pullRefresh: true });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadWeekGames, refreshing]);
 
   const filteredGames = useMemo(
     () => filterEspnGamesByConference(games, conferenceId),
@@ -60,5 +86,7 @@ export function useConferenceWeekSchedule(conferenceId: ConferenceId, weekId: Sc
     filteredGames,
     errorMessage,
     fetchLeague,
+    refreshing,
+    refresh,
   };
 }

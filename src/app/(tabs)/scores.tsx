@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
@@ -28,6 +29,7 @@ import {
   resolveScoresLeagueFromFilter,
   type ScoresFilterId,
 } from '@/data/scores/scoresFilters';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { colors, spacing, typography } from '@/theme';
 import { extractLocalGameDateIso, formatGameDateLabel } from '@/utils/formatGameTime';
 import { sortEspnNormalizedGames } from '@/utils/sortGames';
@@ -76,10 +78,11 @@ export default function ScoresScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sourceLabel, setSourceLabel] = useState('');
 
-  const loadGames = useCallback(async (options?: ScoresSilentRefreshOptions) => {
+  const loadGames = useCallback(async (options?: ScoresSilentRefreshOptions & { pullRefresh?: boolean }) => {
     const silent = options?.silent ?? false;
+    const pullRefresh = options?.pullRefresh ?? false;
 
-    if (!silent) {
+    if (!silent && !pullRefresh) {
       setLoadState('loading');
       setErrorMessage(null);
     }
@@ -87,7 +90,7 @@ export default function ScoresScreen() {
     try {
       const response = await espnScoresProvider.getWeekGames(weekId, {
         league: leagueFilter,
-        forceRefresh: options?.forceRefresh,
+        forceRefresh: options?.forceRefresh ?? pullRefresh,
       });
 
       const merged = await mergeScoresTabRankings(response.data.games, leagueFilter);
@@ -97,7 +100,8 @@ export default function ScoresScreen() {
       setSourceLabel(`${response.data.weekLabel} · ESPN scoreboard`);
       setLoadState('success');
     } catch (err) {
-      if (silent) {
+      if (silent || pullRefresh) {
+        console.warn('[ScoresScreen] refresh failed:', err);
         return;
       }
 
@@ -126,6 +130,12 @@ export default function ScoresScreen() {
     enabled: loadState === 'success',
   });
 
+  const { refreshing, onPullToRefresh } = usePullToRefresh(
+    useCallback(async () => {
+      await loadGames({ pullRefresh: true, forceRefresh: true });
+    }, [loadGames]),
+  );
+
   const dateGroups = useMemo(() => {
     const baseGroups = groupScoresByDate(filteredGames);
     if (!favoritesLoaded || favorites.length === 0) {
@@ -144,12 +154,22 @@ export default function ScoresScreen() {
     loadState === 'success' && (isPlaceholderFilter || noGamesLoaded || dateGroups.length === 0);
 
   return (
-    <Screen denseTop>
-      <View style={styles.dropdownStack}>
-        <WeekDropdown selected={weekId} onSelect={setWeekId} />
-        <GameFilterDropdown selected={filterId} onSelect={setFilterId} />
-      </View>
-
+    <Screen
+      denseTop
+      stickyHeader={
+        <View style={styles.dropdownStack}>
+          <WeekDropdown selected={weekId} onSelect={setWeekId} />
+          <GameFilterDropdown selected={filterId} onSelect={setFilterId} />
+        </View>
+      }
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => void onPullToRefresh()}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }>
       {loadState === 'loading' ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator color={colors.primary} size="large" />
@@ -210,7 +230,6 @@ export default function ScoresScreen() {
 const styles = StyleSheet.create({
   dropdownStack: {
     gap: spacing.xs,
-    marginBottom: spacing.xs,
   },
   loadingBox: {
     backgroundColor: colors.surface,

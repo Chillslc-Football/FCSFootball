@@ -1,3 +1,5 @@
+export type NewsSource = 'HERO Sports' | 'The Analyst';
+
 export type NewsArticle = {
   id: string;
   title: string;
@@ -6,7 +8,7 @@ export type NewsArticle = {
   author?: string;
   publishedAt?: string;
   excerpt?: string;
-  source: 'HERO Sports';
+  source: NewsSource;
 };
 
 export type NewsArticlesPayload = {

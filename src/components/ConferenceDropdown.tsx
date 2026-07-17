@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DROPDOWN_CHEVRON_SIZE, dropdownStyles } from '@/components/dropdownStyles';
 import {
-  CONFERENCE_MENU,
+  CONFERENCES_TAB_MENU,
   findConferenceMenuIndex,
   flattenConferenceMenu,
   getConferenceLabel,
@@ -31,7 +31,7 @@ type ConferenceDropdownProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-const FLAT_CONFERENCE_MENU = flattenConferenceMenu(CONFERENCE_MENU);
+const FLAT_CONFERENCE_MENU = flattenConferenceMenu(CONFERENCES_TAB_MENU);
 
 function ConferenceOptionRow({
   label,
@@ -89,7 +89,7 @@ export function ConferenceDropdown({ selected, onSelect, style }: ConferenceDrop
   const selectedLabel = getConferenceLabel(selected);
 
   const selectedIndex = useMemo(
-    () => findConferenceMenuIndex(selected, CONFERENCE_MENU),
+    () => findConferenceMenuIndex(selected, CONFERENCES_TAB_MENU),
     [selected],
   );
 

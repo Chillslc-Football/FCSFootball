@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { fetchConferenceStandings } from '@/data/providers/espnStandingsProvider';
 import type { ConferenceId } from '@/data/conferences/conferenceList';
@@ -14,6 +14,14 @@ type StandingsCacheEntry = {
 
 const standingsCache = new Map<ConferenceId, StandingsCacheEntry>();
 
+export function clearConferenceStandingsCache(conferenceId?: ConferenceId): void {
+  if (conferenceId) {
+    standingsCache.delete(conferenceId);
+    return;
+  }
+  standingsCache.clear();
+}
+
 export function useConferenceStandings(conferenceId: ConferenceId) {
   const cached = standingsCache.get(conferenceId);
   const [loadState, setLoadState] = useState<LoadState>(cached ? 'success' : 'loading');
@@ -21,27 +29,31 @@ export function useConferenceStandings(conferenceId: ConferenceId) {
   const [conferenceName, setConferenceName] = useState<string | undefined>(cached?.conferenceName);
   const [unavailable, setUnavailable] = useState(cached?.unavailable ?? false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const existing = standingsCache.get(conferenceId);
-    if (existing) {
-      setEntries(existing.entries);
-      setConferenceName(existing.conferenceName);
-      setUnavailable(existing.unavailable);
-      setLoadState('success');
-      setErrorMessage(null);
-      return;
-    }
+  const loadStandings = useCallback(
+    async (options?: { pullRefresh?: boolean }) => {
+      const pullRefresh = options?.pullRefresh ?? false;
 
-    let cancelled = false;
+      if (!pullRefresh) {
+        const existing = standingsCache.get(conferenceId);
+        if (existing) {
+          setEntries(existing.entries);
+          setConferenceName(existing.conferenceName);
+          setUnavailable(existing.unavailable);
+          setLoadState('success');
+          setErrorMessage(null);
+          return;
+        }
 
-    async function loadStandings() {
-      setLoadState('loading');
-      setErrorMessage(null);
+        setLoadState('loading');
+        setErrorMessage(null);
+      }
 
       try {
-        const response = await fetchConferenceStandings(conferenceId);
-        if (cancelled) return;
+        const response = await fetchConferenceStandings(conferenceId, {
+          forceRefresh: pullRefresh,
+        });
 
         const payload = response.data;
         const cacheEntry: StandingsCacheEntry = {
@@ -55,8 +67,13 @@ export function useConferenceStandings(conferenceId: ConferenceId) {
         setConferenceName(cacheEntry.conferenceName);
         setUnavailable(cacheEntry.unavailable);
         setLoadState('success');
+        setErrorMessage(null);
       } catch (err) {
-        if (cancelled) return;
+        if (pullRefresh) {
+          console.warn('[useConferenceStandings] pull refresh failed:', err);
+          return;
+        }
+
         setEntries([]);
         setUnavailable(false);
         setErrorMessage(
@@ -64,14 +81,26 @@ export function useConferenceStandings(conferenceId: ConferenceId) {
         );
         setLoadState('error');
       }
-    }
+    },
+    [conferenceId],
+  );
 
+  useEffect(() => {
     void loadStandings();
+  }, [loadStandings]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [conferenceId]);
+  const refresh = useCallback(async () => {
+    if (refreshing) return;
+
+    setRefreshing(true);
+    clearConferenceStandingsCache(conferenceId);
+
+    try {
+      await loadStandings({ pullRefresh: true });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [conferenceId, loadStandings, refreshing]);
 
   return useMemo(
     () => ({
@@ -80,7 +109,9 @@ export function useConferenceStandings(conferenceId: ConferenceId) {
       conferenceName,
       unavailable,
       errorMessage,
+      refreshing,
+      refresh,
     }),
-    [loadState, entries, conferenceName, unavailable, errorMessage],
+    [loadState, entries, conferenceName, unavailable, errorMessage, refreshing, refresh],
   );
 }
