@@ -13,7 +13,7 @@ type TestAction = {
 const TEST_ACTIONS: TestAction[] = [
   {
     label: 'Send local test notification',
-    title: 'FCSFootball test',
+    title: 'FCS Pulse test',
     body: 'Local notification delivery check',
     notificationType: 'test',
   },

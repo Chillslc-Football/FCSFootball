@@ -1,7 +1,7 @@
 import type { ExpoConfig } from 'expo/config';
 
 const config: ExpoConfig = {
-  name: 'FCSFootball',
+  name: 'FCS Pulse',
   slug: 'FCSFootball',
   version: '1.0.0',
   orientation: 'portrait',
@@ -10,9 +10,9 @@ const config: ExpoConfig = {
   userInterfaceStyle: 'dark',
   newArchEnabled: true,
   splash: {
-    image: './assets/splash-icon.png',
+    image: './assets/splash.png',
     resizeMode: 'contain',
-    backgroundColor: '#0F1419',
+    backgroundColor: '#081B36',
   },
   ios: {
     supportsTablet: true,
@@ -22,9 +22,11 @@ const config: ExpoConfig = {
   },
   android: {
     package: 'com.chillslc.fcsfootball',
+    versionCode: 1,
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#0F1419',
+      monochromeImage: './assets/adaptive-icon-monochrome.png',
+      backgroundColor: '#081B36',
     },
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
@@ -41,10 +43,19 @@ const config: ExpoConfig = {
       },
     ],
     [
+      'expo-splash-screen',
+      {
+        backgroundColor: '#081B36',
+        image: './assets/splash.png',
+        resizeMode: 'contain',
+        enableFullScreenImage_legacy: true,
+      },
+    ],
+    [
       'expo-notifications',
       {
         icon: './assets/icon.png',
-        color: '#C9A227',
+        color: '#D8B14B',
         defaultChannel: 'game-alerts',
       },
     ],
