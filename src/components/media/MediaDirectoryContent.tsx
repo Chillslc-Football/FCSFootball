@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Link, type Href } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
@@ -10,18 +11,11 @@ import {
 } from 'react-native';
 
 import { MediaSourceCard } from '@/components/media/MediaSourceCard';
-import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
 import { loadApprovedMediaSources } from '@/data/mediaDirectory/mediaSourcesApi';
 import { filterMediaSources } from '@/data/mediaDirectory/mediaSourceValidation';
-import type { MediaDirectoryFilter, MediaSource } from '@/data/mediaDirectory/types';
+import type { MediaSource } from '@/data/mediaDirectory/types';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { colors, spacing, typography } from '@/theme';
-
-const FILTERS: { id: MediaDirectoryFilter; label: string }[] = [
-  { id: 'national', label: 'National' },
-  { id: 'my-teams', label: 'Favorites' },
-  { id: 'all', label: 'All' },
-];
 
 export type MediaTeamFilter = {
   teamId: string;
@@ -39,24 +33,15 @@ export function useMediaDirectoryController(options?: {
   showIntroSubtitle?: boolean;
   teamFilter?: MediaTeamFilter | null;
   onClearTeamFilter?: () => void;
+  initialSearch?: string;
 }): MediaDirectoryController {
   const showIntroSubtitle = options?.showIntroSubtitle ?? true;
   const teamFilter = options?.teamFilter ?? null;
   const onClearTeamFilter = options?.onClearTeamFilter;
-  const { favorites, loaded: favoritesLoaded } = useFavoriteTeams();
   const [sources, setSources] = useState<MediaSource[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [filter, setFilter] = useState<MediaDirectoryFilter>('national');
-  const [search, setSearch] = useState('');
-
-  const favoriteTeamIds = useMemo(
-    () =>
-      favorites
-        .map((favorite) => favorite.espnTeamId ?? favorite.key)
-        .filter((id): id is string => Boolean(id)),
-    [favorites],
-  );
+  const [search, setSearch] = useState(options?.initialSearch ?? '');
 
   const load = useCallback(async (forceRefresh = false) => {
     setErrorMessage(null);
@@ -64,9 +49,6 @@ export function useMediaDirectoryController(options?: {
       const result = await loadApprovedMediaSources({ forceRefresh });
       setSources(result.sources);
       setLoadState('success');
-      if (result.error && result.fromSeed) {
-        // Seed fallback still shows content; soft warning only in logs.
-      }
     } catch (error) {
       setLoadState('error');
       setErrorMessage(error instanceof Error ? error.message : 'Could not load media.');
@@ -89,12 +71,10 @@ export function useMediaDirectoryController(options?: {
   const visible = useMemo(
     () =>
       filterMediaSources(sources, {
-        filter,
         search,
-        favoriteTeamIds,
         teamId,
       }),
-    [favoriteTeamIds, filter, search, sources, teamId],
+    [search, sources, teamId],
   );
 
   const emptyMessage = useMemo(() => {
@@ -102,29 +82,13 @@ export function useMediaDirectoryController(options?: {
       return 'We couldn’t load FCS media. Pull down to try again.';
     }
     if (search.trim()) {
-      return 'No media sources match your search.';
+      return 'No FCS media matches your search.';
     }
     if (teamId) {
       return `No media sources are linked to ${teamLabel} yet.`;
     }
-    if (filter === 'my-teams' && favoritesLoaded && favorites.length === 0) {
-      return 'Favorite a team to see its local creators here.';
-    }
-    if (filter === 'my-teams' && visible.length === 0) {
-      return 'Favorite a team to see its local creators here.';
-    }
     return 'No approved media sources yet.';
-  }, [
-    favorites.length,
-    favoritesLoaded,
-    filter,
-    loadState,
-    search,
-    sources.length,
-    teamId,
-    teamLabel,
-    visible.length,
-  ]);
+  }, [loadState, search, sources.length, teamId, teamLabel]);
 
   const content = (
     <View style={styles.root}>
@@ -132,15 +96,26 @@ export function useMediaDirectoryController(options?: {
         <Text style={styles.subtitle}>Podcasts, videos, and creators from around the FCS</Text>
       ) : null}
 
-      <TextInput
-        value={search}
-        onChangeText={setSearch}
-        placeholder="Search creators and shows"
-        placeholderTextColor={colors.textMuted}
-        style={styles.search}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
+      <View style={styles.searchRow}>
+        <TextInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search creators and shows"
+          placeholderTextColor={colors.textMuted}
+          style={styles.search}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <Link href={'/suggest-fcs-media' as Href} asChild>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Suggest FCS Media"
+            hitSlop={8}
+            style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
+            <Ionicons name="add" size={24} color={colors.background} />
+          </Pressable>
+        </Link>
+      </View>
 
       {teamId ? (
         <View style={styles.teamFilterRow}>
@@ -150,35 +125,15 @@ export function useMediaDirectoryController(options?: {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Clear team media filter"
-            onPress={onClearTeamFilter}
+            onPress={() => {
+              onClearTeamFilter?.();
+              setSearch('');
+            }}
             style={({ pressed }) => [styles.clearTeamButton, pressed && styles.pressed]}>
             <Text style={styles.clearTeamText}>Clear</Text>
           </Pressable>
         </View>
-      ) : (
-        <View style={styles.filterRow}>
-          {FILTERS.map((option) => (
-            <Pressable
-              key={option.id}
-              onPress={() => setFilter(option.id)}
-              style={[styles.chip, filter === option.id && styles.chipSelected]}>
-              <Text style={[styles.chipText, filter === option.id && styles.chipTextSelected]}>
-                {option.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
-
-      <Link href={'/suggest-fcs-media' as Href} asChild>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Suggest FCS Media"
-          style={({ pressed }) => [styles.suggestButton, pressed && styles.pressed]}>
-          <Text style={styles.suggestTitle}>Suggest FCS Media</Text>
-          <Text style={styles.suggestSub}>Share a Spotify, YouTube, or X link for review</Text>
-        </Pressable>
-      </Link>
+      ) : null}
 
       {loadState === 'loading' && sources.length === 0 ? (
         <View style={styles.centerBox}>
@@ -236,7 +191,13 @@ export function MediaDirectoryContent({
 const styles = StyleSheet.create({
   root: { gap: spacing.sm },
   subtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.xs },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   search: {
+    flex: 1,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -246,7 +207,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     ...typography.body,
   },
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  addButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   teamFilterRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -279,34 +247,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '600',
   },
-  chip: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: 999,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  chipSelected: { borderColor: colors.primary, backgroundColor: colors.primaryMuted },
-  chipText: { ...typography.caption, color: colors.textSecondary },
-  chipTextSelected: { color: colors.background, fontWeight: '700' },
-  suggestButton: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: 8,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: 2,
-  },
-  suggestTitle: {
-    ...typography.body,
-    fontSize: 15,
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  suggestSub: { ...typography.caption, color: colors.textSecondary },
-  list: { gap: spacing.sm - 2, marginTop: spacing.xs },
+  list: { gap: spacing.sm - 2 },
   centerBox: {
     paddingVertical: spacing.xl,
     alignItems: 'center',

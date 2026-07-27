@@ -37,7 +37,7 @@ export default function TabLayout() {
         name="scores"
         options={{
           title: 'Scores',
-          tabBarIcon: ({ color }) => <TabIcon name="football" color={color} />,
+          tabBarIcon: ({ color }) => <TabIcon name="american-football" color={color} />,
         }}
       />
       <Tabs.Screen

@@ -65,8 +65,6 @@ export type MediaSuggestionInput = {
   notes?: string | null;
 };
 
-export type MediaDirectoryFilter = 'national' | 'my-teams' | 'all';
-
 /** ESPN team id used across FCS Pulse favorites / team routes. */
 export const MONTANA_STATE_ESPN_TEAM_ID = '147';
 export const MONTANA_STATE_TEAM_NAME = 'Montana State';

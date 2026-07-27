@@ -86,7 +86,7 @@ function TeamScoreRow({
 }
 
 export function UpsetWatchCard({ game, watchGame, onWatchOpened }: UpsetWatchCardProps) {
-  const { fcsTeam, fbsTeam, fcsScore, fbsScore, status, statusDetail, alertLabel, broadcast } =
+  const { fcsTeam, fbsTeam, fcsScore, fbsScore, status, statusDetail, alertLabel } =
     game;
   const alertStyle = ALERT_STYLE[alertLabel];
   const fcsWinner = fcsScore > fbsScore;
@@ -127,9 +127,6 @@ export function UpsetWatchCard({ game, watchGame, onWatchOpened }: UpsetWatchCar
       />
 
       <View style={styles.footer}>
-        <View style={styles.broadcastBadge}>
-          <Text style={styles.broadcastText}>{broadcast}</Text>
-        </View>
         {watchGame ? (
           <WatchOnEspnButton game={watchGame} onOpened={onWatchOpened} />
         ) : null}
@@ -223,22 +220,9 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     marginTop: spacing.xs,
     gap: spacing.sm,
-  },
-  broadcastBadge: {
-    backgroundColor: colors.surfaceElevated,
-    borderRadius: 6,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  broadcastText: {
-    ...typography.label,
-    color: colors.primary,
-    fontSize: 10,
   },
 });

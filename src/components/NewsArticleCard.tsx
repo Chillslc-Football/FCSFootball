@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 
 import { isValidHeroSportsArticleUrl } from '@/data/news/heroSportsNewsProvider';
+import { formatNewsPublishedDate } from '@/data/news/newsUtils';
 import { isValidTheAnalystArticleUrl } from '@/data/news/theAnalystNewsProvider';
 import { colors, spacing, typography } from '@/theme';
 import type { NewsArticle } from '@/types/news';
@@ -26,33 +27,24 @@ function isValidNewsArticleUrl(article: NewsArticle): boolean {
   return isValidTheAnalystArticleUrl(article.url);
 }
 
-function formatPublishedDate(isoDate?: string): string | undefined {
-  if (!isoDate) return undefined;
-
-  const parsed = Date.parse(isoDate);
-  if (Number.isNaN(parsed)) return undefined;
-
-  try {
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    }).format(new Date(parsed));
-  } catch {
-    return undefined;
-  }
-}
-
-export function NewsArticleCard({ article, isLast = false }: NewsArticleCardProps) {
+function NewsArticleCardComponent({ article, isLast = false }: NewsArticleCardProps) {
   const [opening, setOpening] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
+  const openingRef = useRef(false);
 
-  const dateLabel = formatPublishedDate(article.publishedAt);
+  const dateLabel = formatNewsPublishedDate(article.publishedAt);
   const metaParts = [article.author, dateLabel].filter(Boolean);
+  const isHero = article.source === 'HERO Sports';
+  const showImage = Boolean(article.imageUrl);
+  const imageSource = useMemo(
+    () => (article.imageUrl ? { uri: article.imageUrl } : null),
+    [article.imageUrl],
+  );
 
-  async function handlePress() {
-    if (!isValidNewsArticleUrl(article) || opening) return;
+  const handlePress = useCallback(async () => {
+    if (!isValidNewsArticleUrl(article) || openingRef.current) return;
 
+    openingRef.current = true;
     setOpening(true);
     try {
       const canOpen = await Linking.canOpenURL(article.url);
@@ -63,9 +55,14 @@ export function NewsArticleCard({ article, isLast = false }: NewsArticleCardProp
     } catch {
       // Fail silently — user stays on the list.
     } finally {
+      openingRef.current = false;
       setOpening(false);
     }
-  }
+  }, [article]);
+
+  const handleImageError = useCallback(() => {
+    setImageFailed(true);
+  }, []);
 
   return (
     <Pressable
@@ -77,23 +74,29 @@ export function NewsArticleCard({ article, isLast = false }: NewsArticleCardProp
         !isLast && styles.cardBorder,
         pressed && styles.cardPressed,
       ]}>
-      {article.imageUrl && !imageFailed ? (
-        <Image
-          source={{ uri: article.imageUrl }}
-          style={styles.image}
-          resizeMode="cover"
-          onError={() => setImageFailed(true)}
-        />
-      ) : null}
-
       <View style={styles.content}>
-        <Text style={styles.source}>{article.source}</Text>
+        <Text style={[styles.source, isHero ? styles.sourceHero : styles.sourceAnalyst]}>
+          {article.source}
+        </Text>
         <Text style={styles.title}>{article.title}</Text>
 
         {metaParts.length > 0 ? (
           <Text style={styles.meta} numberOfLines={1}>
             {metaParts.join(' · ')}
           </Text>
+        ) : null}
+
+        {showImage ? (
+          imageFailed || !imageSource ? (
+            <View style={styles.image} accessibilityElementsHidden />
+          ) : (
+            <Image
+              source={imageSource}
+              style={styles.image}
+              resizeMode="cover"
+              onError={handleImageError}
+            />
+          )
         ) : null}
 
         {article.excerpt ? (
@@ -112,6 +115,8 @@ export function NewsArticleCard({ article, isLast = false }: NewsArticleCardProp
   );
 }
 
+export const NewsArticleCard = memo(NewsArticleCardComponent);
+
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
@@ -127,6 +132,8 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: 168,
+    marginTop: spacing.xs,
+    borderRadius: 6,
     backgroundColor: colors.surfaceElevated,
   },
   content: {
@@ -135,8 +142,13 @@ const styles = StyleSheet.create({
   },
   source: {
     ...typography.label,
-    color: colors.primary,
     letterSpacing: 0.4,
+  },
+  sourceHero: {
+    color: colors.primary,
+  },
+  sourceAnalyst: {
+    color: colors.accent,
   },
   title: {
     ...typography.body,

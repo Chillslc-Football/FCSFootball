@@ -149,9 +149,6 @@ export function TodayGameCard({ game, onWatchOpened, showDevDiagnostics }: Today
       </View>
 
       <View style={styles.footer}>
-        <View style={styles.broadcastBadge}>
-          <Text style={styles.broadcastText}>{game.broadcast ?? '—'}</Text>
-        </View>
         <WatchOnEspnButton game={game} onOpened={onWatchOpened} />
       </View>
 
@@ -282,22 +279,9 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     marginTop: spacing.xs,
     gap: spacing.sm,
-  },
-  broadcastBadge: {
-    backgroundColor: colors.surfaceElevated,
-    borderRadius: 6,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  broadcastText: {
-    ...typography.label,
-    color: colors.primary,
-    fontSize: 10,
   },
 });

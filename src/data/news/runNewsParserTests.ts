@@ -15,7 +15,12 @@ import {
   parseAnalystHtmlArticles,
   parseAnalystJsonLdArticles,
 } from '@/data/news/theAnalystStructuredFallback';
-import { normalizePublicationDate } from '@/data/news/newsUtils';
+import {
+  formatNewsPublishedDate,
+  getNewsArticleKey,
+  mergeNewsFeeds,
+  normalizePublicationDate,
+} from '@/data/news/newsUtils';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '__fixtures__');
@@ -112,6 +117,65 @@ function run(): void {
   assert(
     normalizePublicationDate('not-a-date') == null,
     'invalid dates normalize to undefined without throwing',
+  );
+
+  const merged = mergeNewsFeeds([
+    [
+      {
+        id: 'h1',
+        title: 'Older Hero',
+        url: 'https://herosports.com/a',
+        publishedAt: '2026-07-18T12:00:00.000Z',
+        source: 'HERO Sports',
+      },
+      {
+        id: 'h2',
+        title: 'Duplicate URL Hero',
+        url: 'https://theanalyst.com/articles/same',
+        publishedAt: '2026-07-20T12:00:00.000Z',
+        source: 'HERO Sports',
+      },
+    ],
+    [
+      {
+        id: 'a1',
+        title: 'Newest Analyst',
+        url: 'https://theanalyst.com/articles/newest',
+        publishedAt: '2026-07-21T12:00:00.000Z',
+        source: 'The Analyst',
+      },
+      {
+        id: 'a2',
+        title: 'Duplicate URL Analyst',
+        url: 'https://theanalyst.com/articles/same',
+        publishedAt: '2026-07-19T12:00:00.000Z',
+        source: 'The Analyst',
+      },
+    ],
+  ]);
+  assert(merged.length === 3, `expected 3 merged articles after URL dedupe, got ${merged.length}`);
+  assert(
+    merged[0]?.title === 'Newest Analyst',
+    'merged feed should place newest article first',
+  );
+  assert(
+    merged.some((article) => article.source === 'HERO Sports') &&
+      merged.some((article) => article.source === 'The Analyst'),
+    'merged feed should include both sources',
+  );
+
+  assert(
+    getNewsArticleKey(merged[0]!) === 'https://theanalyst.com/articles/newest',
+    'article keys should prefer stable URL',
+  );
+  assert(
+    formatNewsPublishedDate('2026-07-19T15:08:36.000Z') ===
+      formatNewsPublishedDate('2026-07-19T15:08:36.000Z'),
+    'published date formatter should be stable',
+  );
+  assert(
+    typeof formatNewsPublishedDate('2026-07-19T15:08:36.000Z') === 'string',
+    'published date formatter should return a display string',
   );
 
   console.log('news parser fixture tests passed');

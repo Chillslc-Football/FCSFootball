@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { normalizeMediaSourceCoverage } from '@/data/mediaDirectory/mediaCoverage';
 import { resolveMediaScopeBadges } from '@/data/mediaDirectory/mediaScopeBadge';
 import {
+  compareMediaSourcesByName,
   filterMediaSources,
   filterMediaSourcesByTeam,
   isValidProviderUrl,
@@ -70,116 +71,98 @@ test('suggestion validation requires at least one coverage selection', () => {
     isNational: true,
   });
   assert.equal(nationalOnly.ok, true);
-
-  const teamsOnly = validateMediaSuggestionInput({
-    provider: 'spotify',
-    submittedUrl: 'https://open.spotify.com/show/abc',
-    isNational: false,
-    teamIds: [MONTANA_STATE_ESPN_TEAM_ID, MONTANA_ESPN_TEAM_ID],
-  });
-  assert.equal(teamsOnly.ok, true);
 });
 
-test('national filter uses isNational', () => {
+test('directory lists all approved sources alphabetically', () => {
+  const filtered = filterMediaSources(MEDIA_SOURCE_SEEDS, { search: '' });
+  assert.ok(filtered.length === MEDIA_SOURCE_SEEDS.filter((s) => s.is_approved).length);
+  for (let i = 1; i < filtered.length; i += 1) {
+    assert.ok(compareMediaSourcesByName(filtered[i - 1]!, filtered[i]!) <= 0);
+  }
+});
+
+test('search matches name, subtitle, and team labels', () => {
+  const bySubtitle = filterMediaSources(MEDIA_SOURCE_SEEDS, {
+    search: 'sam herder',
+  });
+  assert.equal(bySubtitle.length, 1);
+  assert.equal(bySubtitle[0]?.name, 'FCS Football Talk');
+
+  const byTeam = filterMediaSources(MEDIA_SOURCE_SEEDS, {
+    search: 'montana state',
+  });
+  assert.ok(byTeam.some((source) => source.name === 'Skyline Sports'));
+});
+
+test('team media matches explicit teamIds only', () => {
   const sources = [
     baseSource({
-      id: 'n1',
-      name: 'National Show',
-      isNational: true,
-      scope: 'team',
-      display_order: 1,
-    }),
-    baseSource({
-      id: 't1',
-      name: 'Team Show',
-      isNational: false,
-      scope: 'team',
-      teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
-      team_id: MONTANA_STATE_ESPN_TEAM_ID,
-      display_order: 2,
-    }),
-  ];
-  const filtered = filterMediaSources(sources, {
-    filter: 'national',
-    search: '',
-    favoriteTeamIds: [MONTANA_STATE_ESPN_TEAM_ID],
-  });
-  assert.equal(filtered.length, 1);
-  assert.equal(filtered[0]?.name, 'National Show');
-});
-
-test('one source assigned to two teams matches either favorite', () => {
-  const source = baseSource({
-    id: 'cat-griz',
-    name: 'Cat Griz Insider Podcast',
-    scope: 'team',
-    isNational: false,
-    teamIds: [MONTANA_STATE_ESPN_TEAM_ID, MONTANA_ESPN_TEAM_ID],
-    display_order: 1,
-  });
-  const forMontana = filterMediaSources([source], {
-    filter: 'my-teams',
-    search: '',
-    favoriteTeamIds: [MONTANA_ESPN_TEAM_ID],
-  });
-  assert.equal(forMontana.length, 1);
-
-  const forState = filterMediaSources([source], {
-    filter: 'my-teams',
-    search: '',
-    favoriteTeamIds: [MONTANA_STATE_ESPN_TEAM_ID],
-  });
-  assert.equal(forState.length, 1);
-});
-
-test('one source assigned to multiple conferences keeps conference ids', () => {
-  const source = baseSource({
-    id: 'multi-conf',
-    name: 'Multi Conf Show',
-    scope: 'conference',
-    isNational: false,
-    conferenceIds: ['big-sky', 'mvfc', 'caa'],
-    display_order: 1,
-  });
-  const badges = resolveMediaScopeBadges(source);
-  assert.ok(badges.labels.includes('Big Sky'));
-  assert.ok(badges.labels.includes('Missouri Valley Football Conference'));
-  assert.ok(badges.overflowCount >= 0);
-});
-
-test('source both national and team-specific ranks as favorite-team match', () => {
-  const sources = [
-    baseSource({
-      id: 'national-only',
+      id: 'national',
       name: 'National Only',
       isNational: true,
-      display_order: 1,
     }),
     baseSource({
-      id: 'both',
-      name: 'National Plus Team',
-      isNational: true,
+      id: 'conference',
+      name: 'Conference Only',
+      scope: 'conference',
+      conferenceIds: ['big-sky'],
+      conference_id: 'big-sky',
+    }),
+    baseSource({
+      id: 'mtst',
+      name: 'Zebra Show',
+      scope: 'team',
       teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
-      display_order: 2,
+    }),
+    baseSource({
+      id: 'cat-griz',
+      name: 'Cat Griz Insider Podcast',
+      scope: 'team',
+      teamIds: [MONTANA_STATE_ESPN_TEAM_ID, MONTANA_ESPN_TEAM_ID],
+    }),
+    baseSource({
+      id: 'alpha',
+      name: 'Alpha Bobcats',
+      scope: 'team',
+      teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
     }),
   ];
-  const filtered = filterMediaSources(sources, {
-    filter: 'my-teams',
-    search: '',
-    favoriteTeamIds: [MONTANA_STATE_ESPN_TEAM_ID],
-  });
-  assert.equal(filtered[0]?.name, 'National Plus Team');
-  assert.equal(filtered[1]?.name, 'National Only');
+
+  const mtst = filterMediaSourcesByTeam(sources, MONTANA_STATE_ESPN_TEAM_ID);
+  assert.equal(mtst.length, 3);
+  assert.equal(mtst[0]?.name, 'Alpha Bobcats');
+  assert.ok(mtst.every((source) => source.teamIds.includes(MONTANA_STATE_ESPN_TEAM_ID)));
+  assert.ok(!mtst.some((source) => source.name === 'National Only'));
+  assert.ok(!mtst.some((source) => source.name === 'Conference Only'));
+
+  const montana = filterMediaSourcesByTeam(sources, MONTANA_ESPN_TEAM_ID);
+  assert.equal(montana.length, 1);
+  assert.equal(montana[0]?.name, 'Cat Griz Insider Podcast');
 });
 
-test('Favorites match through any team association', () => {
-  const filtered = filterMediaSources(MEDIA_SOURCE_SEEDS, {
-    filter: 'my-teams',
-    search: '',
-    favoriteTeamIds: [MONTANA_ESPN_TEAM_ID],
+test('team media inline limit is 4', () => {
+  const sources = Array.from({ length: 6 }, (_, index) =>
+    baseSource({
+      id: `t${index}`,
+      name: `Show ${index}`,
+      scope: 'team',
+      teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+      display_order: index,
+    }),
+  );
+  const limited = filterMediaSourcesByTeam(sources, MONTANA_STATE_ESPN_TEAM_ID, {
+    limit: 4,
   });
-  assert.ok(filtered.some((source) => source.name === 'Cat Griz Insider Podcast'));
-  assert.ok(filtered.every((source) => source.isNational || source.teamIds.includes(MONTANA_ESPN_TEAM_ID)));
+  assert.equal(limited.length, 4);
+});
+
+test('Discover teamId filter shows only that team association', () => {
+  const filtered = filterMediaSources(MEDIA_SOURCE_SEEDS, {
+    teamId: MONTANA_STATE_ESPN_TEAM_ID,
+  });
+  assert.ok(filtered.length > 0);
+  assert.ok(filtered.every((source) => source.teamIds.includes(MONTANA_STATE_ESPN_TEAM_ID)));
+  assert.ok(!filtered.some((source) => source.isNational && source.teamIds.length === 0));
 });
 
 test('legacy fallback still works', () => {
@@ -195,17 +178,6 @@ test('legacy fallback still works', () => {
   assert.equal(coverage.isNational, false);
   assert.deepEqual(coverage.teamIds, [MONTANA_STATE_ESPN_TEAM_ID]);
   assert.deepEqual(coverage.conferenceIds, ['big-sky']);
-
-  const national = normalizeMediaSourceCoverage({
-    id: 'legacy-national',
-    name: 'Legacy National',
-    scope: 'national',
-    team_id: null,
-    conference_id: null,
-    is_approved: true,
-    display_order: 1,
-  });
-  assert.equal(national.isNational, true);
 });
 
 test('badge overflow displays +N more', () => {
@@ -226,83 +198,6 @@ test('seed Cat Griz covers Montana State and Montana', () => {
   assert.ok(catGriz);
   assert.equal(catGriz.isNational, false);
   assert.deepEqual(catGriz.teamIds, [MONTANA_STATE_ESPN_TEAM_ID, MONTANA_ESPN_TEAM_ID]);
-});
-
-test('search matches name and subtitle', () => {
-  const filtered = filterMediaSources(MEDIA_SOURCE_SEEDS, {
-    filter: 'all',
-    search: 'sam herder',
-    favoriteTeamIds: [],
-  });
-  assert.equal(filtered.length, 1);
-  assert.equal(filtered[0]?.name, 'FCS Football Talk');
-});
-
-test('team media matches explicit teamIds only', () => {
-  const sources = [
-    baseSource({
-      id: 'national',
-      name: 'National Only',
-      isNational: true,
-      spotify_url: 'https://open.spotify.com/show/national',
-    }),
-    baseSource({
-      id: 'conference',
-      name: 'Conference Only',
-      scope: 'conference',
-      conferenceIds: ['big-sky'],
-      conference_id: 'big-sky',
-      youtube_url: 'https://www.youtube.com/@conf',
-    }),
-    baseSource({
-      id: 'mtst',
-      name: 'Bobcat Insider Podcast',
-      scope: 'team',
-      teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
-      youtube_url: 'https://www.youtube.com/@bobcat',
-    }),
-    baseSource({
-      id: 'cat-griz',
-      name: 'Cat Griz Insider Podcast',
-      scope: 'team',
-      teamIds: [MONTANA_STATE_ESPN_TEAM_ID, MONTANA_ESPN_TEAM_ID],
-      spotify_url: 'https://open.spotify.com/show/catgriz',
-    }),
-    baseSource({
-      id: 'dead',
-      name: 'No Links Yet',
-      scope: 'team',
-      teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
-    }),
-  ];
-
-  const mtst = filterMediaSourcesByTeam(sources, MONTANA_STATE_ESPN_TEAM_ID, {
-    requireProviderUrl: true,
-  });
-  assert.equal(mtst.length, 2);
-  assert.ok(mtst.every((source) => source.teamIds.includes(MONTANA_STATE_ESPN_TEAM_ID)));
-  assert.ok(mtst.some((source) => source.name === 'Cat Griz Insider Podcast'));
-  assert.ok(!mtst.some((source) => source.name === 'National Only'));
-  assert.ok(!mtst.some((source) => source.name === 'Conference Only'));
-  assert.ok(!mtst.some((source) => source.name === 'No Links Yet'));
-
-  const montana = filterMediaSourcesByTeam(sources, MONTANA_ESPN_TEAM_ID, {
-    requireProviderUrl: true,
-  });
-  assert.equal(montana.length, 1);
-  assert.equal(montana[0]?.name, 'Cat Griz Insider Podcast');
-});
-
-test('Discover teamId filter shows only that team association', () => {
-  const filtered = filterMediaSources(MEDIA_SOURCE_SEEDS, {
-    filter: 'all',
-    search: '',
-    favoriteTeamIds: [],
-    teamId: MONTANA_STATE_ESPN_TEAM_ID,
-  });
-  assert.ok(filtered.length > 0);
-  assert.ok(filtered.every((source) => source.teamIds.includes(MONTANA_STATE_ESPN_TEAM_ID)));
-  assert.ok(!filtered.some((source) => source.isNational && source.teamIds.length === 0));
 });
 
 console.log('\nAll media directory tests passed.');

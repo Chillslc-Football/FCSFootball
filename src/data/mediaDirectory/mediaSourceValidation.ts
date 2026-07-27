@@ -1,9 +1,12 @@
 import {
+  getMediaSourceConferenceIds,
   getMediaSourceTeamIds,
-  isMediaSourceNational,
-  sourceMatchesAnyTeam,
   sourceMatchesTeam,
 } from '@/data/mediaDirectory/mediaCoverage';
+import {
+  resolveConferenceBadgeLabel,
+  resolveTeamBadgeLabel,
+} from '@/data/mediaDirectory/mediaScopeBadge';
 import {
   MEDIA_SUGGESTION_PROVIDERS,
   type MediaSource,
@@ -78,7 +81,6 @@ export function validateMediaSuggestionInput(
   const submittedUrl = input.submittedUrl?.trim() ?? '';
   const notes = input.notes?.trim() || null;
 
-  // Prefer flexible coverage; fall back to legacy single scope fields.
   let isNational = Boolean(input.isNational);
   let conferenceIds = uniqueTrimmed(input.conferenceIds);
   let teamIds = uniqueTrimmed(input.teamIds);
@@ -127,71 +129,55 @@ export function validateMediaSuggestionInput(
   };
 }
 
-function byDisplayThenName(a: MediaSource, b: MediaSource) {
-  if (a.display_order !== b.display_order) {
-    return a.display_order - b.display_order;
-  }
-  return a.name.localeCompare(b.name);
+/** Case-insensitive alphabetical by name; stable by id when names match. */
+export function compareMediaSourcesByName(a: MediaSource, b: MediaSource): number {
+  const cmp = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  if (cmp !== 0) return cmp;
+  return a.id.localeCompare(b.id);
 }
 
-export function mediaSourceHasProviderUrl(source: MediaSource): boolean {
-  return (
-    hasProviderUrl(source.spotify_url) ||
-    hasProviderUrl(source.youtube_url) ||
-    hasProviderUrl(source.x_url)
+function buildMediaSearchHaystack(source: MediaSource): string {
+  const teamLabels = getMediaSourceTeamIds(source).map(
+    (id) => resolveTeamBadgeLabel(id) ?? id,
   );
+  const conferenceLabels = getMediaSourceConferenceIds(source).map(
+    (id) => resolveConferenceBadgeLabel(id) ?? id,
+  );
+  return [
+    source.name,
+    source.subtitle ?? '',
+    source.description ?? '',
+    ...teamLabels,
+    ...conferenceLabels,
+  ]
+    .join(' ')
+    .toLowerCase();
 }
 
+/**
+ * Full approved media directory: optional team association + search.
+ * Default order is alphabetical by source name.
+ */
 export function filterMediaSources(
   sources: MediaSource[],
   options: {
-    filter: 'national' | 'my-teams' | 'all';
-    search: string;
-    favoriteTeamIds: string[];
+    search?: string;
     /** When set, only sources explicitly associated with this team id. */
     teamId?: string | null;
-  },
+  } = {},
 ): MediaSource[] {
-  const query = options.search.trim().toLowerCase();
-  const favoriteSet = new Set(
-    options.favoriteTeamIds.map((id) => id.trim()).filter(Boolean),
-  );
+  const query = options.search?.trim().toLowerCase() ?? '';
   const teamId = options.teamId?.trim() || null;
 
-  const filtered = sources.filter((source) => {
-    if (!source.is_approved) return false;
-
-    if (teamId) {
-      if (!sourceMatchesTeam(source, teamId)) return false;
-    } else {
-      const national = isMediaSourceNational(source);
-      const favoriteTeamMatch = sourceMatchesAnyTeam(source, [...favoriteSet]);
-
-      if (options.filter === 'national') {
-        if (!national) return false;
-      } else if (options.filter === 'my-teams') {
-        if (!national && !favoriteTeamMatch) return false;
-      }
-    }
-
-    if (!query) return true;
-    const haystack = [source.name, source.subtitle ?? '', source.description ?? '']
-      .join(' ')
-      .toLowerCase();
-    return haystack.includes(query);
-  });
-
-  if (!teamId && options.filter === 'my-teams') {
-    // Favorites: team matches first (incl. national+team), then national-only.
-    return filtered.slice().sort((a, b) => {
-      const aTeam = sourceMatchesAnyTeam(a, [...favoriteSet]) ? 0 : 1;
-      const bTeam = sourceMatchesAnyTeam(b, [...favoriteSet]) ? 0 : 1;
-      if (aTeam !== bTeam) return aTeam - bTeam;
-      return byDisplayThenName(a, b);
-    });
-  }
-
-  return filtered.slice().sort(byDisplayThenName);
+  return sources
+    .filter((source) => {
+      if (!source.is_approved) return false;
+      if (teamId && !sourceMatchesTeam(source, teamId)) return false;
+      if (!query) return true;
+      return buildMediaSearchHaystack(source).includes(query);
+    })
+    .slice()
+    .sort(compareMediaSourcesByName);
 }
 
 /** Conference association helper (explicit conferenceIds / legacy conference_id). */
@@ -208,22 +194,36 @@ export function filterMediaSourcesByConference(
         source.conferenceIds?.includes(needle) || source.conference_id === needle,
     )
     .slice()
-    .sort(byDisplayThenName);
+    .sort(compareMediaSourcesByName);
 }
 
 /** Explicit team association only — not national-only or conference-only. */
 export function filterMediaSourcesByTeam(
   sources: MediaSource[],
   teamId: string,
-  options?: { requireProviderUrl?: boolean },
+  options?: { requireProviderUrl?: boolean; limit?: number },
 ): MediaSource[] {
   const needle = teamId.trim();
   if (!needle) return [];
 
-  return sources
+  const filtered = sources
     .filter((source) => source.is_approved && sourceMatchesTeam(source, needle))
-    .filter((source) => (options?.requireProviderUrl ? mediaSourceHasProviderUrl(source) : true))
+    .filter((source) =>
+      options?.requireProviderUrl ? mediaSourceHasProviderUrl(source) : true,
+    )
     .slice()
-    .sort(byDisplayThenName);
+    .sort(compareMediaSourcesByName);
+
+  if (typeof options?.limit === 'number' && options.limit >= 0) {
+    return filtered.slice(0, options.limit);
+  }
+  return filtered;
 }
 
+export function mediaSourceHasProviderUrl(source: MediaSource): boolean {
+  return (
+    hasProviderUrl(source.spotify_url) ||
+    hasProviderUrl(source.youtube_url) ||
+    hasProviderUrl(source.x_url)
+  );
+}

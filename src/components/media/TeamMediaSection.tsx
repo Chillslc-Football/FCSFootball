@@ -14,9 +14,13 @@ const INLINE_LIMIT = 4;
 export function TeamMediaSection({
   espnTeamId,
   teamName,
+  coverageHeading,
 }: {
   espnTeamId: string;
+  /** Short/full team name for “View all … media”. */
   teamName: string;
+  /** Section title, e.g. “Bobcats Coverage” or “Team Media”. */
+  coverageHeading: string;
 }) {
   const router = useRouter();
   const [sources, setSources] = useState<MediaSource[]>([]);
@@ -31,10 +35,7 @@ export function TeamMediaSection({
   }, [load]);
 
   const matching = useMemo(
-    () =>
-      filterMediaSourcesByTeam(sources, espnTeamId, {
-        requireProviderUrl: true,
-      }),
+    () => filterMediaSourcesByTeam(sources, espnTeamId),
     [espnTeamId, sources],
   );
 
@@ -49,7 +50,7 @@ export function TeamMediaSection({
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Team Media</Text>
+      <Text style={styles.sectionTitle}>{coverageHeading}</Text>
       <View style={styles.list}>
         {inline.map((source) => (
           <MediaSourceCard key={source.id} source={source} variant="compact" />

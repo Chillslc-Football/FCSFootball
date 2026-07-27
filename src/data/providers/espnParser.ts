@@ -270,7 +270,8 @@ function parseBroadcast(competition: Record<string, unknown>): string | undefine
     const names = entry.names;
     if (Array.isArray(names)) {
       const labels = names.filter((n): n is string => typeof n === 'string' && n.length > 0);
-      if (labels.length > 0) return labels.join(' / ');
+      // Version 1: primary network only (first label).
+      if (labels.length > 0) return labels[0];
     }
     const media = entry.media;
     if (isRecord(media)) {

@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -287,6 +287,20 @@ export default function TeamDetailScreen() {
     profile?.espnTeamId?.trim() ||
     (routeId && isEspnTeamId(routeId) ? routeId.trim() : '');
 
+  const teamMediaHeading = useMemo(() => {
+    if (!profile) return 'Team Media';
+    const mascot = resolveHeaderMascot(
+      profile,
+      getTeamDetailHeading({
+        displayName: profile.displayName,
+        location: profile.location,
+        mascot: profile.mascot,
+      }).mascot,
+    );
+    if (mascot) return `${mascot} Coverage`;
+    return 'Team Media';
+  }, [profile]);
+
   return (
     <>
       <Stack.Screen options={{ title: screenTitle, headerBackTitle: 'Back' }} />
@@ -350,6 +364,7 @@ export default function TeamDetailScreen() {
               <TeamMediaSection
                 espnTeamId={espnTeamIdForMedia}
                 teamName={screenTitle}
+                coverageHeading={teamMediaHeading}
               />
             ) : null}
           </>

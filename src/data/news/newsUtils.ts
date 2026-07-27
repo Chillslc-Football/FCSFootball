@@ -65,6 +65,18 @@ export function dedupeArticlesByUrl(articles: NewsArticle[]): NewsArticle[] {
   return result;
 }
 
+/**
+ * Merge multiple source feeds into one newest-first list.
+ * Dedupes identical URLs only; preserves stable order for equal timestamps.
+ */
+export function mergeNewsFeeds(feeds: readonly (readonly NewsArticle[])[]): NewsArticle[] {
+  const combined: NewsArticle[] = [];
+  for (const feed of feeds) {
+    combined.push(...feed);
+  }
+  return sortArticlesByPublishedAtDesc(dedupeArticlesByUrl(combined));
+}
+
 /** Parse article publication timestamps; invalid/missing dates sort last. */
 export function articlePublishedAtMs(article: NewsArticle): number {
   if (!article.publishedAt) return Number.NaN;
@@ -86,6 +98,31 @@ export function sortArticlesByPublishedAtDesc(articles: readonly NewsArticle[]):
       return a.index - b.index;
     })
     .map(({ article }) => article);
+}
+
+const NEWS_PUBLISHED_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+
+/** Shared published-date label for news cards (stable format, reusable formatter). */
+export function formatNewsPublishedDate(isoDate?: string): string | undefined {
+  if (!isoDate) return undefined;
+  const parsed = Date.parse(isoDate);
+  if (Number.isNaN(parsed)) return undefined;
+  try {
+    return NEWS_PUBLISHED_DATE_FORMATTER.format(new Date(parsed));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Stable FlatList key for a news article. */
+export function getNewsArticleKey(article: Pick<NewsArticle, 'id' | 'url' | 'source'>): string {
+  const url = article.url?.trim();
+  if (url) return url;
+  return `${article.source}-${article.id}`;
 }
 
 /**

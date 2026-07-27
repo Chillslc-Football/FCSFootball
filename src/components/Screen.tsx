@@ -14,6 +14,11 @@ type ScreenProps = {
   /** Optional second fixed row below stickyHeader (e.g. week scroller). */
   secondaryStickyHeader?: ReactNode;
   refreshControl?: React.ReactElement<RefreshControlProps>;
+  /**
+   * When false, omit the outer ScrollView so a child (e.g. FlatList) owns vertical scrolling.
+   * Default true.
+   */
+  scrollEnabled?: boolean;
   children?: ReactNode;
 };
 
@@ -24,10 +29,17 @@ export function Screen({
   stickyHeader,
   secondaryStickyHeader,
   refreshControl,
+  scrollEnabled = true,
   children,
 }: ScreenProps) {
   const insets = useSafeAreaInsets();
   const hasStickyBlock = Boolean(title || subtitle || stickyHeader || secondaryStickyHeader);
+
+  const body = children ?? (
+    <View style={styles.placeholder}>
+      <Text style={styles.placeholderText}>Content coming soon</Text>
+    </View>
+  );
 
   return (
     <View style={[styles.container, !denseTop && { paddingTop: insets.top }]}>
@@ -42,20 +54,20 @@ export function Screen({
         </View>
       ) : null}
 
-      <ScrollView
-        style={styles.scroll}
-        refreshControl={refreshControl}
-        contentContainerStyle={[styles.content, denseTop && styles.contentDenseTop]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled">
-        {!hasStickyBlock && title ? <Text style={styles.title}>{title}</Text> : null}
-        {!hasStickyBlock && subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-        {children ?? (
-          <View style={styles.placeholder}>
-            <Text style={styles.placeholderText}>Content coming soon</Text>
-          </View>
-        )}
-      </ScrollView>
+      {scrollEnabled ? (
+        <ScrollView
+          style={styles.scroll}
+          refreshControl={refreshControl}
+          contentContainerStyle={[styles.content, denseTop && styles.contentDenseTop]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
+          {!hasStickyBlock && title ? <Text style={styles.title}>{title}</Text> : null}
+          {!hasStickyBlock && subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+          {body}
+        </ScrollView>
+      ) : (
+        <View style={styles.scroll}>{body}</View>
+      )}
     </View>
   );
 }

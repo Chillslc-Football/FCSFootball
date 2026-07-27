@@ -79,7 +79,7 @@ export function FeaturedGameCard({
   watchGame,
   onWatchOpened,
 }: FeaturedGameCardProps) {
-  const { awayTeam, homeTeam, awayScore, homeScore, status, statusDetail, broadcast, startTime } =
+  const { awayTeam, homeTeam, awayScore, homeScore, status, statusDetail, startTime } =
     game;
   const statusStyle = STATUS_DETAIL_STYLE[status];
   const showScores = status === 'live' || status === 'final';
@@ -117,9 +117,6 @@ export function FeaturedGameCard({
       />
 
       <View style={styles.footer}>
-        <View style={styles.broadcastBadge}>
-          <Text style={styles.broadcastText}>{broadcast}</Text>
-        </View>
         {watchGame ? (
           <WatchOnEspnButton game={watchGame} onOpened={onWatchOpened} />
         ) : null}
@@ -225,22 +222,9 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     marginTop: spacing.sm,
     gap: spacing.sm,
-  },
-  broadcastBadge: {
-    backgroundColor: colors.surface,
-    borderRadius: 6,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  broadcastText: {
-    ...typography.label,
-    color: colors.primary,
-    fontSize: 10,
   },
 });

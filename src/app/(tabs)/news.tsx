@@ -2,10 +2,13 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
+  Platform,
   RefreshControl,
   StyleSheet,
   Text,
   View,
+  type ListRenderItem,
 } from 'react-native';
 
 import {
@@ -15,15 +18,11 @@ import {
 import { NewsArticleCard } from '@/components/NewsArticleCard';
 import { Screen } from '@/components/Screen';
 import { SegmentedControl } from '@/components/SegmentedControl';
+import { getNewsArticleKey, mergeNewsFeeds } from '@/data/news/newsUtils';
 import { useHeroSportsNews } from '@/data/news/useHeroSportsNews';
 import { useTheAnalystNews } from '@/data/news/useTheAnalystNews';
 import { colors, spacing, typography } from '@/theme';
-import type { NewsSource } from '@/types/news';
-
-const NEWS_SOURCE_OPTIONS: { id: NewsSource; label: string }[] = [
-  { id: 'HERO Sports', label: 'HERO Sports' },
-  { id: 'The Analyst', label: 'The Analyst' },
-];
+import type { NewsArticle } from '@/types/news';
 
 type DiscoverSection = 'news' | 'media';
 
@@ -50,7 +49,6 @@ export default function NewsScreen() {
 
   const [discoverSection, setDiscoverSection] = useState<DiscoverSection>(discoverSectionSession);
   const [teamFilter, setTeamFilter] = useState<MediaTeamFilter | null>(null);
-  const [selectedSource, setSelectedSource] = useState<NewsSource>('HERO Sports');
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const heroNews = useHeroSportsNews();
   const analystNews = useTheAnalystNews();
@@ -94,8 +92,24 @@ export default function NewsScreen() {
     onClearTeamFilter: clearTeamFilter,
   });
 
-  const activeNews = selectedSource === 'HERO Sports' ? heroNews : analystNews;
-  const { articles, loadState, isStale, errorMessage } = activeNews;
+  const articles = useMemo(
+    () => mergeNewsFeeds([heroNews.articles, analystNews.articles]),
+    [analystNews.articles, heroNews.articles],
+  );
+
+  const bothLoading =
+    heroNews.loadState === 'loading' && analystNews.loadState === 'loading';
+  const bothError =
+    heroNews.loadState === 'error' && analystNews.loadState === 'error';
+  const anyStale = heroNews.isStale || analystNews.isStale;
+  const showEmpty =
+    !bothLoading &&
+    articles.length === 0 &&
+    (heroNews.loadState === 'success' || analystNews.loadState === 'success');
+  const showError = bothError && articles.length === 0;
+  const errorMessage = [heroNews.errorMessage, analystNews.errorMessage]
+    .filter(Boolean)
+    .join(' · ') || null;
 
   const heroRefresh = heroNews.refresh;
   const analystRefresh = analystNews.refresh;
@@ -150,119 +164,130 @@ export default function NewsScreen() {
     }
   }, [refreshBothSources]);
 
-  const showEmpty = loadState === 'success' && articles.length === 0;
-  const showError = loadState === 'error' && articles.length === 0;
-  const refreshing = discoverSection === 'media' ? mediaRefreshing : pullRefreshing;
-
-  const onPullToRefresh = useCallback(() => {
-    if (discoverSection === 'media') {
-      return refreshMedia();
-    }
-    return onPullToRefreshNews();
-  }, [discoverSection, onPullToRefreshNews, refreshMedia]);
-
-  const loadingMessage = useMemo(
-    () =>
-      selectedSource === 'HERO Sports'
-        ? 'Loading FCS news…'
-        : 'Loading The Analyst FCS news…',
-    [selectedSource],
+  const discoverHeader = (
+    <SegmentedControl
+      options={DISCOVER_SECTION_OPTIONS}
+      selected={discoverSection}
+      onSelect={selectDiscoverSection}
+      accessibilityLabel="Discover section"
+      variant="accent"
+      style={styles.primarySelector}
+    />
   );
 
-  const emptyMessage =
-    selectedSource === 'HERO Sports'
-      ? 'No FCS news articles are available right now.'
-      : 'No FCS news articles from The Analyst are available right now.';
+  const keyExtractor = useCallback((item: NewsArticle) => getNewsArticleKey(item), []);
 
-  const errorMessageTitle =
-    selectedSource === 'HERO Sports'
-      ? 'FCS news could not be loaded. Pull down to try again.'
-      : 'The Analyst news could not be loaded. Pull down to try again.';
+  const renderItem: ListRenderItem<NewsArticle> = useCallback(
+    ({ item, index }) => {
+      const isFirst = index === 0;
+      const isLast = index === articles.length - 1;
+      return (
+        <View
+          style={[
+            styles.listRow,
+            isFirst && styles.listRowFirst,
+            isLast && styles.listRowLast,
+          ]}>
+          <NewsArticleCard article={item} isLast={isLast} />
+        </View>
+      );
+    },
+    [articles.length],
+  );
+
+  const listHeader = useMemo(
+    () => (
+      <View style={styles.listHeader}>
+        <Text style={styles.sectionTitle}>Latest News</Text>
+
+        {bothLoading && articles.length === 0 ? (
+          <View style={styles.centerBox}>
+            <ActivityIndicator color={colors.primary} size="large" />
+            <Text style={styles.centerText}>Loading FCS news…</Text>
+          </View>
+        ) : null}
+
+        {showError ? (
+          <View style={styles.messageBox}>
+            <Text style={styles.messageTitle}>
+              FCS news could not be loaded. Pull down to try again.
+            </Text>
+            {errorMessage ? <Text style={styles.messageDetail}>{errorMessage}</Text> : null}
+          </View>
+        ) : null}
+
+        {anyStale && articles.length > 0 ? (
+          <View style={styles.staleBanner}>
+            <Text style={styles.staleText}>
+              One or more sources are stale or unavailable — showing the last successful feeds.
+            </Text>
+            {__DEV__ && errorMessage ? (
+              <Text style={styles.staleDetail}>{errorMessage}</Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {showEmpty ? (
+          <View style={styles.messageBox}>
+            <Text style={styles.messageTitle}>
+              No FCS news articles are available right now.
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    ),
+    [
+      anyStale,
+      articles.length,
+      bothLoading,
+      errorMessage,
+      showEmpty,
+      showError,
+    ],
+  );
+
+  if (discoverSection === 'media') {
+    return (
+      <Screen
+        denseTop
+        stickyHeader={discoverHeader}
+        refreshControl={
+          <RefreshControl
+            refreshing={mediaRefreshing}
+            onRefresh={() => void refreshMedia()}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }>
+        {mediaContent}
+      </Screen>
+    );
+  }
 
   return (
-    <Screen
-      denseTop
-      stickyHeader={
-        <SegmentedControl
-          options={DISCOVER_SECTION_OPTIONS}
-          selected={discoverSection}
-          onSelect={selectDiscoverSection}
-          accessibilityLabel="Discover section"
-          variant="accent"
-          style={styles.primarySelector}
-        />
-      }
-      secondaryStickyHeader={
-        discoverSection === 'news' ? (
-          <View style={styles.sourceSelectorWrap}>
-            <SegmentedControl
-              options={NEWS_SOURCE_OPTIONS}
-              selected={selectedSource}
-              onSelect={setSelectedSource}
-              accessibilityLabel="News source"
-              style={styles.sourceSelector}
-            />
-          </View>
-        ) : null
-      }
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => void onPullToRefresh()}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
-        />
-      }>
-      {discoverSection === 'media' ? (
-        mediaContent
-      ) : (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Latest News</Text>
-
-          {loadState === 'loading' && articles.length === 0 ? (
-            <View style={styles.centerBox}>
-              <ActivityIndicator color={colors.primary} size="large" />
-              <Text style={styles.centerText}>{loadingMessage}</Text>
-            </View>
-          ) : null}
-
-          {showError ? (
-            <View style={styles.messageBox}>
-              <Text style={styles.messageTitle}>{errorMessageTitle}</Text>
-              {errorMessage ? <Text style={styles.messageDetail}>{errorMessage}</Text> : null}
-            </View>
-          ) : null}
-
-          {isStale && articles.length > 0 ? (
-            <View style={styles.staleBanner}>
-              <Text style={styles.staleText}>
-                {selectedSource} is stale or unavailable — showing the last successful feed.
-              </Text>
-              {__DEV__ && errorMessage ? (
-                <Text style={styles.staleDetail}>{errorMessage}</Text>
-              ) : null}
-            </View>
-          ) : null}
-
-          {showEmpty ? (
-            <View style={styles.messageBox}>
-              <Text style={styles.messageTitle}>{emptyMessage}</Text>
-            </View>
-          ) : null}
-
-          {articles.length > 0 ? (
-            <View style={styles.list}>
-              {articles.map((article, index) => (
-                <NewsArticleCard
-                  key={`${article.source}-${article.id}`}
-                  article={article}
-                  isLast={index === articles.length - 1}
-                />
-              ))}
-            </View>
-          ) : null}
-        </View>
-      )}
+    <Screen denseTop stickyHeader={discoverHeader} scrollEnabled={false}>
+      <FlatList
+        style={styles.list}
+        data={articles}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ListHeaderComponent={listHeader}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+        refreshControl={
+          <RefreshControl
+            refreshing={pullRefreshing}
+            onRefresh={() => void onPullToRefreshNews()}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      />
     </Screen>
   );
 }
@@ -271,26 +296,39 @@ const styles = StyleSheet.create({
   primarySelector: {
     marginTop: spacing.xs,
   },
-  sourceSelectorWrap: {
+  list: {
+    flex: 1,
+  },
+  listContent: {
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
   },
-  sourceSelector: {
-    marginTop: 0,
+  listRow: {
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
   },
-  section: {
+  listRowFirst: {
+    borderTopWidth: 1,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+  },
+  listRowLast: {
+    borderBottomWidth: 1,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+  },
+  listHeader: {
     gap: spacing.sm,
+    marginBottom: spacing.sm,
   },
   sectionTitle: {
     ...typography.body,
     fontWeight: '700',
     color: colors.text,
-  },
-  list: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-    backgroundColor: colors.surface,
   },
   centerBox: {
     paddingVertical: spacing.xl,
