@@ -76,6 +76,8 @@ test('suggestion validation requires at least one coverage selection', () => {
 test('directory lists all approved sources alphabetically', () => {
   const filtered = filterMediaSources(MEDIA_SOURCE_SEEDS, { search: '' });
   assert.ok(filtered.length === MEDIA_SOURCE_SEEDS.filter((s) => s.is_approved).length);
+  assert.ok(filtered.some((source) => source.name === 'The FCS Edge'));
+  assert.ok(!filtered.some((source) => source.name === 'FCS Delivered'));
   for (let i = 1; i < filtered.length; i += 1) {
     assert.ok(compareMediaSourcesByName(filtered[i - 1]!, filtered[i]!) <= 0);
   }
@@ -83,10 +85,10 @@ test('directory lists all approved sources alphabetically', () => {
 
 test('search matches name, subtitle, and team labels', () => {
   const bySubtitle = filterMediaSources(MEDIA_SOURCE_SEEDS, {
-    search: 'sam herder',
+    search: 'hero sports',
   });
   assert.equal(bySubtitle.length, 1);
-  assert.equal(bySubtitle[0]?.name, 'FCS Football Talk');
+  assert.equal(bySubtitle[0]?.name, 'FCS Football Talk Network');
 
   const byTeam = filterMediaSources(MEDIA_SOURCE_SEEDS, {
     search: 'montana state',

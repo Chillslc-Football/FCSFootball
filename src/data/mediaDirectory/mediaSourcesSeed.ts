@@ -24,6 +24,11 @@ function seedSource(
     | 'conferenceIds'
   > & {
     logo_url?: string | null;
+    spotify_url?: string | null;
+    youtube_url?: string | null;
+    x_url?: string | null;
+    apple_podcast_url?: string | null;
+    is_approved?: boolean;
     isNational?: boolean;
     teamIds?: string[];
     conferenceIds?: string[];
@@ -42,7 +47,6 @@ function seedSource(
     youtube_url: null,
     x_url: null,
     apple_podcast_url: null,
-    is_approved: true,
     logo_url: partial.logo_url ?? null,
     ...partial,
     conference_id: partial.conference_id ?? conferenceIds[0] ?? null,
@@ -50,22 +54,29 @@ function seedSource(
     isNational,
     teamIds,
     conferenceIds,
+    is_approved:
+      typeof partial.is_approved === 'boolean' ? partial.is_approved : true,
   };
 }
 
-/** National FCS creators / shows (URLs pending verification). */
+/** National FCS creators / shows (provider URLs null until verified). */
 export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
   seedSource({
     id: 'seed-national-fcs-fans-nation',
     name: 'FCS Fans Nation Podcast',
-    subtitle: 'National FCS podcast',
-    description: null,
+    subtitle: 'The official podcast of FCS Fans Nation',
+    description:
+      'Fan-driven national FCS discussion, playoff coverage, predictions, interviews, and community conversation.',
     scope: 'national',
     team_id: null,
     conference_id: null,
     isNational: true,
     teamIds: [],
     conferenceIds: [],
+    spotify_url: 'https://open.spotify.com/show/2a4H7yGK9qhnEvEEtutY3b',
+    youtube_url: 'https://www.youtube.com/@fansnationnetwork',
+    x_url: 'https://x.com/FCSFansNation',
+    apple_podcast_url: 'https://podcasts.apple.com/us/podcast/fcs-fans-nation/id1396220851',
     display_order: 10,
   }),
   seedSource({
@@ -81,42 +92,60 @@ export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
   }),
   seedSource({
     id: 'seed-national-fcs-football-talk',
-    name: 'FCS Football Talk',
-    subtitle: 'Sam Herder',
-    description: null,
+    name: 'FCS Football Talk Network',
+    subtitle: 'Hosted by Sam Herder',
+    description:
+      'National FCS news, analysis, interviews, previews, and reactions hosted by HERO Sports senior FCS analyst Sam Herder.',
     scope: 'national',
     team_id: null,
     conference_id: null,
     isNational: true,
+    spotify_url: 'https://open.spotify.com/show/05PMJM5ReG5q5ByFlAR6Ug',
+    youtube_url: null,
+    x_url: 'https://x.com/SamHerderFCS',
+    apple_podcast_url:
+      'https://podcasts.apple.com/us/podcast/fcs-football-talk-network/id1205671649',
     display_order: 30,
   }),
   seedSource({
     id: 'seed-national-fcs-nation',
     name: 'FCS Nation',
-    subtitle: 'National FCS coverage',
-    description: null,
+    subtitle: 'Hosted by Kevin Marshall and Stone Labanowitz',
+    description:
+      'A national FCS podcast covering teams, conferences, storylines, and matchups from across the subdivision.',
     scope: 'national',
     team_id: null,
     conference_id: null,
     isNational: true,
+    spotify_url: 'https://open.spotify.com/show/34bJPYDMpfFxKtwiWGscHn',
+    youtube_url: null,
+    x_url: null,
+    apple_podcast_url: null,
     display_order: 40,
   }),
   seedSource({
     id: 'seed-national-hack-city',
-    name: 'Hack City',
-    subtitle: 'FBS and FCS football',
-    description: null,
+    name: 'Hack City - FBS and FCS Football',
+    subtitle: 'Hosted by Joe DeLeone and Sean Anderson',
+    description:
+      'Weekly FCS and FBS college football coverage, analysis, previews, reactions, and interviews from Joe DeLeone and Sean Anderson.',
     scope: 'national',
     team_id: null,
     conference_id: null,
     isNational: true,
+    spotify_url: 'https://open.spotify.com/show/58Z0sHcTgyXTGIihrKi0j7',
+    youtube_url: 'https://www.youtube.com/c/HackCityFootball',
+    x_url: null,
+    apple_podcast_url:
+      'https://podcasts.apple.com/us/podcast/hack-city-fbs-and-fcs-football/id1458677310',
     display_order: 50,
   }),
   seedSource({
     id: 'seed-national-mondak',
     name: 'MONDAK Football Show',
-    subtitle: 'Montana and Dakota football',
-    description: null,
+    subtitle: 'Hosted by Sam Herder and Brad Jones',
+    description:
+      'A syndicated FCS football show focused on Montana, North Dakota, and South Dakota, hosted by national FCS analyst Sam Herder and Brad Jones.',
     scope: 'national',
     team_id: null,
     conference_id: null,
@@ -124,50 +153,93 @@ export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     isNational: true,
     teamIds: [],
     conferenceIds: [],
+    spotify_url: 'https://open.spotify.com/show/0MGposfqYN5iCGknVxntzN',
+    youtube_url: null,
+    x_url: 'https://x.com/SamHerderFCS',
+    apple_podcast_url: null,
     display_order: 60,
   }),
   seedSource({
     id: 'seed-national-fcs-delivered',
     name: 'FCS Delivered',
-    subtitle: 'Gary Reasons and Craig Haley',
-    description: null,
+    subtitle: 'Hosted by Craig Haley and Gary Reasons',
+    description:
+      'National FCS analysis, rankings, predictions, interviews, and postseason coverage from Craig Haley and Gary Reasons.',
     scope: 'national',
     team_id: null,
     conference_id: null,
     isNational: true,
+    is_approved: false,
+    spotify_url: null,
+    youtube_url: null,
+    x_url: null,
+    apple_podcast_url: null,
     display_order: 70,
+  }),
+  seedSource({
+    id: 'seed-national-fcs-edge',
+    name: 'The FCS Edge',
+    subtitle: 'Hosted by Craig Haley',
+    description:
+      'National FCS football news, analysis, rankings, interviews, playoff coverage, and weekly discussion hosted by longtime FCS analyst Craig Haley.',
+    scope: 'national',
+    team_id: null,
+    conference_id: null,
+    isNational: true,
+    is_approved: true,
+    spotify_url: 'https://open.spotify.com/show/2qKKQujG0zPfDeM1v3SOtS',
+    youtube_url: null,
+    x_url: null,
+    apple_podcast_url: 'https://podcasts.apple.com/us/podcast/the-fcs-edge/id1699176837',
+    display_order: 75,
   }),
   seedSource({
     id: 'seed-national-bluebloods',
     name: 'The Bluebloods',
-    subtitle: 'College football coverage',
-    description: null,
+    subtitle: 'FCS Football Central',
+    description:
+      'National FCS football news, interviews, conference previews, rankings, playoff coverage, and analysis hosted by Zach McKinnell.',
     scope: 'national',
     team_id: null,
     conference_id: null,
     isNational: true,
+    spotify_url: 'https://open.spotify.com/show/6azBEcGCeKA5NVDx3fqv1k',
+    youtube_url: null,
+    x_url: 'https://x.com/The__Bluebloods',
+    apple_podcast_url: 'https://podcasts.apple.com/us/podcast/the-bluebloods/id1479796246',
     display_order: 80,
   }),
   seedSource({
     id: 'seed-national-deep-ball',
-    name: 'Deep Ball Podcast',
-    subtitle: 'College football podcast',
-    description: null,
+    name: 'The Deep Ball Podcast',
+    subtitle: 'Hosted by Samuel Akem and Keenan Curran',
+    description:
+      'Football interviews and in-depth conversations with coaches, players, and people around the game, hosted by former Montana players Samuel Akem and Keenan Curran.',
     scope: 'national',
     team_id: null,
     conference_id: null,
     isNational: true,
+    spotify_url: 'https://open.spotify.com/show/6rZfZEWBHgOSo9Qu69EbF5',
+    youtube_url: 'https://www.youtube.com/@DeepBallPodcast',
+    x_url: null,
+    apple_podcast_url:
+      'https://podcasts.apple.com/us/podcast/the-deep-ball-podcast/id1869691465',
     display_order: 90,
   }),
   seedSource({
     id: 'seed-national-samuel-akem',
     name: 'The Samuel Akem Show',
-    subtitle: 'FCS football and interviews',
-    description: null,
+    subtitle: 'Hosted by Samuel Akem',
+    description:
+      'FCS and college football commentary, interviews, reactions, and analysis from former Montana wide receiver Samuel Akem.',
     scope: 'national',
     team_id: null,
     conference_id: null,
     isNational: true,
+    spotify_url: null,
+    youtube_url: 'https://www.youtube.com/channel/UCAx30nrtgXLFUdmqQhxD0GA',
+    x_url: 'https://x.com/SamuelAkemShow',
+    apple_podcast_url: null,
     display_order: 100,
   }),
 ];

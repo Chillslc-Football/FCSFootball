@@ -224,6 +224,7 @@ export function mediaSourceHasProviderUrl(source: MediaSource): boolean {
   return (
     hasProviderUrl(source.spotify_url) ||
     hasProviderUrl(source.youtube_url) ||
-    hasProviderUrl(source.x_url)
+    hasProviderUrl(source.x_url) ||
+    hasProviderUrl(source.apple_podcast_url)
   );
 }

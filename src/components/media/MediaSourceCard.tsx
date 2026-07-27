@@ -28,7 +28,8 @@ export function MediaSourceCard({
   const showSpotify = hasMediaUrl(source.spotify_url);
   const showYoutube = hasMediaUrl(source.youtube_url);
   const showX = hasMediaUrl(source.x_url);
-  const hasAnyProvider = showSpotify || showYoutube || showX;
+  const showApplePodcasts = hasMediaUrl(source.apple_podcast_url);
+  const hasAnyProvider = showSpotify || showYoutube || showX || showApplePodcasts;
   const { labels: badgeLabels, overflowCount } = resolveMediaScopeBadges(source);
   const subtitle = source.subtitle?.trim() || null;
   const logoSize = compact ? COMPACT_LOGO_SIZE : LOGO_SIZE;
@@ -96,6 +97,14 @@ export function MediaSourceCard({
               label="X"
               icon="logo-twitter"
               onPress={() => void openMediaUrl(source.x_url)}
+            />
+          ) : null}
+          {showApplePodcasts ? (
+            <ProviderButton
+              sourceName={source.name}
+              label="Apple Podcasts"
+              icon="logo-apple"
+              onPress={() => void openMediaUrl(source.apple_podcast_url)}
             />
           ) : null}
         </View>
