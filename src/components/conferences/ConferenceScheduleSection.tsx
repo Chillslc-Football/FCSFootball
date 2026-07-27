@@ -4,6 +4,8 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { ConferenceScheduleGameRow } from '@/components/conferences/ConferenceScheduleGameRow';
 import { groupConferenceGamesByDate } from '@/data/conferences/groupConferenceGamesByDate';
 import type { useConferenceWeekSchedule } from '@/data/conferences/useConferenceWeekSchedule';
+import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
+import { prioritizeFavoriteGamesWithinOrder } from '@/data/scores/prioritizeFavoriteScoreGames';
 import { colors, spacing, typography } from '@/theme';
 
 type ConferenceScheduleSectionProps = {
@@ -13,12 +15,21 @@ type ConferenceScheduleSectionProps = {
 export function ConferenceScheduleSection({
   schedule,
 }: ConferenceScheduleSectionProps) {
+  const { favorites, loaded: favoritesLoaded } = useFavoriteTeams();
   const { loadState, games, filteredGames, errorMessage } = schedule;
 
-  const dateGroups = useMemo(
-    () => groupConferenceGamesByDate(filteredGames),
-    [filteredGames],
-  );
+  const dateGroups = useMemo(() => {
+    const baseGroups = groupConferenceGamesByDate(filteredGames);
+    if (!favoritesLoaded || favorites.length === 0) {
+      return baseGroups;
+    }
+
+    // Keep day sections intact; only reorder games inside each day.
+    return baseGroups.map((group) => ({
+      ...group,
+      games: prioritizeFavoriteGamesWithinOrder(group.games, favorites),
+    }));
+  }, [filteredGames, favorites, favoritesLoaded]);
 
   return (
     <View style={styles.section}>

@@ -1,13 +1,9 @@
 import type { ConferenceStandingEntry } from '@/types';
 
-function compareTeamNameAlphabetical(
-  a: ConferenceStandingEntry,
-  b: ConferenceStandingEntry,
-): number {
-  return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' });
-}
-
-/** Favorites first, then alphabetical within each group. Does not mutate input. */
+/**
+ * Stable partition: favorite teams first, then all others.
+ * Preserves relative order within each group. Does not mutate input.
+ */
 export function sortConferenceStandingsByFavorites(
   entries: ConferenceStandingEntry[],
   isFavorite: (teamId?: string, teamName?: string, abbreviation?: string) => boolean,
@@ -22,9 +18,6 @@ export function sortConferenceStandingsByFavorites(
       others.push(entry);
     }
   }
-
-  favorites.sort(compareTeamNameAlphabetical);
-  others.sort(compareTeamNameAlphabetical);
 
   return [...favorites, ...others];
 }

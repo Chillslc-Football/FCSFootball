@@ -1,3 +1,4 @@
+import { withRankingsFingerprint } from '@/data/providers/ncaaRankingsParser';
 import type { NcaaRankingsPayload, PollMovement, RankedTeam, TeamRecord } from '@/types';
 
 import fcsTop25Json from './fcsTop25.json';
@@ -72,7 +73,11 @@ export function mapStaticFcsTop25ToPayload(file: StaticFcsTop25File): NcaaRankin
 
   teams.sort((a, b) => a.rank - b.rank || a.team.name.localeCompare(b.team.name));
 
-  return {
+  const officialPublishedAt = /^\d{4}-\d{2}-\d{2}/.test(file.updatedAt)
+    ? `${file.updatedAt.slice(0, 10)}T12:00:00.000Z`
+    : undefined;
+
+  return withRankingsFingerprint({
     pollName: file.pollName,
     updatedLabel: file.updatedLabel ?? file.updatedAt,
     teams,
@@ -80,5 +85,7 @@ export function mapStaticFcsTop25ToPayload(file: StaticFcsTop25File): NcaaRankin
     endpoint: 'static://fcsTop25.json',
     isManualData: true,
     updatedAt: file.updatedAt,
-  };
+    officialPublishedAt,
+    suppliedBy: 'static-fallback',
+  });
 }

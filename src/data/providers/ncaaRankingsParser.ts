@@ -1,4 +1,4 @@
-import type { PollMovement, RankedTeam, TeamRecord } from '@/types';
+import type { NcaaRankingsPayload, PollMovement, RankedTeam, TeamRecord } from '@/types';
 
 /** Row shape from a server-side NCAA rankings proxy (e.g. cached scrape output). */
 export type NcaaRankingsProxyRow = {
@@ -15,6 +15,8 @@ export type NcaaRankingsProxyResponse = {
   updatedLabel: string;
   seasonYear?: number;
   week?: number;
+  releaseId?: string;
+  officialPublishedAt?: string;
   data: NcaaRankingsProxyRow[];
 };
 
@@ -23,6 +25,8 @@ export type NcaaRankingsParseResult = {
   updatedLabel: string;
   seasonYear?: number;
   week?: number;
+  releaseId?: string;
+  officialPublishedAt?: string;
   teams: RankedTeam[];
 };
 
@@ -116,6 +120,27 @@ export function mapNcaaRankingsProxyResponse(
     updatedLabel: response.updatedLabel,
     seasonYear: response.seasonYear,
     week: response.week,
+    releaseId: response.releaseId,
+    officialPublishedAt: response.officialPublishedAt,
     teams,
+  };
+}
+
+/** Stable fingerprint of ranking order/content for new-poll detection. */
+export function buildRankingsFingerprint(teams: RankedTeam[]): string {
+  return teams
+    .map(
+      (entry) =>
+        `${entry.rank}:${entry.team.name}:${entry.record.wins}-${entry.record.losses}:${entry.pollPoints ?? ''}`,
+    )
+    .join('|');
+}
+
+export function withRankingsFingerprint<T extends Pick<NcaaRankingsPayload, 'teams'>>(
+  payload: T,
+): T & { rankingsFingerprint: string } {
+  return {
+    ...payload,
+    rankingsFingerprint: buildRankingsFingerprint(payload.teams),
   };
 }

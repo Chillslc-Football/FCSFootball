@@ -174,10 +174,15 @@ function resolveTeamProfile(
   };
 }
 
-export async function loadTeamSeasonData(teamKey: string): Promise<TeamSeasonData> {
+export async function loadTeamSeasonData(
+  teamKey: string,
+  options?: { forceRefresh?: boolean },
+): Promise<TeamSeasonData> {
   const routeId = decodeURIComponent(teamKey);
   const staticFallback = await lookupStaticPollTeam(routeId);
-  const allGames = await ensureSeasonGamesLoaded();
+  const allGames = await ensureSeasonGamesLoaded({
+    forceRefresh: options?.forceRefresh,
+  });
 
   const teamGames = sortEspnNormalizedGames(
     allGames.filter((game) => gameIncludesTeamKey(game, routeId)),

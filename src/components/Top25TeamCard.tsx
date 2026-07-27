@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { TeamLogo } from '@/components/TeamLogo';
 import { FavoriteStar } from '@/components/FavoriteStar';
 import { TeamNameLink } from '@/components/TeamNameLink';
+import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
 import { colors, spacing, typography } from '@/theme';
 import type { GameLocation, NextGame, PollMovement, RankedTeam, TeamRecord } from '@/types';
 
@@ -10,6 +11,8 @@ type Top25TeamCardProps = {
   item: RankedTeam;
   logoUrl?: string;
   espnTeamId?: string;
+  /** ESPN abbreviation when resolved; prefer over poll-synthesized abbreviations. */
+  abbreviation?: string;
 };
 
 const LOCATION_LABEL: Record<GameLocation, string> = {
@@ -75,9 +78,19 @@ function NextGameSection({ nextGame }: { nextGame: NextGame }) {
   );
 }
 
-export function Top25TeamCard({ item, logoUrl, espnTeamId }: Top25TeamCardProps) {
+export function Top25TeamCard({
+  item,
+  logoUrl,
+  espnTeamId,
+  abbreviation,
+}: Top25TeamCardProps) {
+  const { isFavorite } = useFavoriteTeams();
   const { rank, team, record, pollPoints, movement, nextGame } = item;
   const resolvedLogoUrl = logoUrl ?? team.logoUrl;
+  // Prefer ESPN abbreviation from logo lookup; omit synthetic poll abbrs for matching.
+  const resolvedAbbreviation = abbreviation;
+  const resolvedTeamId = espnTeamId ?? team.id;
+  const favorited = isFavorite(espnTeamId ?? undefined, team.name, resolvedAbbreviation);
 
   return (
     <View style={styles.card}>
@@ -85,7 +98,7 @@ export function Top25TeamCard({ item, logoUrl, espnTeamId }: Top25TeamCardProps)
         <Text style={styles.rank}>{rank}</Text>
         <TeamLogo
           name={team.name}
-          abbreviation={team.abbreviation}
+          abbreviation={resolvedAbbreviation ?? team.abbreviation}
           logoUrl={resolvedLogoUrl}
           size="poll"
         />
@@ -93,14 +106,15 @@ export function Top25TeamCard({ item, logoUrl, espnTeamId }: Top25TeamCardProps)
           <View style={styles.nameRow}>
             <TeamNameLink
               name={team.name}
-              teamId={espnTeamId ?? team.id}
+              teamId={resolvedTeamId}
               style={styles.teamName}
             />
             <FavoriteStar
-              teamId={espnTeamId ?? team.id}
+              teamId={espnTeamId ?? undefined}
               teamName={team.name}
-              abbreviation={team.abbreviation}
+              abbreviation={resolvedAbbreviation}
               logoUrl={resolvedLogoUrl}
+              isFavorite={favorited}
             />
           </View>
           <Text style={styles.record}>{formatRecord(record)}</Text>

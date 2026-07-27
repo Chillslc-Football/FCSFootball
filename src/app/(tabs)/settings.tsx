@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 
 import { Screen } from '@/components/Screen';
+import { useAdminAuth } from '@/data/media/useAdminAuth';
 import { useNotificationPreferences } from '@/hooks/useNotificationPreferences';
 import { colors, spacing, typography } from '@/theme';
 
@@ -32,6 +33,7 @@ export default function SettingsScreen() {
     updatePreference,
     openSystemSettings,
   } = useNotificationPreferences();
+  const adminAuth = useAdminAuth();
 
   return (
     <Screen title="Settings" subtitle="App preferences and configuration.">
@@ -107,6 +109,22 @@ export default function SettingsScreen() {
           </>
         )}
       </View>
+
+      {adminAuth.isAdmin || __DEV__ ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Administration</Text>
+          <Link href={'/admin' as Href} asChild>
+            <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+              <Text style={styles.rowTitle}>Media submissions</Text>
+              <Text style={styles.rowSubtitle}>
+                {adminAuth.isAdmin
+                  ? 'Review pending community media suggestions'
+                  : 'Development shortcut — requires allowlisted admin sign-in'}
+              </Text>
+            </Pressable>
+          </Link>
+        </View>
+      ) : null}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Developer</Text>

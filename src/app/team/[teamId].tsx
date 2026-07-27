@@ -1,8 +1,9 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,7 +13,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TeamLogo } from '@/components/TeamLogo';
 import { FavoriteStarButton } from '@/components/FavoriteStarButton';
+import { TeamMediaSection } from '@/components/media/TeamMediaSection';
 import { TeamScheduleGameRow } from '@/components/TeamScheduleGameRow';
+
 import {
   loadTeamSeasonData,
   TEAM_SCHEDULE_SOURCE_NOTE,
@@ -21,6 +24,12 @@ import {
 import { useSelectedConference } from '@/data/conferences/SelectedConferenceContext';
 import { resolveConferenceId } from '@/data/conferences/resolveConferenceId';
 import { lookupEspnConference, resolveEspnConferenceName } from '@/data/providers/espnConferenceLookup';
+import { logEspnRefreshDev } from '@/data/providers/espnRefreshLog';
+import {
+  useScoresLiveRefresh,
+  type ScoresSilentRefreshOptions,
+} from '@/data/scores/useScoresLiveRefresh';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { colors, spacing, typography } from '@/theme';
 import { getTeamDetailHeading } from '@/utils/teamDisplay';
 import { isEspnTeamId } from '@/utils/teamId';
@@ -173,45 +182,110 @@ export default function TeamDetailScreen() {
   const [profile, setProfile] = useState<TeamProfile | null>(null);
   const [games, setGames] = useState<EspnNormalizedGame[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const hasDataRef = useRef(false);
+  const loadedRouteRef = useRef<string | null>(null);
+  const inFlightRef = useRef<Promise<void> | null>(null);
 
-  useEffect(() => {
-    if (!routeId) {
-      setLoadState('error');
-      setErrorMessage('Team not found.');
-      return;
-    }
-
-    let cancelled = false;
-
-    async function load() {
-      setLoadState('loading');
-      setErrorMessage(null);
-
-      try {
-        const data = await loadTeamSeasonData(routeId);
-        if (cancelled) return;
-        setProfile(data.profile);
-        setGames(data.games);
-        setLoadState('success');
-      } catch (err) {
-        if (cancelled) return;
-        setProfile(null);
-        setGames([]);
-        setErrorMessage(err instanceof Error ? err.message : 'Could not load team data.');
+  const loadTeam = useCallback(
+    async (options?: ScoresSilentRefreshOptions) => {
+      if (!routeId) {
         setLoadState('error');
+        setErrorMessage('Team not found.');
+        return;
       }
-    }
 
-    void load();
+      if (loadedRouteRef.current !== routeId) {
+        loadedRouteRef.current = routeId;
+        hasDataRef.current = false;
+      }
 
-    return () => {
-      cancelled = true;
-    };
-  }, [routeId]);
+      if (inFlightRef.current && !options?.forceRefresh) {
+        return inFlightRef.current;
+      }
+
+      const silent = options?.silent ?? false;
+      const forceRefresh = options?.forceRefresh ?? false;
+      const trigger = options?.trigger ?? 'team-mount';
+
+      const run = (async () => {
+        if (!silent && !hasDataRef.current) {
+          setLoadState('loading');
+          setErrorMessage(null);
+        }
+
+        logEspnRefreshDev({
+          source: 'ESPN',
+          screen: 'Team',
+          trigger,
+          phase: 'start',
+          note: `${routeId} force=${forceRefresh}`,
+        });
+
+        try {
+          const data = await loadTeamSeasonData(routeId, { forceRefresh });
+          setProfile(data.profile);
+          setGames(data.games);
+          setLoadState('success');
+          hasDataRef.current = true;
+          logEspnRefreshDev({
+            source: 'ESPN',
+            screen: 'Team',
+            trigger,
+            phase: 'success',
+            count: data.games.length,
+          });
+        } catch (err) {
+          logEspnRefreshDev({
+            source: 'ESPN',
+            screen: 'Team',
+            trigger,
+            phase: 'error',
+            error: err,
+          });
+
+          if (hasDataRef.current) {
+            console.warn('[TeamDetailScreen] refresh failed; keeping previous team data:', err);
+            setLoadState('success');
+            return;
+          }
+
+          setProfile(null);
+          setGames([]);
+          setErrorMessage(err instanceof Error ? err.message : 'Could not load team data.');
+          setLoadState('error');
+        }
+      })();
+
+      inFlightRef.current = run;
+      try {
+        await run;
+      } finally {
+        if (inFlightRef.current === run) inFlightRef.current = null;
+      }
+    },
+    [routeId],
+  );
+
+  useScoresLiveRefresh({
+    screen: 'Team',
+    visibleGames: games,
+    loadGames: loadTeam,
+    enabled: Boolean(routeId),
+  });
+
+  const { refreshing, onPullToRefresh } = usePullToRefresh(
+    useCallback(async () => {
+      await loadTeam({ forceRefresh: true, silent: true, trigger: 'team-ptr' });
+    }, [loadTeam]),
+  );
 
   const screenTitle = profile
     ? resolveHeaderTitle(profile, profile.displayName ?? profile.name ?? 'Team')
     : 'Team';
+
+  const espnTeamIdForMedia =
+    profile?.espnTeamId?.trim() ||
+    (routeId && isEspnTeamId(routeId) ? routeId.trim() : '');
 
   return (
     <>
@@ -222,6 +296,14 @@ export default function TeamDetailScreen() {
           styles.content,
           { paddingTop: spacing.md, paddingBottom: Math.max(insets.bottom, spacing.xxl) },
         ]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onPullToRefresh()}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
         showsVerticalScrollIndicator={false}>
         {loadState === 'loading' ? (
           <View style={styles.loadingBox}>
@@ -263,8 +345,16 @@ export default function TeamDetailScreen() {
                 ))}
               </View>
             )}
+
+            {espnTeamIdForMedia ? (
+              <TeamMediaSection
+                espnTeamId={espnTeamIdForMedia}
+                teamName={screenTitle}
+              />
+            ) : null}
           </>
         ) : null}
+
       </ScrollView>
     </>
   );

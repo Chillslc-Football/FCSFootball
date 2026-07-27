@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -12,6 +12,7 @@ import { ScoresGameCard } from '@/components/ScoresGameCard';
 import { Screen } from '@/components/Screen';
 import { WeekDropdown } from '@/components/WeekDropdown';
 import { espnScoresProvider } from '@/data/providers/espnProvider';
+import { logEspnRefreshDev } from '@/data/providers/espnRefreshLog';
 import { mergeScoresTabRankings } from '@/data/providers/rankingMerge';
 import {
   prioritizeFavoriteGamesWithinOrder,
@@ -77,20 +78,32 @@ export default function ScoresScreen() {
   const [games, setGames] = useState<EspnNormalizedGame[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sourceLabel, setSourceLabel] = useState('');
+  const gamesCountRef = useRef(0);
+  gamesCountRef.current = games.length;
 
   const loadGames = useCallback(async (options?: ScoresSilentRefreshOptions & { pullRefresh?: boolean }) => {
     const silent = options?.silent ?? false;
     const pullRefresh = options?.pullRefresh ?? false;
+    const forceRefresh = options?.forceRefresh ?? pullRefresh;
+    const trigger = options?.trigger ?? (pullRefresh ? 'scores-ptr' : 'scores-mount');
 
     if (!silent && !pullRefresh) {
       setLoadState('loading');
       setErrorMessage(null);
     }
 
+    logEspnRefreshDev({
+      source: 'ESPN',
+      screen: 'Scores',
+      trigger,
+      phase: 'start',
+      note: `${weekId}/${leagueFilter} force=${forceRefresh}`,
+    });
+
     try {
       const response = await espnScoresProvider.getWeekGames(weekId, {
         league: leagueFilter,
-        forceRefresh: options?.forceRefresh ?? pullRefresh,
+        forceRefresh,
       });
 
       const merged = await mergeScoresTabRankings(response.data.games, leagueFilter);
@@ -99,9 +112,28 @@ export default function ScoresScreen() {
       registerEspnGames(merged.games);
       setSourceLabel(`${response.data.weekLabel} · ESPN scoreboard`);
       setLoadState('success');
+      logEspnRefreshDev({
+        source: 'ESPN',
+        screen: 'Scores',
+        trigger,
+        phase: 'success',
+        count: merged.games.length,
+      });
     } catch (err) {
-      if (silent || pullRefresh) {
-        console.warn('[ScoresScreen] refresh failed:', err);
+      logEspnRefreshDev({
+        source: 'ESPN',
+        screen: 'Scores',
+        trigger,
+        phase: 'error',
+        error: err,
+      });
+
+      // Preserve last successful games on any refresh failure.
+      if (silent || pullRefresh || gamesCountRef.current > 0) {
+        console.warn('[ScoresScreen] refresh failed; keeping previous scores:', err);
+        if (!silent && !pullRefresh) {
+          setLoadState('success');
+        }
         return;
       }
 
@@ -114,7 +146,10 @@ export default function ScoresScreen() {
   }, [weekId, leagueFilter]);
 
   useEffect(() => {
-    void loadGames();
+    void loadGames({
+      forceRefresh: true,
+      trigger: 'scores-week-or-filter',
+    });
   }, [loadGames]);
 
   const filterSupport = getScoresFilterSupport(filterId);
@@ -125,6 +160,7 @@ export default function ScoresScreen() {
   );
 
   useScoresLiveRefresh({
+    screen: 'Scores',
     visibleGames: filteredGames,
     loadGames,
     enabled: loadState === 'success',

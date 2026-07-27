@@ -56,7 +56,12 @@ function StandingsRow({ entry }: { entry: ConferenceStandingEntry }) {
         <Text style={styles.teamName} numberOfLines={1}>
           {entry.shortDisplayName}
         </Text>
-        <FavoriteStar teamId={entry.teamId} teamName={entry.displayName} />
+        <FavoriteStar
+          teamId={entry.teamId}
+          teamName={entry.displayName}
+          abbreviation={entry.abbreviation}
+          logoUrl={entry.logoUrl}
+        />
       </View>
       <Text style={styles.recordCell}>{entry.conferenceRecord}</Text>
       <Text style={styles.recordCell}>{entry.overallRecord}</Text>

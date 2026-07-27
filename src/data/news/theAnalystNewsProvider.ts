@@ -1,85 +1,73 @@
 import {
   THE_ANALYST_FCS_PAGE_URL,
   THE_ANALYST_FCS_POSTS_URL,
+  THE_ANALYST_FCS_RSS_URL,
+  THE_ANALYST_NEWS_EXPECTED_MIN_ARTICLES,
   THE_ANALYST_NEWS_FETCH_TIMEOUT_MS,
   THE_ANALYST_NEWS_SOURCE,
   THE_ANALYST_SITE_ORIGIN,
 } from '@/data/news/theAnalystNewsConstants';
+import { parseRssFeedItems } from '@/data/news/parseRssFeed';
+import {
+  isValidTheAnalystArticleUrl,
+  parseAnalystPageFallbackArticles,
+  type AnalystFallbackArticle,
+} from '@/data/news/theAnalystStructuredFallback';
 import {
   asString,
-  decodeHtmlEntities,
   dedupeArticlesByUrl,
   fetchWithTimeout,
   isRecord,
+  logNewsFetchDev,
   normalizeArticleUrl,
   parseRenderedField,
-  resolveAbsoluteUrl,
+  parseWordPressPublishedAt,
+  parseYoastAuthorName,
+  parseYoastImageUrl,
+  readErrorResponseDetails,
+  sortArticlesByPublishedAtDesc,
   stripHtml,
+  warnIfSparseArticleCount,
 } from '@/data/news/newsUtils';
 import type { NewsArticle, NewsArticlesPayload } from '@/types/news';
 
-const THE_ANALYST_HOST_PATTERN = /(^|\.)theanalyst\.com$/i;
-const THE_ANALYST_ARTICLE_PATH_PATTERN = /^\/articles\/[^/]+\/?$/;
+export { isValidTheAnalystArticleUrl } from '@/data/news/theAnalystStructuredFallback';
 
-export function isValidTheAnalystArticleUrl(url: string): boolean {
+function isAllowedTheAnalystImageUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     return (
-      parsed.protocol === 'https:' &&
-      THE_ANALYST_HOST_PATTERN.test(parsed.hostname) &&
-      THE_ANALYST_ARTICLE_PATH_PATTERN.test(parsed.pathname)
+      parsed.protocol === 'https:' && /(^|\.)theanalyst\.com$/i.test(parsed.hostname)
     );
   } catch {
     return false;
   }
 }
 
-function isAllowedTheAnalystImageUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'https:' && THE_ANALYST_HOST_PATTERN.test(parsed.hostname);
-  } catch {
-    return false;
-  }
-}
-
-function parseFeaturedImageUrl(post: Record<string, unknown>): string | undefined {
-  const embedded = post._embedded;
-  if (!isRecord(embedded)) return undefined;
-
-  const featured = embedded['wp:featuredmedia'];
-  if (!Array.isArray(featured) || !isRecord(featured[0])) return undefined;
-
-  const media = featured[0];
-  const sizes = isRecord(media.media_details) ? media.media_details.sizes : undefined;
-  if (isRecord(sizes)) {
-    for (const key of ['medium_large', 'large', 'medium', 'thumbnail'] as const) {
-      const size = sizes[key];
-      if (isRecord(size)) {
-        const sourceUrl = asString(size.source_url);
-        if (sourceUrl && isAllowedTheAnalystImageUrl(sourceUrl)) {
-          return sourceUrl;
-        }
-      }
-    }
-  }
-
-  const sourceUrl = asString(media.source_url);
-  if (sourceUrl && isAllowedTheAnalystImageUrl(sourceUrl)) {
-    return sourceUrl;
-  }
-
-  return undefined;
-}
-
-function parseAuthorName(post: Record<string, unknown>): string | undefined {
-  const embedded = post._embedded;
-  if (!isRecord(embedded)) return undefined;
-
-  const authors = embedded.author;
-  if (!Array.isArray(authors) || !isRecord(authors[0])) return undefined;
-
-  return asString(authors[0].name);
+/** Exported for fixture tests — parse The Analyst FCS RSS XML. */
+export function parseTheAnalystRssXml(xml: string): NewsArticle[] {
+  return sortArticlesByPublishedAtDesc(
+    dedupeArticlesByUrl(
+      parseRssFeedItems(xml, { siteOrigin: THE_ANALYST_SITE_ORIGIN })
+        .map((item): NewsArticle | null => {
+          if (!item.title || !isValidTheAnalystArticleUrl(item.url)) return null;
+          return {
+            id: item.guid || normalizeArticleUrl(item.url),
+            title: item.title,
+            url: item.url,
+            imageUrl:
+              item.imageUrl && isAllowedTheAnalystImageUrl(item.imageUrl)
+                ? item.imageUrl
+                : undefined,
+            author: item.author,
+            publishedAt: item.publishedAt,
+            excerpt: item.excerpt,
+            source: THE_ANALYST_NEWS_SOURCE,
+          };
+        })
+        .filter((article): article is NewsArticle => article != null),
+    ),
+  );
 }
 
 function parseWordPressPost(post: unknown): NewsArticle | null {
@@ -89,7 +77,7 @@ function parseWordPressPost(post: unknown): NewsArticle | null {
   const link = asString(post.link);
   const titleHtml = parseRenderedField(post.title);
   const title = titleHtml ? stripHtml(titleHtml) : undefined;
-  const publishedAt = asString(post.date);
+  const publishedAt = parseWordPressPublishedAt(post);
 
   if (!id || !link || !title || !isValidTheAnalystArticleUrl(link)) {
     return null;
@@ -97,246 +85,229 @@ function parseWordPressPost(post: unknown): NewsArticle | null {
 
   const excerptHtml = parseRenderedField(post.excerpt);
   const excerpt = excerptHtml ? stripHtml(excerptHtml) : undefined;
-  const imageUrl = parseFeaturedImageUrl(post);
-  const author = parseAuthorName(post);
+  const yoastImage = parseYoastImageUrl(post);
+  const imageUrl =
+    yoastImage && isAllowedTheAnalystImageUrl(yoastImage) ? yoastImage : undefined;
 
   return {
     id,
     title,
     url: link,
     imageUrl,
-    author,
+    author: parseYoastAuthorName(post),
     publishedAt,
     excerpt: excerpt || undefined,
     source: THE_ANALYST_NEWS_SOURCE,
   };
 }
 
-type ParsedHtmlCard = {
-  url: string;
-  title?: string;
-  excerpt?: string;
-  author?: string;
-  publishedAt?: string;
-  imageUrl?: string;
-};
-
-function parseFeaturedArticleUrls(html: string): string[] {
-  const match = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
-  if (!match?.[1]) return [];
-
-  try {
-    const data = JSON.parse(match[1]) as unknown;
-    if (!isRecord(data) || data['@type'] !== 'ItemList' || data.name !== 'Featured Articles') {
-      return [];
-    }
-
-    const items = data.itemListElement;
-    if (!Array.isArray(items)) return [];
-
-    const urls: string[] = [];
-    for (const entry of items) {
-      if (!isRecord(entry) || !isRecord(entry.item)) continue;
-      const url = asString(entry.item.url);
-      if (url && isValidTheAnalystArticleUrl(url)) {
-        urls.push(url);
-      }
-    }
-    return urls;
-  } catch {
-    return [];
-  }
+/** Exported for fixture tests — parse The Analyst WP REST JSON array. */
+export function parseTheAnalystWordPressPosts(raw: unknown): NewsArticle[] {
+  if (!Array.isArray(raw)) return [];
+  return sortArticlesByPublishedAtDesc(
+    dedupeArticlesByUrl(
+      raw
+        .map((post) => parseWordPressPost(post))
+        .filter((article): article is NewsArticle => article != null),
+    ),
+  );
 }
 
-function parsePageOneTeaserUrls(html: string): string[] {
-  const featuredIndex = html.indexOf('Featured Articles');
-  const paginationIndex = html.indexOf('class="pagination');
-  if (featuredIndex < 0 || paginationIndex < 0 || paginationIndex <= featuredIndex) {
-    return [];
-  }
-
-  const listSection = html.slice(featuredIndex, paginationIndex);
-  const pattern =
-    /<article class="[^"]*teaser-type--post[^"]*"[\s\S]*?teaser-content-link" href="(https:\/\/theanalyst\.com\/articles\/[^"]+)"/g;
-
-  const urls: string[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(listSection)) !== null) {
-    const url = match[1];
-    if (isValidTheAnalystArticleUrl(url)) {
-      urls.push(url);
-    }
-  }
-
-  return urls;
-}
-
-function parseHtmlCardFallbacks(html: string): Map<string, ParsedHtmlCard> {
-  const cards = new Map<string, ParsedHtmlCard>();
-
-  const pgCardPattern =
-    /<article class="pg-card[^"]*" id="pg-card-(\d+)"[\s\S]*?pg-card__title-link" href="(https:\/\/theanalyst\.com\/articles\/[^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:pg-card__summary">([\s\S]*?)<\/p>)?[\s\S]*?datetime="([^"]+)"[\s\S]*?(?:pg-card__author"[^>]*>([^<]*)<)?[\s\S]*?(?:src="(https:\/\/theanalyst\.com\/wp-content\/uploads\/[^"]+)")?/g;
-
-  let match: RegExpExecArray | null;
-  while ((match = pgCardPattern.exec(html)) !== null) {
-    const url = match[2];
-    if (!isValidTheAnalystArticleUrl(url)) continue;
-
-    cards.set(normalizeArticleUrl(url), {
-      url,
-      title: match[3] ? decodeHtmlEntities(match[3]) : undefined,
-      excerpt: match[4] ? decodeHtmlEntities(match[4]) : undefined,
-      publishedAt: asString(match[5]),
-      author: asString(match[6]),
-      imageUrl: asString(match[7]),
-    });
-  }
-
-  const teaserPattern =
-    /<article class="[^"]*teaser-type--post[^"]*" id="tease-(\d+)"[\s\S]*?teaser-content-link" href="(https:\/\/theanalyst\.com\/articles\/[^"]+)"[\s\S]*?teaser-title">([\s\S]*?)<\/h3>[\s\S]*?(?:teaser-summary">([\s\S]*?)<\/p>)?[\s\S]*?datetime="([^"]+)"[\s\S]*?class="author"[^>]*>([^<]*)<[\s\S]*?(?:src="(https:\/\/theanalyst\.com\/wp-content\/uploads\/[^"]+)")?/g;
-
-  while ((match = teaserPattern.exec(html)) !== null) {
-    const url = match[2];
-    if (!isValidTheAnalystArticleUrl(url)) continue;
-
-    cards.set(normalizeArticleUrl(url), {
-      url,
-      title: decodeHtmlEntities(match[3]),
-      excerpt: match[4] ? decodeHtmlEntities(match[4]) : undefined,
-      publishedAt: asString(match[5]),
-      author: asString(match[6]),
-      imageUrl: asString(match[7]),
-    });
-  }
-
-  return cards;
-}
-
-function buildOrderedPageOneUrls(html: string): string[] {
-  const featuredUrls = parseFeaturedArticleUrls(html);
-  const teaserUrls = parsePageOneTeaserUrls(html);
-  const seen = new Set<string>();
-  const ordered: string[] = [];
-
-  for (const url of [...featuredUrls, ...teaserUrls]) {
-    const key = normalizeArticleUrl(url);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    ordered.push(url);
-  }
-
-  return ordered;
-}
-
-function mapPostsByUrl(posts: NewsArticle[]): Map<string, NewsArticle> {
-  const map = new Map<string, NewsArticle>();
-  for (const post of posts) {
-    map.set(normalizeArticleUrl(post.url), post);
-  }
-  return map;
-}
-
-function mergeArticleWithFallback(
-  article: NewsArticle | undefined,
-  fallback: ParsedHtmlCard | undefined,
-  url: string,
-): NewsArticle | null {
-  const normalizedUrl = resolveAbsoluteUrl(url, THE_ANALYST_SITE_ORIGIN);
-  if (!normalizedUrl || !isValidTheAnalystArticleUrl(normalizedUrl)) {
-    return null;
-  }
-
-  if (article) {
-    return {
-      ...article,
-      url: normalizedUrl,
-      title: article.title || fallback?.title || '',
-      excerpt: article.excerpt || fallback?.excerpt,
-      author: article.author || fallback?.author,
-      publishedAt: article.publishedAt || fallback?.publishedAt,
-      imageUrl:
-        article.imageUrl ||
-        (fallback?.imageUrl && isAllowedTheAnalystImageUrl(fallback.imageUrl)
-          ? fallback.imageUrl
-          : undefined),
-    };
-  }
-
-  if (!fallback?.title) return null;
-
-  const idMatch = normalizedUrl.match(/\/articles\/([^/?#]+)/);
-  const id = idMatch?.[1] ?? normalizeArticleUrl(normalizedUrl);
-
+function fallbackToNewsArticle(entry: AnalystFallbackArticle): NewsArticle | null {
+  if (!entry.title || !isValidTheAnalystArticleUrl(entry.url)) return null;
   return {
-    id,
-    title: fallback.title,
-    url: normalizedUrl,
-    excerpt: fallback.excerpt,
-    author: fallback.author,
-    publishedAt: fallback.publishedAt,
+    id: normalizeArticleUrl(entry.url),
+    title: entry.title,
+    url: entry.url,
+    publishedAt: entry.publishedAt,
+    author: entry.author,
+    excerpt: entry.excerpt,
     imageUrl:
-      fallback.imageUrl && isAllowedTheAnalystImageUrl(fallback.imageUrl)
-        ? fallback.imageUrl
+      entry.imageUrl && isAllowedTheAnalystImageUrl(entry.imageUrl)
+        ? entry.imageUrl
         : undefined,
     source: THE_ANALYST_NEWS_SOURCE,
   };
+}
+
+/** Exported for fixture tests — JSON-LD first, then resilient HTML. */
+export function parseTheAnalystPageArticles(html: string): NewsArticle[] {
+  return sortArticlesByPublishedAtDesc(
+    dedupeArticlesByUrl(
+      parseAnalystPageFallbackArticles(html)
+        .map(fallbackToNewsArticle)
+        .filter((article): article is NewsArticle => article != null),
+    ),
+  );
+}
+
+function mergeAnalystArticles(groups: NewsArticle[][]): NewsArticle[] {
+  const byUrl = new Map<string, NewsArticle>();
+
+  for (const group of groups) {
+    for (const article of group) {
+      const key = normalizeArticleUrl(article.url);
+      const existing = byUrl.get(key);
+      if (!existing) {
+        byUrl.set(key, article);
+        continue;
+      }
+      byUrl.set(key, {
+        ...existing,
+        id: existing.id || article.id,
+        title: existing.title || article.title,
+        imageUrl: existing.imageUrl || article.imageUrl,
+        author: existing.author || article.author,
+        publishedAt: existing.publishedAt || article.publishedAt,
+        excerpt: existing.excerpt || article.excerpt,
+      });
+    }
+  }
+
+  return sortArticlesByPublishedAtDesc([...byUrl.values()]);
+}
+
+async function fetchAnalystRss(
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<{ articles: NewsArticle[]; status: number }> {
+  const response = await fetchWithTimeout(THE_ANALYST_FCS_RSS_URL, {
+    signal,
+    timeoutMs,
+    accept: 'application/rss+xml, application/xml, text/xml, */*',
+  });
+  if (!response.ok) {
+    const details = await readErrorResponseDetails(response);
+    throw new Error(`The Analyst RSS failed (${response.status}). ${details}`);
+  }
+  const xml = await response.text();
+  return { articles: parseTheAnalystRssXml(xml), status: response.status };
+}
+
+async function fetchAnalystWordPress(
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<{ articles: NewsArticle[]; status: number }> {
+  const response = await fetchWithTimeout(THE_ANALYST_FCS_POSTS_URL, {
+    signal,
+    timeoutMs,
+    accept: 'application/json',
+  });
+  if (!response.ok) {
+    const details = await readErrorResponseDetails(response);
+    throw new Error(`The Analyst WP JSON failed (${response.status}). ${details}`);
+  }
+  const raw = (await response.json()) as unknown;
+  if (!Array.isArray(raw)) {
+    throw new Error('The Analyst news response was not a JSON array.');
+  }
+  return { articles: parseTheAnalystWordPressPosts(raw), status: response.status };
+}
+
+async function fetchAnalystPageFallback(
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<{ articles: NewsArticle[]; status: number }> {
+  const response = await fetchWithTimeout(THE_ANALYST_FCS_PAGE_URL, {
+    signal,
+    timeoutMs,
+    accept: 'text/html,application/xhtml+xml',
+  });
+  if (!response.ok) {
+    const details = await readErrorResponseDetails(response);
+    throw new Error(`The Analyst page fallback failed (${response.status}). ${details}`);
+  }
+  const html = await response.text();
+  const articles = parseTheAnalystPageArticles(html);
+  return { articles, status: response.status };
 }
 
 export async function fetchTheAnalystFcsNews(
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<NewsArticlesPayload> {
   const timeoutMs = options.timeoutMs ?? THE_ANALYST_NEWS_FETCH_TIMEOUT_MS;
+  const requestStartedAt = new Date().toISOString();
+
+  logNewsFetchDev({
+    source: THE_ANALYST_NEWS_SOURCE,
+    phase: 'start',
+    endpoint: `${THE_ANALYST_FCS_RSS_URL} (+ ${THE_ANALYST_FCS_POSTS_URL})`,
+    requestStartedAt,
+  });
 
   try {
-    const [pageResponse, postsResponse] = await Promise.all([
-      fetchWithTimeout(THE_ANALYST_FCS_PAGE_URL, {
-        signal: options.signal,
-        timeoutMs,
-        accept: 'text/html,application/xhtml+xml',
-      }),
-      fetchWithTimeout(THE_ANALYST_FCS_POSTS_URL, {
-        signal: options.signal,
-        timeoutMs,
-        accept: 'application/json',
-      }),
+    const [rssSettled, wpSettled] = await Promise.allSettled([
+      fetchAnalystRss(timeoutMs, options.signal),
+      fetchAnalystWordPress(timeoutMs, options.signal),
     ]);
 
-    if (!pageResponse.ok) {
-      throw new Error(`The Analyst page request failed (${pageResponse.status}).`);
+    const rssArticles =
+      rssSettled.status === 'fulfilled' ? rssSettled.value.articles : [];
+    const wpArticles =
+      wpSettled.status === 'fulfilled' ? wpSettled.value.articles : [];
+
+    if (rssSettled.status === 'rejected' && __DEV__) {
+      console.warn(
+        `[News:${THE_ANALYST_NEWS_SOURCE}] RSS unavailable:`,
+        rssSettled.reason instanceof Error ? rssSettled.reason.message : rssSettled.reason,
+      );
     }
-    if (!postsResponse.ok) {
-      throw new Error(`The Analyst news request failed (${postsResponse.status}).`);
+    if (wpSettled.status === 'rejected' && __DEV__) {
+      console.warn(
+        `[News:${THE_ANALYST_NEWS_SOURCE}] WP JSON unavailable:`,
+        wpSettled.reason instanceof Error ? wpSettled.reason.message : wpSettled.reason,
+      );
     }
 
-    const html = await pageResponse.text();
-    const raw = (await postsResponse.json()) as unknown;
-    if (!Array.isArray(raw)) {
-      throw new Error('The Analyst news response was not a JSON array.');
+    let articles = mergeAnalystArticles([rssArticles, wpArticles]);
+    let endpointUsed =
+      rssArticles.length > 0
+        ? THE_ANALYST_FCS_RSS_URL
+        : wpArticles.length > 0
+          ? THE_ANALYST_FCS_POSTS_URL
+          : THE_ANALYST_FCS_PAGE_URL;
+    let status =
+      rssSettled.status === 'fulfilled'
+        ? rssSettled.value.status
+        : wpSettled.status === 'fulfilled'
+          ? wpSettled.value.status
+          : undefined;
+
+    // Only scrape the page (JSON-LD / resilient HTML) when structured feeds both fail.
+    if (articles.length === 0) {
+      if (__DEV__) {
+        console.warn(
+          `[News:${THE_ANALYST_NEWS_SOURCE}] structured feeds empty; trying JSON-LD/HTML page fallback.`,
+        );
+      }
+      const page = await fetchAnalystPageFallback(timeoutMs, options.signal);
+      articles = page.articles;
+      endpointUsed = THE_ANALYST_FCS_PAGE_URL;
+      status = page.status;
     }
 
-    const orderedUrls = buildOrderedPageOneUrls(html);
-    if (orderedUrls.length === 0) {
-      throw new Error('The Analyst page-one articles could not be parsed.');
+    if (articles.length === 0) {
+      throw new Error('The Analyst returned no usable FCS articles from RSS, WP JSON, or page.');
     }
 
-    const postsByUrl = mapPostsByUrl(
-      raw
-        .map((post) => parseWordPressPost(post))
-        .filter((article): article is NewsArticle => article != null),
+    warnIfSparseArticleCount(
+      THE_ANALYST_NEWS_SOURCE,
+      articles.length,
+      THE_ANALYST_NEWS_EXPECTED_MIN_ARTICLES,
+      `endpoint=${endpointUsed}`,
     );
-    const htmlFallbacks = parseHtmlCardFallbacks(html);
 
-    const articles = dedupeArticlesByUrl(
-      orderedUrls
-        .map((url) =>
-          mergeArticleWithFallback(
-            postsByUrl.get(normalizeArticleUrl(url)),
-            htmlFallbacks.get(normalizeArticleUrl(url)),
-            url,
-          ),
-        )
-        .filter((article): article is NewsArticle => article != null && Boolean(article.title)),
-    );
+    logNewsFetchDev({
+      source: THE_ANALYST_NEWS_SOURCE,
+      phase: 'success',
+      endpoint: endpointUsed,
+      requestStartedAt,
+      status,
+      articleCount: articles.length,
+      newestTitle: articles[0]?.title,
+      newestUrl: articles[0]?.url,
+      newestPublishedAt: articles[0]?.publishedAt,
+    });
 
     return {
       articles,
@@ -344,8 +315,25 @@ export async function fetchTheAnalystFcsNews(
     };
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error(`The Analyst news request timed out after ${timeoutMs / 1000} seconds.`);
+      const timeoutError = new Error(
+        `The Analyst news request timed out after ${timeoutMs / 1000} seconds.`,
+      );
+      logNewsFetchDev({
+        source: THE_ANALYST_NEWS_SOURCE,
+        phase: 'error',
+        endpoint: THE_ANALYST_FCS_RSS_URL,
+        requestStartedAt,
+        error: timeoutError,
+      });
+      throw timeoutError;
     }
+    logNewsFetchDev({
+      source: THE_ANALYST_NEWS_SOURCE,
+      phase: 'error',
+      endpoint: THE_ANALYST_FCS_RSS_URL,
+      requestStartedAt,
+      error: err,
+    });
     throw err instanceof Error ? err : new Error('The Analyst news request failed.');
   }
 }

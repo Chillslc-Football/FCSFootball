@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>FCS Football Articles | Opta Analyst</title>
+    <link>https://theanalyst.com/competition/fcs-football/articles</link>
+    <item>
+      <title>Dateline Upset City: 10 Potential FCS vs. FBS Wins to Watch for in 2026</title>
+      <link>https://theanalyst.com/articles/fcs-vs-fbs-potential-wins-2026-college-football-season</link>
+      <dc:creator><![CDATA[Craig Haley]]></dc:creator>
+      <pubDate>Thu, 23 Jul 2026 14:02:42 +0000</pubDate>
+      <guid isPermaLink="false">https://theanalyst.com/?p=251003</guid>
+      <description><![CDATA[<p>Top 25-level teams may lead the way against Big Brother in 2026.</p>]]></description>
+    </item>
+    <item>
+      <title>For Openers, FCS Football Will Seek to Deliver on Week 0 Spotlight</title>
+      <link>https://theanalyst.com/articles/fcs-football-week-0-spotlight-games-2026</link>
+      <dc:creator><![CDATA[Craig Haley]]></dc:creator>
+      <pubDate>Mon, 20 Jul 2026 11:43:43 +0000</pubDate>
+      <guid isPermaLink="false">https://theanalyst.com/?p=250768</guid>
+    </item>
+    <item>
+      <title>Should Be Skipped Author Index</title>
+      <link>https://theanalyst.com/articles/author/craig-haley</link>
+      <pubDate>Mon, 20 Jul 2026 10:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>

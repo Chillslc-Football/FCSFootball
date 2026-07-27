@@ -5,12 +5,15 @@ import {
   loadStaleNews,
   saveCachedNews,
 } from '@/data/news/newsSourceCache';
+import { logNewsFetchDev, sortArticlesByPublishedAtDesc } from '@/data/news/newsUtils';
 import type { NewsArticle, NewsArticlesPayload, NewsSource } from '@/types/news';
 
 type LoadState = 'loading' | 'success' | 'error';
 
-type RefreshOptions = {
+export type NewsRefreshOptions = {
+  /** Join an in-flight refresh instead of starting a second one when falsey/omitted. */
   force?: boolean;
+  /** When true, do not flip the pull-to-refresh spinner or full-screen loading state. */
   background?: boolean;
 };
 
@@ -23,6 +26,18 @@ type UseNewsSourceConfig = {
   saveCached?: (payload: NewsArticlesPayload) => Promise<void>;
   loadStale?: () => Promise<NewsArticlesPayload | null>;
 };
+
+function newestArticleSummary(articles: NewsArticle[]): {
+  newestTitle?: string;
+  newestPublishedAt?: string;
+} {
+  const sorted = sortArticlesByPublishedAtDesc(articles);
+  const newest = sorted[0];
+  return {
+    newestTitle: newest?.title,
+    newestPublishedAt: newest?.publishedAt,
+  };
+}
 
 export function useNewsSource({
   cacheKey,
@@ -39,16 +54,16 @@ export function useNewsSource({
   const [isStale, setIsStale] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const lastFetchedAtRef = useRef<number>(0);
-  const hasInitializedRef = useRef(false);
+  const hasHydratedRef = useRef(false);
   const inFlightRef = useRef<Promise<void> | null>(null);
   const articlesRef = useRef<NewsArticle[]>([]);
 
   articlesRef.current = articles;
 
   const refresh = useCallback(
-    async (options: RefreshOptions = {}) => {
-      if (inFlightRef.current && !options.force) {
+    async (options: NewsRefreshOptions = {}) => {
+      // Always coalesce concurrent callers — including pull-to-refresh — onto one network pass.
+      if (inFlightRef.current) {
         return inFlightRef.current;
       }
 
@@ -63,24 +78,53 @@ export function useNewsSource({
         }
 
         try {
+          logNewsFetchDev({ source, phase: 'start' });
           const payload = await fetchArticles();
-          setArticles(payload.articles);
+          const articlesNewestFirst = sortArticlesByPublishedAtDesc(payload.articles);
+          const summary = newestArticleSummary(articlesNewestFirst);
+
+          logNewsFetchDev({
+            source,
+            phase: 'success',
+            articleCount: articlesNewestFirst.length,
+            newestTitle: summary.newestTitle,
+            newestPublishedAt: summary.newestPublishedAt,
+          });
+
+          setArticles(articlesNewestFirst);
           setErrorMessage(null);
           setIsStale(false);
           setLoadState('success');
-          lastFetchedAtRef.current = Date.now();
-          await saveCached(payload);
+          await saveCached({
+            articles: articlesNewestFirst,
+            fetchedAt: payload.fetchedAt,
+          });
         } catch (err) {
+          const message = err instanceof Error ? err.message : 'News could not be loaded.';
+          console.warn(`[News:${source}] live fetch failed:`, message, err);
+
           const stale = await loadStale();
           if (stale?.articles.length) {
-            setArticles(stale.articles);
+            const staleArticles = sortArticlesByPublishedAtDesc(stale.articles);
+            logNewsFetchDev({
+              source,
+              phase: 'stale-fallback',
+              articleCount: staleArticles.length,
+              error: err,
+            });
+            setArticles(staleArticles);
             setIsStale(true);
             setLoadState('success');
-            setErrorMessage(null);
+            // Keep prior UI content; surface failure via stale banner + logs (not a silent swap).
+            setErrorMessage(message);
+          } else if (articlesRef.current.length > 0) {
+            setIsStale(true);
+            setLoadState('success');
+            setErrorMessage(message);
           } else {
             setArticles([]);
             setLoadState('error');
-            setErrorMessage(err instanceof Error ? err.message : 'News could not be loaded.');
+            setErrorMessage(message);
           }
         } finally {
           setRefreshing(false);
@@ -91,32 +135,41 @@ export function useNewsSource({
       try {
         await run;
       } finally {
-        inFlightRef.current = null;
+        if (inFlightRef.current === run) {
+          inFlightRef.current = null;
+        }
       }
     },
-    [fetchArticles, loadStale, saveCached],
+    [fetchArticles, loadStale, saveCached, source],
   );
 
+  // Hydrate from any local cache immediately. Live network refresh is owned by the
+  // News screen (focus + pull-to-refresh) so both sources stay in sync.
   useEffect(() => {
-    if (hasInitializedRef.current) return;
-    hasInitializedRef.current = true;
+    if (hasHydratedRef.current) return;
+    hasHydratedRef.current = true;
 
     void (async () => {
-      const cached = await loadCached();
-      if (cached?.articles.length) {
-        setArticles(cached.articles);
-        setLoadState('success');
-        lastFetchedAtRef.current = Date.parse(cached.fetchedAt) || Date.now();
-      }
-
-      const cacheAge = Date.now() - lastFetchedAtRef.current;
-      const shouldRefresh = !cached?.articles.length || cacheAge >= cacheTtlMs;
-
-      if (shouldRefresh) {
-        await refresh({ background: Boolean(cached?.articles.length) });
+      try {
+        const fresh = await loadCached();
+        const cached = fresh ?? (await loadStale());
+        if (cached?.articles.length) {
+          const cachedArticles = sortArticlesByPublishedAtDesc(cached.articles);
+          setArticles(cachedArticles);
+          setLoadState('success');
+          if (!fresh) {
+            setIsStale(true);
+          }
+          return;
+        }
+        // No cache yet — kick off a live fetch so the first open is not blank.
+        await refresh({ background: false });
+      } catch (err) {
+        console.warn(`[News:${source}] cache hydrate failed:`, err);
+        await refresh({ background: false });
       }
     })();
-  }, [cacheTtlMs, loadCached, refresh]);
+  }, [loadCached, loadStale, refresh, source]);
 
   const onPullToRefresh = useCallback(async () => {
     await refresh({ force: true });
@@ -128,6 +181,7 @@ export function useNewsSource({
     refreshing,
     isStale,
     errorMessage,
+    refresh,
     onPullToRefresh,
   };
 }

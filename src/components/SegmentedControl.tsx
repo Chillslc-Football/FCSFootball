@@ -14,6 +14,8 @@ type SegmentedControlProps<T extends string> = {
   onSelect: (id: T) => void;
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
+  /** Gold selected state for primary Discover News/Media control. */
+  variant?: 'default' | 'accent';
 };
 
 export function SegmentedControl<T extends string>({
@@ -22,12 +24,15 @@ export function SegmentedControl<T extends string>({
   onSelect,
   style,
   accessibilityLabel,
+  variant = 'default',
 }: SegmentedControlProps<T>) {
+  const isAccent = variant === 'accent';
+
   return (
     <View
       accessibilityRole="tablist"
       accessibilityLabel={accessibilityLabel}
-      style={[styles.container, style]}>
+      style={[styles.container, isAccent && styles.containerAccent, style]}>
       {options.map((option) => {
         const isActive = selected === option.id;
         return (
@@ -37,8 +42,16 @@ export function SegmentedControl<T extends string>({
             accessibilityLabel={option.accessibilityLabel ?? option.label}
             accessibilityState={{ selected: isActive }}
             onPress={() => onSelect(option.id)}
-            style={[styles.segment, isActive && styles.segmentActive]}>
-            <Text style={[styles.segmentText, isActive && styles.segmentTextActive]}>
+            style={[
+              styles.segment,
+              isAccent && styles.segmentCompact,
+              isActive && (isAccent ? styles.segmentActiveAccent : styles.segmentActive),
+            ]}>
+            <Text
+              style={[
+                styles.segmentText,
+                isActive && (isAccent ? styles.segmentTextActiveAccent : styles.segmentTextActive),
+              ]}>
               {option.label}
             </Text>
           </Pressable>
@@ -58,6 +71,9 @@ const styles = StyleSheet.create({
     padding: 3,
     gap: 3,
   },
+  containerAccent: {
+    borderColor: colors.primary,
+  },
   segment: {
     flex: 1,
     alignItems: 'center',
@@ -67,10 +83,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     minHeight: 40,
   },
+  segmentCompact: {
+    paddingVertical: spacing.xs + 2,
+    minHeight: 36,
+  },
   segmentActive: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  segmentActiveAccent: {
+    backgroundColor: colors.primary,
+    borderWidth: 1,
+    borderColor: colors.primary,
   },
   segmentText: {
     ...typography.body,
@@ -81,5 +106,9 @@ const styles = StyleSheet.create({
   segmentTextActive: {
     color: colors.text,
     fontWeight: '600',
+  },
+  segmentTextActiveAccent: {
+    color: colors.background,
+    fontWeight: '700',
   },
 });

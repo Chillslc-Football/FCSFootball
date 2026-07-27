@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -18,7 +17,16 @@ import {
   pickableTeamToFavorite,
 } from '@/data/favorites/buildPickableTeams';
 import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
+import {
+  enrichFavoriteTeam,
+  findNextTeamGame,
+} from '@/data/favorites/findNextTeamGame';
+import { logEspnRefreshDev } from '@/data/providers/espnRefreshLog';
 import { mergeStaticRankingsOntoGames } from '@/data/providers/rankingMerge';
+import {
+  useScoresLiveRefresh,
+  type ScoresSilentRefreshOptions,
+} from '@/data/scores/useScoresLiveRefresh';
 import { ensureSeasonGamesLoaded } from '@/data/teams/loadTeamSeasonGames';
 import { registerEspnGames } from '@/data/teams/teamGamesStore';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
@@ -33,43 +41,91 @@ export default function FavoritesScreen() {
   const [games, setGames] = useState<EspnNormalizedGame[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const loadScheduleData = useCallback(async (options?: { pullRefresh?: boolean }) => {
-    if (!options?.pullRefresh) {
+  const loadScheduleData = useCallback(async (options?: ScoresSilentRefreshOptions & {
+    pullRefresh?: boolean;
+  }) => {
+    const pullRefresh = options?.pullRefresh ?? false;
+    const silent = options?.silent ?? false;
+    const forceRefresh = options?.forceRefresh ?? pullRefresh;
+    const trigger = options?.trigger ?? (pullRefresh ? 'favorites-ptr' : 'favorites-focus');
+
+    if (!pullRefresh && !silent) {
       setLoadState('loading');
     }
 
+    logEspnRefreshDev({
+      source: 'ESPN',
+      screen: 'Favorites',
+      trigger,
+      phase: 'start',
+      note: `force=${forceRefresh}`,
+    });
+
     try {
       const seasonGames = await ensureSeasonGamesLoaded({
-        forceRefresh: options?.pullRefresh,
+        forceRefresh,
       });
       const merged = await mergeStaticRankingsOntoGames(seasonGames);
       setGames(merged.games);
       registerEspnGames(merged.games);
+      logEspnRefreshDev({
+        source: 'ESPN',
+        screen: 'Favorites',
+        trigger,
+        phase: 'success',
+        count: merged.games.length,
+      });
     } catch (error) {
-      console.warn('[FavoritesScreen] schedule load failed; showing favorites without next games:', error);
-      if (!options?.pullRefresh) {
-        setGames([]);
-      }
+      logEspnRefreshDev({
+        source: 'ESPN',
+        screen: 'Favorites',
+        trigger,
+        phase: 'error',
+        error,
+      });
+      console.warn(
+        '[FavoritesScreen] schedule load failed; keeping previous favorites schedule when available:',
+        error,
+      );
+      // Do not clear existing games on failure.
     } finally {
       setLoadState('success');
     }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      void loadScheduleData().catch((error) => {
-        console.warn('[FavoritesScreen] unexpected schedule load rejection:', error);
-        setGames([]);
-        setLoadState('success');
-      });
-    }, [loadScheduleData]),
-  );
+  /** Games currently shown in favorite rows (each team's next/live game). */
+  const visibleFavoriteGames = useMemo(() => {
+    const visible: EspnNormalizedGame[] = [];
+    for (const favorite of favorites) {
+      try {
+        const enriched = enrichFavoriteTeam(favorite, games);
+        const next = findNextTeamGame(enriched, games);
+        if (next?.game) visible.push(next.game);
+      } catch (error) {
+        console.warn('[FavoritesScreen] failed to resolve visible game:', error);
+      }
+    }
+    return visible;
+  }, [favorites, games]);
+
+  useScoresLiveRefresh({
+    screen: 'Favorites',
+    visibleGames: visibleFavoriteGames,
+    loadGames: loadScheduleData,
+    // Focus/app-active refresh once favorites hydrate; interval only runs when a
+    // visible next/live favorite game is in progress.
+    enabled: favoritesLoaded,
+  });
 
   const pickableTeams = useMemo(() => buildPickableTeamsFromGames(games), [games]);
 
   const { refreshing, onPullToRefresh } = usePullToRefresh(
     useCallback(async () => {
-      await loadScheduleData({ pullRefresh: true });
+      await loadScheduleData({
+        pullRefresh: true,
+        forceRefresh: true,
+        trigger: 'favorites-ptr',
+      });
     }, [loadScheduleData]),
   );
 

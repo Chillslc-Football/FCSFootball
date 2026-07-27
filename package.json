@@ -8,6 +8,9 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "test:news-parsers": "npx --yes tsx --tsconfig tsconfig.json src/data/news/runNewsParserTests.ts",
+    "test:media-submissions": "npx --yes tsx --tsconfig tsconfig.json src/data/media/runMediaValidationTests.ts",
+    "test:media-directory": "npx --yes tsx --tsconfig tsconfig.json src/data/mediaDirectory/runMediaDirectoryTests.ts",
     "generate:brand": "node scripts/generate-brand-assets.mjs"
   },
   "dependencies": {

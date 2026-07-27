@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -115,7 +116,10 @@ export function AddFavoriteTeamPicker({
       transparent
       statusBarTranslucent={Platform.OS === 'android'}
       onRequestClose={handleClose}>
-      <View style={dropdownStyles.modalRoot}>
+      <KeyboardAvoidingView
+        style={dropdownStyles.modalRoot}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Close team picker"
@@ -156,6 +160,8 @@ export function AddFavoriteTeamPicker({
             style={styles.listScroll}
             contentContainerStyle={dropdownStyles.sheetScrollContent}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
             showsVerticalScrollIndicator={false}>
             {filteredTeams.length === 0 ? (
               <View style={styles.emptyBox}>
@@ -184,7 +190,7 @@ export function AddFavoriteTeamPicker({
             )}
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -212,7 +218,8 @@ const styles = StyleSheet.create({
     minHeight: 24,
   },
   listScroll: {
-    flexGrow: 0,
+    flexGrow: 1,
+    flexShrink: 1,
     maxHeight: 420,
   },
   row: {

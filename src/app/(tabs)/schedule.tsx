@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 
 import { ConferenceDropdown } from '@/components/ConferenceDropdown';
@@ -16,6 +17,10 @@ import { Screen } from '@/components/Screen';
 import { useSelectedConference } from '@/data/conferences/SelectedConferenceContext';
 import { useConferenceStandings } from '@/data/conferences/useConferenceStandings';
 import { useConferenceWeekSchedule } from '@/data/conferences/useConferenceWeekSchedule';
+import {
+  useScoresLiveRefresh,
+  type ScoresSilentRefreshOptions,
+} from '@/data/scores/useScoresLiveRefresh';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { colors, spacing } from '@/theme';
 import type { ScheduleWeekId } from '@/types';
@@ -26,16 +31,63 @@ export default function ConferencesScreen() {
   const [selectedWeek, setSelectedWeek] = useState<ScheduleWeekId>('week-1');
   const standings = useConferenceStandings(selectedConference);
   const schedule = useConferenceWeekSchedule(selectedConference, selectedWeek);
+  const focusInFlightRef = useRef(false);
+
+  const scheduleRefreshSilent = schedule.refreshSilent;
+  const standingsRefreshSilent = standings.refreshSilent;
+  const scheduleRefresh = schedule.refresh;
+  const standingsRefresh = standings.refresh;
+  const loadWeekGames = schedule.loadWeekGames;
+
+  const loadScheduleGames = useCallback(
+    async (options?: ScoresSilentRefreshOptions) => {
+      await loadWeekGames({
+        forceRefresh: options?.forceRefresh ?? true,
+        silent: options?.silent ?? true,
+        trigger: options?.trigger ?? 'conference-schedule-live',
+      });
+    },
+    [loadWeekGames],
+  );
 
   const pullRefresh = useCallback(async () => {
     if (activeView === 'schedule') {
-      await schedule.refresh();
+      await scheduleRefresh();
       return;
     }
-    await standings.refresh();
-  }, [activeView, schedule, standings]);
+    await standingsRefresh();
+  }, [activeView, scheduleRefresh, standingsRefresh]);
 
   const { refreshing, onPullToRefresh } = usePullToRefresh(pullRefresh);
+
+  // Focus refresh stays screen-owned so schedule vs standings can diverge.
+  useFocusEffect(
+    useCallback(() => {
+      if (focusInFlightRef.current) return;
+
+      focusInFlightRef.current = true;
+      void (async () => {
+        try {
+          if (activeView === 'schedule') {
+            await scheduleRefreshSilent();
+          } else {
+            await standingsRefreshSilent();
+          }
+        } finally {
+          focusInFlightRef.current = false;
+        }
+      })();
+    }, [activeView, scheduleRefreshSilent, standingsRefreshSilent]),
+  );
+
+  useScoresLiveRefresh({
+    screen: 'Conference',
+    visibleGames: schedule.filteredGames,
+    loadGames: loadScheduleGames,
+    enabled: activeView === 'schedule' && schedule.loadState === 'success',
+    refreshOnFocus: false,
+    refreshOnAppActive: activeView === 'schedule',
+  });
 
   const stickyHeader = useMemo(
     () => (

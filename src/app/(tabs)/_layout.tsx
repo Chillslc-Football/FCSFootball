@@ -44,9 +44,11 @@ export default function TabLayout() {
         name="schedule"
         options={{
           title: 'Conferences',
+          tabBarLabel: 'Confs',
           tabBarIcon: ({ color }) => <TabIcon name="calendar" color={color} />,
         }}
       />
+
       <Tabs.Screen
         name="polls"
         options={{
@@ -57,7 +59,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="news"
         options={{
-          title: 'News',
+          title: 'Discover',
           tabBarIcon: ({ color }) => <TabIcon name="newspaper" color={color} />,
         }}
       />

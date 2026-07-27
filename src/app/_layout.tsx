@@ -33,6 +33,10 @@ export default function RootLayout() {
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="developer" options={{ headerShown: false }} />
+            <Stack.Screen name="admin" options={{ headerShown: false }} />
+            <Stack.Screen name="media" options={{ title: 'FCS Media' }} />
+            <Stack.Screen name="suggest-fcs-media" options={{ title: 'Suggest FCS Media' }} />
+            <Stack.Screen name="suggest-media" options={{ title: 'Suggest media' }} />
             <Stack.Screen name="team/[teamId]" options={{ title: 'Team' }} />
           </Stack>
         </SelectedConferenceProvider>

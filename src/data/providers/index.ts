@@ -77,8 +77,10 @@ export {
 } from '../static/staticRankings';
 export type { StaticFcsTop25Entry, StaticFcsTop25File } from '../static/staticRankings';
 export {
+  NcaaRankingsFetchError,
   NcaaRankingsNotConnectedError,
   NcaaRankingsProviderImpl,
+  getStaticNcaaRankingsPayload,
   ncaaRankingsProvider,
   NCAA_RANKINGS_PROXY_URL_ENV,
 } from './ncaaRankingsProvider';
@@ -88,13 +90,16 @@ export type {
   NcaaRankingsRetrievalMethod,
 } from './ncaaRankingsInvestigation';
 export {
+  buildRankingsFingerprint,
   mapNcaaRankingsProxyResponse,
+  withRankingsFingerprint,
 } from './ncaaRankingsParser';
 export type {
   NcaaRankingsParseResult,
   NcaaRankingsProxyResponse,
   NcaaRankingsProxyRow,
 } from './ncaaRankingsParser';
+export { parseNcaaRankingsHtml } from './ncaaRankingsHtmlParser';
 export {
   NCAA_RANKINGS_FETCH_TIMEOUT_MS,
   testNcaaRankingsPageReachability,

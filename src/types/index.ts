@@ -154,12 +154,25 @@ export type NcaaRankingsPayload = {
   pollName: string;
   updatedLabel: string;
   seasonYear?: number;
+  /** Source-provided poll / ranking week when available (never invented from local calendar). */
   week?: number;
+  /** Source release identifier when available (CMS id, slug, etc.). */
+  releaseId?: string;
   teams: RankedTeam[];
   sourceUrl: string;
   endpoint: string;
   isManualData?: boolean;
+  /**
+   * Official publication or update timestamp from the poll source (ISO).
+   * Do not set this to the local fetch time.
+   */
+  officialPublishedAt?: string;
+  /** Legacy / static date field — prefer officialPublishedAt when present. */
   updatedAt?: string;
+  /** Fingerprint of ranking content for change detection. */
+  rankingsFingerprint?: string;
+  /** Concrete supplier used for this payload. */
+  suppliedBy?: 'ncaa-html' | 'ncaa-proxy' | 'static-fallback';
 };
 
 export type ScheduleTeam = {
