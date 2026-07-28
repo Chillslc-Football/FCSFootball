@@ -39,7 +39,8 @@ export function FavoriteTeamRow({ favorite, allGames, isLast = false }: Favorite
   });
 
   const isLive = nextGameInfo?.game.normalizedStatus === 'in_progress';
-  const displayName = enriched.name?.trim() || 'Team';
+  // Same naming as ScoresGameCard: shortDisplayName ?? full team name.
+  const displayName = enriched.shortDisplayName?.trim() || enriched.name?.trim() || 'Team';
 
   return (
     <Pressable
@@ -48,7 +49,7 @@ export function FavoriteTeamRow({ favorite, allGames, isLast = false }: Favorite
       onPress={() => router.push(teamHref)}
       style={({ pressed }) => [styles.row, !isLast && styles.rowBorder, pressed && styles.rowPressed]}>
       <TeamLogo
-        name={displayName}
+        name={enriched.name || displayName}
         abbreviation={enriched.abbreviation}
         logoUrl={enriched.logoUrl}
         size={36}

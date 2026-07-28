@@ -4,6 +4,11 @@ export type FavoriteTeam = {
   key: string;
   espnTeamId?: string;
   name: string;
+  /**
+   * ESPN shortDisplayName when resolved from loaded games (display only).
+   * Not required for persistence; Scores-style labels prefer this over `name`.
+   */
+  shortDisplayName?: string;
   abbreviation?: string;
   logoUrl?: string;
   conference?: string;

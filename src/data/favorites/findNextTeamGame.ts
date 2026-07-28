@@ -101,8 +101,15 @@ export function enrichFavoriteTeam(
           ? latest.homeRank
           : undefined;
 
+    // Same label as ScoresGameCard: shortDisplayName ?? full ESPN name (display only).
+    const scoresDisplayName =
+      side === 'away'
+        ? (latest.awayShortDisplayName ?? latest.awayTeam)
+        : (latest.homeShortDisplayName ?? latest.homeTeam);
+
     return {
       ...favorite,
+      shortDisplayName: scoresDisplayName?.trim() || favorite.shortDisplayName,
       record: record || favorite.record,
       rank: rank ?? favorite.rank,
       abbreviation:
