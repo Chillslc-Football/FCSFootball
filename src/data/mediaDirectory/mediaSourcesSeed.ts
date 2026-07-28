@@ -89,6 +89,8 @@ export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     team_id: null,
     conference_id: null,
     isNational: true,
+    logo_url:
+      'https://megaphone.imgix.net/podcasts/d91623ec-cbe1-11ec-86fd-c35e220ce0eb/image/FCSLogoSponsor.jpg',
     display_order: 20,
   }),
   seedSource({
@@ -248,6 +250,8 @@ export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     youtube_url: 'https://www.youtube.com/channel/UCAx30nrtgXLFUdmqQhxD0GA',
     x_url: 'https://x.com/SamuelAkemShow',
     apple_podcast_url: null,
+    logo_url:
+      'https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/a6/16/81/a6168139-544d-d07b-c9c0-cc56a56431d5/mza_9623872402944139267.jpg/600x600bb.jpg',
     display_order: 100,
   }),
 ];
@@ -268,6 +272,7 @@ export const MONTANA_STATE_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     isNational: false,
     teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
     conferenceIds: ['big-sky'],
+    logo_url: 'https://skylinesportsmt.com/wp-content/uploads/2017/01/cropped-Skyline_Sports_Logo_v2-1.jpg',
     display_order: 10,
   }),
   seedSource({
@@ -281,6 +286,8 @@ export const MONTANA_STATE_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     isNational: false,
     teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
     conferenceIds: ['big-sky'],
+    logo_url:
+      'https://content.production.cdn.art19.com/images/91/d5/06/ee/91d506ee-e852-4114-bd01-b7855c2d7dd8/833eb7d1a596946b816a71c7a855e6049f0a9c67058a8b350937ab0c715edb7d0f8e927e62e63b78941119e7c84db0835a2632bdb5d8516f8bdf37eb4913c3f7.jpeg',
     display_order: 20,
   }),
   seedSource({
@@ -294,6 +301,8 @@ export const MONTANA_STATE_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     isNational: false,
     teamIds: [MONTANA_STATE_ESPN_TEAM_ID, MONTANA_ESPN_TEAM_ID],
     conferenceIds: ['big-sky'],
+    logo_url:
+      'https://play.cdnstream1.com/zjb/image/download/bf/63/3d/bf633dff-3bb6-45d4-8632-1b22a23dccfc_1400.jpg',
     display_order: 30,
   }),
   seedSource({
@@ -307,6 +316,8 @@ export const MONTANA_STATE_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     isNational: false,
     teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
     conferenceIds: ['big-sky'],
+    logo_url:
+      'https://d3t3ozftmdmh3i.cloudfront.net/staging/podcast_uploaded_nologo/29961837/29961837-1726780717811-211375b6c65b7.jpg',
     display_order: 40,
   }),
   seedSource({
@@ -320,6 +331,8 @@ export const MONTANA_STATE_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     isNational: false,
     teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
     conferenceIds: ['big-sky'],
+    logo_url:
+      'https://d3t3ozftmdmh3i.cloudfront.net/staging/podcast_uploaded_nologo/1055348/1055348-1691163004760-2ec19f1cba8ac.jpg',
     display_order: 50,
   }),
 ];

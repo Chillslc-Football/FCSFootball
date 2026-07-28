@@ -109,7 +109,7 @@ export function validateMediaSuggestionInput(
     errors.push(`Enter a valid ${provider === 'x' ? 'X' : provider} link.`);
   }
   if (!isNational && conferenceIds.length === 0 && teamIds.length === 0) {
-    errors.push('Select National FCS, at least one conference, or at least one team.');
+    errors.push('Choose at least one coverage tag.');
   }
 
   if (errors.length > 0) {
@@ -125,6 +125,7 @@ export function validateMediaSuggestionInput(
       conferenceIds,
       teamIds,
       notes,
+      coverageLabel: input.coverageLabel?.trim() || null,
     },
   };
 }

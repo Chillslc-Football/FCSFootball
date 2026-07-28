@@ -68,6 +68,9 @@ const config: ExpoConfig = {
     eas: {
       projectId: "60588148-d658-4d1b-be7d-f19b7e12279a",
     },
+    // Same EXPO_PUBLIC_* names as process.env — available via Constants.expoConfig.extra
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
+    supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   },
 };
 

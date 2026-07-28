@@ -63,6 +63,8 @@ export type MediaSuggestionInput = {
   conferenceIds: string[];
   teamIds: string[];
   notes?: string | null;
+  /** Optional display labels for owner notification email. */
+  coverageLabel?: string | null;
 };
 
 /** ESPN team id used across FCS Pulse favorites / team routes. */

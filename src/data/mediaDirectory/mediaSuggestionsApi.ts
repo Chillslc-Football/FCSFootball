@@ -1,3 +1,8 @@
+import {
+  getSupabaseAnonKey,
+  getSupabaseClient,
+  getSupabaseUrl,
+} from '@/data/notifications/supabaseClient';
 import { validateMediaSuggestionInput } from '@/data/mediaDirectory/mediaSourceValidation';
 import type {
   MediaSourceScope,
@@ -6,10 +11,9 @@ import type {
   MediaSuggestionProvider,
   MediaSuggestionStatus,
 } from '@/data/mediaDirectory/types';
-import { getSupabaseClient, isSupabaseConfigured } from '@/data/notifications/supabaseClient';
 
 export type SubmitMediaSuggestionResult =
-  | { ok: true; id: string }
+  | { ok: true; id: string; emailSent?: boolean }
   | { ok: false; error: string };
 
 type SuggestionRow = {
@@ -67,6 +71,12 @@ function mapSuggestion(row: SuggestionRow): MediaSuggestion {
   };
 }
 
+/**
+ * Public FCS Media suggestion.
+ * Uses the shared Supabase client / EXPO_PUBLIC_* config (same as the rest of the app).
+ * Prefers the edge function (save + owner email); falls back to RPC save when needed.
+ * Edge Function / email failures never produce the “not configured” message.
+ */
 export async function submitMediaSuggestion(
   input: Partial<MediaSuggestionInput>,
 ): Promise<SubmitMediaSuggestionResult> {
@@ -75,19 +85,73 @@ export async function submitMediaSuggestion(
     return { ok: false, error: validated.errors.join(' ') };
   }
 
-  if (!isSupabaseConfigured()) {
+  // Same configuration gate as mediaSourcesApi / notifications / admin.
+  const client = getSupabaseClient();
+  if (!client) {
     return {
       ok: false,
       error: 'Suggestions are unavailable — Supabase is not configured.',
     };
   }
 
-  const client = getSupabaseClient();
-  if (!client) {
-    return { ok: false, error: 'Supabase is not configured.' };
+  const value = validated.value;
+  const baseUrl = getSupabaseUrl();
+  const anonKey = getSupabaseAnonKey();
+
+  if (baseUrl && anonKey) {
+    try {
+      const response = await fetch(`${baseUrl}/functions/v1/submit-media-suggestion`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${anonKey}`,
+          apikey: anonKey,
+        },
+        body: JSON.stringify({
+          provider: value.provider,
+          submitted_url: value.submittedUrl,
+          is_national: value.isNational,
+          conference_ids: value.conferenceIds,
+          team_ids: value.teamIds,
+          notes: value.notes ?? null,
+          coverage_label: value.coverageLabel ?? null,
+        }),
+      });
+
+      let payload: {
+        ok?: boolean;
+        id?: string;
+        suggestionId?: string;
+        emailSent?: boolean;
+        error?: string;
+      } = {};
+      try {
+        payload = (await response.json()) as typeof payload;
+      } catch {
+        // fall through to RPC
+      }
+
+      if (response.ok) {
+        const id = payload.id ?? payload.suggestionId;
+        if (id) {
+          return { ok: true, id: String(id), emailSent: Boolean(payload.emailSent) };
+        }
+      }
+
+      // Validation errors from the function (not “missing function”)
+      if (
+        response.status >= 400 &&
+        response.status < 500 &&
+        response.status !== 404 &&
+        payload.error
+      ) {
+        return { ok: false, error: payload.error };
+      }
+    } catch {
+      // Network / function unavailable — fall through to shared-client RPC.
+    }
   }
 
-  const value = validated.value;
   const { data, error } = await client.rpc('submit_media_suggestion', {
     p_provider: value.provider,
     p_submitted_url: value.submittedUrl,
@@ -101,7 +165,7 @@ export async function submitMediaSuggestion(
     return { ok: false, error: error.message };
   }
 
-  return { ok: true, id: String(data) };
+  return { ok: true, id: String(data), emailSent: false };
 }
 
 export async function adminListMediaSuggestions(

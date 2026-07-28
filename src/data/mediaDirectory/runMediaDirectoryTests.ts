@@ -4,6 +4,21 @@
  */
 import assert from 'node:assert/strict';
 
+import {
+  buildMediaBrowseTeamOptions,
+  createEmptyMediaBrowseFilter,
+  filterMediaBrowseTeams,
+  filterMediaSourcesByBrowse,
+  formatMediaBrowseCoverageLabel,
+  getMediaBrowseBadgeLetter,
+  getMediaBrowseChips,
+  getMediaBrowseConferenceOptions,
+  mediaBrowseFilterToCoverage,
+  removeMediaBrowseChip,
+  toggleMediaBrowseConference,
+  toggleMediaBrowseNational,
+  toggleMediaBrowseTeam,
+} from '@/data/mediaDirectory/mediaBrowse';
 import { normalizeMediaSourceCoverage } from '@/data/mediaDirectory/mediaCoverage';
 import { resolveMediaScopeBadges } from '@/data/mediaDirectory/mediaScopeBadge';
 import {
@@ -79,12 +94,36 @@ test('artwork resolver uses stored logo_url only (no runtime provider fetch)', (
   assert.equal(resolveMediaArtworkUrl(withSpotifyButNoLogo), null);
 });
 
+test('approved seeds that previously lacked artwork now have https logo_url', () => {
+  const required = [
+    'FCS Fever Podcast',
+    'The Samuel Akem Show',
+    'Skyline Sports',
+    'Bobcat Insider Podcast',
+    'Cat Griz Insider Podcast',
+    'Cats Pawd',
+    'R&R Cat Cast',
+  ];
+  for (const name of required) {
+    const source = MEDIA_SOURCE_SEEDS.find((entry) => entry.name === name);
+    assert.ok(source, `missing seed ${name}`);
+    assert.ok(source!.is_approved, `${name} should be approved`);
+    assert.ok(
+      resolveMediaArtworkUrl(source!)?.startsWith('https://'),
+      `${name} should resolve https artwork`,
+    );
+  }
+});
+
 test('suggestion validation requires at least one coverage selection', () => {
   const missing = validateMediaSuggestionInput({
     provider: 'youtube',
     submittedUrl: 'https://www.youtube.com/@fcs',
   });
   assert.equal(missing.ok, false);
+  if (!missing.ok) {
+    assert.ok(missing.errors.some((error) => /coverage tag/i.test(error)));
+  }
 
   const nationalOnly = validateMediaSuggestionInput({
     provider: 'youtube',
@@ -92,6 +131,42 @@ test('suggestion validation requires at least one coverage selection', () => {
     isNational: true,
   });
   assert.equal(nationalOnly.ok, true);
+
+  const blankNotes = validateMediaSuggestionInput({
+    provider: 'youtube',
+    submittedUrl: 'https://www.youtube.com/@fcs',
+    isNational: true,
+    notes: '   ',
+  });
+  assert.equal(blankNotes.ok, true);
+  if (blankNotes.ok) {
+    assert.equal(blankNotes.value.notes, null);
+  }
+
+  const withNotes = validateMediaSuggestionInput({
+    provider: 'youtube',
+    submittedUrl: 'https://www.youtube.com/@fcs',
+    isNational: true,
+    notes: '  Great show  ',
+  });
+  assert.equal(withNotes.ok, true);
+  if (withNotes.ok) {
+    assert.equal(withNotes.value.notes, 'Great show');
+  }
+
+  const teamAndConference = validateMediaSuggestionInput({
+    provider: 'spotify',
+    submittedUrl: 'https://open.spotify.com/show/abc',
+    isNational: true,
+    teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+    conferenceIds: ['big-sky'],
+  });
+  assert.equal(teamAndConference.ok, true);
+  if (teamAndConference.ok) {
+    assert.equal(teamAndConference.value.isNational, true);
+    assert.deepEqual(teamAndConference.value.teamIds, [MONTANA_STATE_ESPN_TEAM_ID]);
+    assert.deepEqual(teamAndConference.value.conferenceIds, ['big-sky']);
+  }
 });
 
 test('directory lists all approved sources alphabetically', () => {
@@ -221,6 +296,108 @@ test('seed Cat Griz covers Montana State and Montana', () => {
   assert.ok(catGriz);
   assert.equal(catGriz.isNational, false);
   assert.deepEqual(catGriz.teamIds, [MONTANA_STATE_ESPN_TEAM_ID, MONTANA_ESPN_TEAM_ID]);
+});
+
+test('browse media filters national / team / conference without duplicating cards', () => {
+  const approved = filterMediaSources(MEDIA_SOURCE_SEEDS, { search: '' });
+
+  const national = filterMediaSourcesByBrowse(approved, {
+    ...createEmptyMediaBrowseFilter(),
+    national: true,
+  });
+  assert.ok(national.every((source) => source.isNational));
+  assert.ok(national.some((source) => source.name === 'The FCS Edge'));
+  assert.ok(!national.some((source) => source.name === 'Bobcat Insider Podcast'));
+
+  const mtst = filterMediaSourcesByBrowse(approved, {
+    ...createEmptyMediaBrowseFilter(),
+    teams: [{ id: MONTANA_STATE_ESPN_TEAM_ID, label: 'Montana State' }],
+  });
+  assert.ok(mtst.some((source) => source.name === 'Bobcat Insider Podcast'));
+  assert.ok(mtst.some((source) => source.name === 'Cat Griz Insider Podcast'));
+  assert.equal(mtst.length, new Set(mtst.map((source) => source.id)).size);
+
+  const bigSky = filterMediaSourcesByBrowse(approved, {
+    ...createEmptyMediaBrowseFilter(),
+    conferences: [{ id: 'big-sky', label: 'Big Sky' }],
+  });
+  assert.ok(bigSky.some((source) => source.name === 'Skyline Sports'));
+  assert.equal(
+    filterMediaSourcesByBrowse(approved, createEmptyMediaBrowseFilter()).length,
+    approved.length,
+  );
+});
+
+test('browse media multi-select ORs national, teams, and conferences', () => {
+  const approved = filterMediaSources(MEDIA_SOURCE_SEEDS, { search: '' });
+  let filter = createEmptyMediaBrowseFilter();
+  filter = toggleMediaBrowseNational(filter);
+  filter = toggleMediaBrowseTeam(filter, {
+    id: MONTANA_STATE_ESPN_TEAM_ID,
+    label: 'Montana State',
+  });
+  filter = toggleMediaBrowseConference(filter, { id: 'big-sky', label: 'Big Sky' });
+
+  const chips = getMediaBrowseChips(filter);
+  assert.deepEqual(
+    chips.map((chip) => chip.label),
+    ['National', 'Montana State', 'Big Sky'],
+  );
+  assert.equal(formatMediaBrowseCoverageLabel(filter), 'National, Montana State, Big Sky');
+  assert.deepEqual(mediaBrowseFilterToCoverage(filter), {
+    isNational: true,
+    teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+    conferenceIds: ['big-sky'],
+  });
+  assert.equal(getMediaBrowseBadgeLetter(filter), '3');
+
+  const combined = filterMediaSourcesByBrowse(approved, filter);
+  assert.ok(combined.some((source) => source.name === 'The FCS Edge'));
+  assert.ok(combined.some((source) => source.name === 'Bobcat Insider Podcast'));
+  assert.ok(combined.some((source) => source.name === 'Skyline Sports'));
+  assert.equal(combined.length, new Set(combined.map((source) => source.id)).size);
+
+  const afterRemoveNational = removeMediaBrowseChip(filter, chips[0]!);
+  assert.equal(afterRemoveNational.national, false);
+  assert.equal(getMediaBrowseChips(afterRemoveNational).length, 2);
+
+  const cleared = createEmptyMediaBrowseFilter();
+  assert.equal(getMediaBrowseBadgeLetter(cleared), null);
+  assert.equal(filterMediaSourcesByBrowse(approved, cleared).length, approved.length);
+
+  const searchedThenBrowsed = filterMediaSourcesByBrowse(
+    filterMediaSources(approved, { search: 'bobcat' }),
+    {
+      ...createEmptyMediaBrowseFilter(),
+      teams: [{ id: MONTANA_STATE_ESPN_TEAM_ID, label: 'Montana State' }],
+    },
+  );
+  assert.ok(searchedThenBrowsed.every((source) => /bobcat/i.test(source.name)));
+  assert.ok(searchedThenBrowsed.some((source) => source.name === 'Bobcat Insider Podcast'));
+});
+
+test('browse team and conference option lists are searchable / alphabetical', () => {
+  const approved = filterMediaSources(MEDIA_SOURCE_SEEDS, { search: '' });
+  const teams = buildMediaBrowseTeamOptions(approved, []);
+  assert.ok(teams.some((team) => team.id === MONTANA_STATE_ESPN_TEAM_ID));
+  assert.ok(teams.some((team) => team.id === MONTANA_ESPN_TEAM_ID));
+  assert.deepEqual(
+    teams.map((team) => team.name),
+    [...teams.map((team) => team.name)].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' }),
+    ),
+  );
+  assert.ok(filterMediaBrowseTeams(teams, 'montana').length >= 2);
+
+  const conferences = getMediaBrowseConferenceOptions();
+  assert.ok(conferences.some((conference) => conference.id === 'big-sky'));
+  assert.ok(conferences.some((conference) => conference.id === 'mvfc'));
+  assert.deepEqual(
+    conferences.map((conference) => conference.name),
+    [...conferences.map((conference) => conference.name)].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' }),
+    ),
+  );
 });
 
 console.log('\nAll media directory tests passed.');

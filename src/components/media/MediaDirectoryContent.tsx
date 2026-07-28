@@ -10,9 +10,22 @@ import {
   View,
 } from 'react-native';
 
+import { MediaBrowseFilterChips, MediaBrowseSheet } from '@/components/media/MediaBrowseSheet';
 import { MediaSourceCard } from '@/components/media/MediaSourceCard';
+import {
+  buildMediaBrowseTeamOptions,
+  createEmptyMediaBrowseFilter,
+  filterMediaSourcesByBrowse,
+  getMediaBrowseBadgeLetter,
+  getMediaBrowseChips,
+  getMediaBrowseConferenceOptions,
+  isMediaBrowseFilterActive,
+  removeMediaBrowseChip,
+  type MediaBrowseFilter,
+} from '@/data/mediaDirectory/mediaBrowse';
 import { loadApprovedMediaSources } from '@/data/mediaDirectory/mediaSourcesApi';
 import { filterMediaSources } from '@/data/mediaDirectory/mediaSourceValidation';
+import { getAllCachedEspnGames } from '@/data/teams/teamGamesStore';
 import type { MediaSource } from '@/data/mediaDirectory/types';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { colors, spacing, typography } from '@/theme';
@@ -42,6 +55,8 @@ export function useMediaDirectoryController(options?: {
   const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [search, setSearch] = useState(options?.initialSearch ?? '');
+  const [browseFilter, setBrowseFilter] = useState<MediaBrowseFilter>(createEmptyMediaBrowseFilter);
+  const [browseOpen, setBrowseOpen] = useState(false);
 
   const load = useCallback(async (forceRefresh = false) => {
     setErrorMessage(null);
@@ -68,7 +83,21 @@ export function useMediaDirectoryController(options?: {
   const teamId = teamFilter?.teamId?.trim() || null;
   const teamLabel = teamFilter?.teamName?.trim() || 'Team';
 
-  const visible = useMemo(
+  const approvedSources = useMemo(
+    () => filterMediaSources(sources, { search: '', teamId: null }),
+    [sources],
+  );
+
+  const browseTeams = useMemo(
+    () => buildMediaBrowseTeamOptions(approvedSources, getAllCachedEspnGames()),
+    // Recompute when the sheet opens so newly cached ESPN games appear.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- browseOpen intentionally refreshes cache read
+    [approvedSources, browseOpen],
+  );
+
+  const browseConferences = useMemo(() => getMediaBrowseConferenceOptions(), []);
+
+  const searched = useMemo(
     () =>
       filterMediaSources(sources, {
         search,
@@ -77,9 +106,23 @@ export function useMediaDirectoryController(options?: {
     [search, sources, teamId],
   );
 
+  const visible = useMemo(
+    () => filterMediaSourcesByBrowse(searched, browseFilter),
+    [searched, browseFilter],
+  );
+
+  const browseChips = useMemo(() => getMediaBrowseChips(browseFilter), [browseFilter]);
+  const badgeLetter = getMediaBrowseBadgeLetter(browseFilter);
+  const browseActive = isMediaBrowseFilterActive(browseFilter);
+  const noBrowseMatches =
+    loadState !== 'loading' && searched.length > 0 && visible.length === 0 && browseActive;
+
   const emptyMessage = useMemo(() => {
     if (loadState === 'error' && sources.length === 0) {
       return 'We couldn’t load FCS media. Pull down to try again.';
+    }
+    if (noBrowseMatches) {
+      return 'No media sources match these filters.';
     }
     if (search.trim()) {
       return 'No FCS media matches your search.';
@@ -88,7 +131,7 @@ export function useMediaDirectoryController(options?: {
       return `No media sources are linked to ${teamLabel} yet.`;
     }
     return 'No approved media sources yet.';
-  }, [loadState, search, sources.length, teamId, teamLabel]);
+  }, [loadState, noBrowseMatches, search, sources.length, teamId, teamLabel]);
 
   const content = (
     <View style={styles.root}>
@@ -106,16 +149,48 @@ export function useMediaDirectoryController(options?: {
           autoCapitalize="none"
           autoCorrect={false}
         />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            browseActive
+              ? `Browse media, ${browseChips.length} filters active`
+              : 'Browse media'
+          }
+          hitSlop={8}
+          onPress={() => setBrowseOpen(true)}
+          style={({ pressed }) => [
+            styles.filterButton,
+            browseActive && styles.filterButtonActive,
+            pressed && styles.pressed,
+          ]}>
+          <Ionicons
+            name="options-outline"
+            size={22}
+            color={browseActive ? colors.primary : colors.textSecondary}
+          />
+          {badgeLetter ? (
+            <View style={styles.filterBadge}>
+              <Text style={styles.filterBadgeText}>{badgeLetter}</Text>
+            </View>
+          ) : null}
+        </Pressable>
         <Link href={'/suggest-fcs-media' as Href} asChild>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Suggest FCS Media"
+            accessibilityLabel="Suggest a podcast"
             hitSlop={8}
-            style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
-            <Ionicons name="add" size={24} color={colors.background} />
+            style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}>
+            <Ionicons name="add" size={22} color={colors.textSecondary} />
           </Pressable>
         </Link>
       </View>
+
+      {browseChips.length > 0 ? (
+        <MediaBrowseFilterChips
+          chips={browseChips}
+          onRemove={(chip) => setBrowseFilter((current) => removeMediaBrowseChip(current, chip))}
+        />
+      ) : null}
 
       {teamId ? (
         <View style={styles.teamFilterRow}>
@@ -151,6 +226,15 @@ export function useMediaDirectoryController(options?: {
       {loadState !== 'loading' && visible.length === 0 ? (
         <View style={styles.messageBox}>
           <Text style={styles.messageText}>{emptyMessage}</Text>
+          {noBrowseMatches ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Clear all filters"
+              onPress={() => setBrowseFilter(createEmptyMediaBrowseFilter())}
+              style={({ pressed }) => [styles.clearFiltersButton, pressed && styles.pressed]}>
+              <Text style={styles.clearFiltersText}>Clear All</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
@@ -159,6 +243,15 @@ export function useMediaDirectoryController(options?: {
           <MediaSourceCard key={source.id} source={source} />
         ))}
       </View>
+
+      <MediaBrowseSheet
+        visible={browseOpen}
+        activeFilter={browseFilter}
+        teams={browseTeams}
+        conferences={browseConferences}
+        onClose={() => setBrowseOpen(false)}
+        onChangeFilter={setBrowseFilter}
+      />
     </View>
   );
 
@@ -193,6 +286,7 @@ const styles = StyleSheet.create({
   },
   search: {
     flex: 1,
+    minWidth: 0,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -202,13 +296,38 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     ...typography.body,
   },
-  addButton: {
+  filterButton: {
     width: 44,
     height: 44,
+    flexShrink: 0,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterButtonActive: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(201, 162, 39, 0.12)',
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  filterBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.background,
+    lineHeight: 12,
   },
   teamFilterRow: {
     flexDirection: 'row',
@@ -255,7 +374,21 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 8,
     padding: spacing.md,
+    gap: spacing.sm,
+    alignItems: 'center',
   },
   messageText: { ...typography.caption, color: colors.textSecondary, textAlign: 'center' },
+  clearFiltersButton: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+  },
+  clearFiltersText: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '700',
+  },
   pressed: { opacity: 0.85 },
 });
