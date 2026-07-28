@@ -21,6 +21,13 @@ function run(): void {
   assert(isEspnOwnedBroadcast('espn plus'), 'espn plus should map to ESPN+');
   assert(isEspnOwnedBroadcast('ABC'), 'ABC should be ESPN-owned');
   assert(isEspnOwnedBroadcast('ESPN3'), 'ESPN3 should be ESPN-owned');
+  assert(isEspnOwnedBroadcast('ESPN Deportes'), 'ESPN Deportes should be ESPN-owned');
+  assert(isEspnOwnedBroadcast('ACC Network'), 'ACC Network should be ESPN-owned');
+  assert(isEspnOwnedBroadcast('ACCN'), 'ACCN should be ESPN-owned');
+  assert(isEspnOwnedBroadcast('SEC Network'), 'SEC Network should be ESPN-owned');
+  assert(isEspnOwnedBroadcast('SECN'), 'SECN should be ESPN-owned');
+  assert(isEspnOwnedBroadcast('Longhorn Network'), 'Longhorn Network should be ESPN-owned');
+  assert(isEspnOwnedBroadcast('LHN'), 'LHN should be ESPN-owned');
 
   assert(!isEspnOwnedBroadcast('CBS Sports Network'), 'CBSSN is not ESPN-owned');
   assert(!isEspnOwnedBroadcast('FloSports'), 'FloSports is not ESPN-owned');

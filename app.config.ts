@@ -22,6 +22,7 @@ const config: ExpoConfig = {
   },
   android: {
     package: 'com.chillslc.fcsfootball',
+    // Local fallback only; EAS remote versioning controls production Android versionCode.
     versionCode: 1,
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',

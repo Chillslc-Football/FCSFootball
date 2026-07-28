@@ -1,14 +1,15 @@
-import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import { CompactWatchLabel } from '@/components/CompactWatchLabel';
 import { GameAlertBell } from '@/components/GameAlertBell';
 import { FavoriteStar } from '@/components/FavoriteStar';
 import { TeamLogo } from '@/components/TeamLogo';
 import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
 import { openWatchOnEspn, resolveEspnWatchTargets } from '@/data/providers/espnWatchLinks';
 import { toGameStatus } from '@/data/providers/espnTodayMapper';
-import { colors, spacing, typography } from '@/theme';
+import { colors, spacing } from '@/theme';
 import { formatGameKickoffTime } from '@/utils/formatGameTime';
 import { buildTeamHref } from '@/utils/teamId';
 import type { EspnNormalizedGame } from '@/types';
@@ -90,7 +91,7 @@ function TeamLine({
         rightTappable && onRightPress ? (
           <Pressable
             accessibilityRole="link"
-            accessibilityLabel="Watch on ESPN"
+            accessibilityLabel="Open ESPN Gamecast"
             hitSlop={4}
             onPress={onRightPress}
             style={({ pressed }) => [styles.rightColTap, pressed && styles.rightColTapPressed]}>
@@ -101,42 +102,6 @@ function TeamLine({
         )
       ) : null}
     </View>
-  );
-}
-
-function CompactWatchLabel({ game }: { game: EspnNormalizedGame }) {
-  const resolution = useMemo(() => resolveEspnWatchTargets(game), [game]);
-  const [opening, setOpening] = useState(false);
-  const broadcast = game.broadcast?.trim();
-  const label = broadcast || (resolution.enabled ? 'Watch on ESPN' : '');
-
-  if (!label) return null;
-
-  async function handlePress() {
-    if (!resolution.enabled || opening) return;
-    setOpening(true);
-    try {
-      await openWatchOnEspn(game);
-    } finally {
-      setOpening(false);
-    }
-  }
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled: !resolution.enabled }}
-      disabled={!resolution.enabled || opening}
-      onPress={() => void handlePress()}
-      style={({ pressed }) => [styles.watchLabel, pressed && resolution.enabled && styles.watchLabelPressed]}>
-      {opening ? (
-        <ActivityIndicator color={colors.primary} size="small" />
-      ) : (
-        <Text style={[styles.watchLabelText, !resolution.enabled && styles.watchLabelDisabled]}>
-          {label}
-        </Text>
-      )}
-    </Pressable>
   );
 }
 
@@ -327,22 +292,5 @@ const styles = StyleSheet.create({
   },
   rightColTapPressed: {
     opacity: 0.7,
-  },
-  watchLabel: {
-    alignSelf: 'flex-start',
-    marginTop: 2,
-    paddingVertical: 1,
-  },
-  watchLabelPressed: {
-    opacity: 0.7,
-  },
-  watchLabelText: {
-    ...typography.caption,
-    fontSize: 11,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  watchLabelDisabled: {
-    color: colors.textMuted,
   },
 });

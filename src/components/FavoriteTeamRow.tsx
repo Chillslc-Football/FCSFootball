@@ -1,11 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import { CompactWatchLabel } from '@/components/CompactWatchLabel';
 import { FavoriteStar } from '@/components/FavoriteStar';
 import { TeamLogo } from '@/components/TeamLogo';
-import { openWatchOnEspn, resolveEspnWatchTargets } from '@/data/providers/espnWatchLinks';
 import {
   enrichFavoriteTeam,
   findNextTeamGame,
@@ -21,56 +19,6 @@ type FavoriteTeamRowProps = {
   allGames: EspnNormalizedGame[];
   isLast?: boolean;
 };
-
-function CompactWatchLabel({ game }: { game: EspnNormalizedGame }) {
-  let resolution: ReturnType<typeof resolveEspnWatchTargets>;
-  try {
-    resolution = resolveEspnWatchTargets(game);
-  } catch (error) {
-    console.warn('[FavoriteTeamRow] resolveEspnWatchTargets failed:', error);
-    return null;
-  }
-
-  const [opening, setOpening] = useState(false);
-  const broadcast = game.broadcast?.trim();
-  const label = broadcast || (resolution.enabled ? 'Watch on ESPN' : '');
-
-  if (!label) return null;
-
-  async function handlePress() {
-    if (!resolution.enabled || opening) return;
-    setOpening(true);
-    try {
-      await openWatchOnEspn(game);
-    } catch (error) {
-      console.warn('[FavoriteTeamRow] openWatchOnEspn failed:', error);
-    } finally {
-      setOpening(false);
-    }
-  }
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled: !resolution.enabled }}
-      disabled={!resolution.enabled || opening}
-      onPress={(event) => {
-        event.stopPropagation();
-        void handlePress();
-      }}
-      style={({ pressed }) => [styles.watchLabel, pressed && resolution.enabled && styles.watchLabelPressed]}>
-      {opening ? (
-        <ActivityIndicator color={colors.primary} size="small" />
-      ) : (
-        <Text
-          style={[styles.watchLabelText, !resolution.enabled && styles.watchLabelDisabled]}
-          numberOfLines={1}>
-          {label}
-        </Text>
-      )}
-    </Pressable>
-  );
-}
 
 export function FavoriteTeamRow({ favorite, allGames, isLast = false }: FavoriteTeamRowProps) {
   const router = useRouter();
@@ -145,7 +93,7 @@ export function FavoriteTeamRow({ favorite, allGames, isLast = false }: Favorite
                     : formatGameKickoffTime(nextGameInfo.game)}
               </Text>
             </View>
-            <CompactWatchLabel game={nextGameInfo.game} />
+            <CompactWatchLabel game={nextGameInfo.game} stopPropagation />
           </View>
         ) : (
           <Text style={styles.noGameText}>No upcoming game in loaded schedule</Text>
@@ -230,22 +178,5 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textMuted,
     lineHeight: 16,
-  },
-  watchLabel: {
-    alignSelf: 'flex-start',
-    marginTop: 2,
-    paddingVertical: 1,
-  },
-  watchLabelPressed: {
-    opacity: 0.7,
-  },
-  watchLabelText: {
-    ...typography.caption,
-    fontSize: 11,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  watchLabelDisabled: {
-    color: colors.textMuted,
   },
 });

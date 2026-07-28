@@ -1,13 +1,12 @@
-import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import { CompactWatchLabel } from '@/components/CompactWatchLabel';
 import { FavoriteStar } from '@/components/FavoriteStar';
 import { TeamLogo } from '@/components/TeamLogo';
 import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
-import { openWatchOnEspn, resolveEspnWatchTargets } from '@/data/providers/espnWatchLinks';
 import { toGameStatus } from '@/data/providers/espnTodayMapper';
-import { colors, spacing, typography } from '@/theme';
+import { colors, spacing } from '@/theme';
 import { formatGameKickoffDate, formatGameKickoffTime } from '@/utils/formatGameTime';
 import { buildTeamHref } from '@/utils/teamId';
 import type { EspnNormalizedGame } from '@/types';
@@ -82,44 +81,6 @@ function TeamLine({
       />
       {rightValue ? <Text style={[styles.rightCol, isWinner && styles.rightColWinner]}>{rightValue}</Text> : null}
     </View>
-  );
-}
-
-function CompactWatchLabel({ game }: { game: EspnNormalizedGame }) {
-  const resolution = useMemo(() => resolveEspnWatchTargets(game), [game]);
-  const [opening, setOpening] = useState(false);
-  const broadcast = game.broadcast?.trim();
-  const label = broadcast || (resolution.enabled ? 'Watch on ESPN' : '');
-
-  if (!label) return null;
-
-  async function handlePress() {
-    if (!resolution.enabled || opening) return;
-    setOpening(true);
-    try {
-      await openWatchOnEspn(game);
-    } finally {
-      setOpening(false);
-    }
-  }
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled: !resolution.enabled }}
-      disabled={!resolution.enabled || opening}
-      onPress={() => void handlePress()}
-      style={({ pressed }) => [styles.watchLabel, pressed && resolution.enabled && styles.watchLabelPressed]}>
-      {opening ? (
-        <ActivityIndicator color={colors.primary} size="small" />
-      ) : (
-        <Text
-          style={[styles.watchLabelText, !resolution.enabled && styles.watchLabelDisabled]}
-          numberOfLines={1}>
-          {label}
-        </Text>
-      )}
-    </Pressable>
   );
 }
 
@@ -216,7 +177,7 @@ export function TeamScheduleGameRow({ game, isLast = false }: TeamScheduleGameRo
         ) : (
           <Text style={styles.timeText}>{kickoffLabel}</Text>
         )}
-        <CompactWatchLabel game={game} />
+        <CompactWatchLabel game={game} align="end" />
       </View>
     </View>
   );
@@ -301,24 +262,5 @@ const styles = StyleSheet.create({
   rightColWinner: {
     color: colors.text,
     fontWeight: '700',
-  },
-  watchLabel: {
-    alignSelf: 'flex-end',
-    marginTop: 2,
-    paddingVertical: 1,
-    maxWidth: 76,
-  },
-  watchLabelPressed: {
-    opacity: 0.7,
-  },
-  watchLabelText: {
-    ...typography.caption,
-    fontSize: 10,
-    color: colors.primary,
-    fontWeight: '600',
-    textAlign: 'right',
-  },
-  watchLabelDisabled: {
-    color: colors.textMuted,
   },
 });

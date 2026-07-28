@@ -1,6 +1,6 @@
 /**
- * ESPN-owned networks where "Watch in ESPN" is an accurate action label.
- * Extend this list when new ESPN family outlets should share that label.
+ * ESPN family networks where the network name itself may open the ESPN game URL.
+ * Extend this list when new ESPN family outlets should share that treatment.
  */
 const ESPN_OWNED_NETWORKS = [
   'ESPN',
@@ -8,7 +8,14 @@ const ESPN_OWNED_NETWORKS = [
   'ESPN3',
   'ESPNU',
   'ESPN+',
+  'ESPN Deportes',
   'ABC',
+  'ACC Network',
+  'ACCN',
+  'SEC Network',
+  'SECN',
+  'Longhorn Network',
+  'LHN',
 ] as const;
 
 const ESPN_OWNED_NETWORK_KEYS = new Set(
