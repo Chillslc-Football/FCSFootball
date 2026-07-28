@@ -77,6 +77,7 @@ export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     youtube_url: 'https://www.youtube.com/@fansnationnetwork',
     x_url: 'https://x.com/FCSFansNation',
     apple_podcast_url: 'https://podcasts.apple.com/us/podcast/fcs-fans-nation/id1396220851',
+    logo_url: 'https://image-cdn-fa.spotifycdn.com/image/ab67656300005f1f265f4b979acced72b902cb87',
     display_order: 10,
   }),
   seedSource({
@@ -105,6 +106,7 @@ export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     x_url: 'https://x.com/SamHerderFCS',
     apple_podcast_url:
       'https://podcasts.apple.com/us/podcast/fcs-football-talk-network/id1205671649',
+    logo_url: 'https://image-cdn-fa.spotifycdn.com/image/ab67656300005f1f3658535277a900cc4f2b12ec',
     display_order: 30,
   }),
   seedSource({
@@ -121,6 +123,7 @@ export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     youtube_url: null,
     x_url: null,
     apple_podcast_url: null,
+    logo_url: 'https://image-cdn-fa.spotifycdn.com/image/ab67656300005f1f2140c37764122d36e9d82d98',
     display_order: 40,
   }),
   seedSource({
@@ -138,6 +141,7 @@ export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     x_url: null,
     apple_podcast_url:
       'https://podcasts.apple.com/us/podcast/hack-city-fbs-and-fcs-football/id1458677310',
+    logo_url: 'https://image-cdn-ak.spotifycdn.com/image/ab67656300005f1fd647eec00879e7f9927f5a12',
     display_order: 50,
   }),
   seedSource({
@@ -157,6 +161,7 @@ export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     youtube_url: null,
     x_url: 'https://x.com/SamHerderFCS',
     apple_podcast_url: null,
+    logo_url: 'https://image-cdn-ak.spotifycdn.com/image/ab67656300005f1f24281e17df640e02a8732517',
     display_order: 60,
   }),
   seedSource({
@@ -191,6 +196,7 @@ export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     youtube_url: null,
     x_url: null,
     apple_podcast_url: 'https://podcasts.apple.com/us/podcast/the-fcs-edge/id1699176837',
+    logo_url: 'https://image-cdn-fa.spotifycdn.com/image/ab67656300005f1ffd6ebfa5f150b3328fe35a69',
     display_order: 75,
   }),
   seedSource({
@@ -207,6 +213,7 @@ export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     youtube_url: null,
     x_url: 'https://x.com/The__Bluebloods',
     apple_podcast_url: 'https://podcasts.apple.com/us/podcast/the-bluebloods/id1479796246',
+    logo_url: 'https://image-cdn-fa.spotifycdn.com/image/ab67656300005f1fbd21c657bb5a0d75305946d0',
     display_order: 80,
   }),
   seedSource({
@@ -224,6 +231,7 @@ export const NATIONAL_MEDIA_SOURCE_SEEDS: MediaSource[] = [
     x_url: null,
     apple_podcast_url:
       'https://podcasts.apple.com/us/podcast/the-deep-ball-podcast/id1869691465',
+    logo_url: 'https://image-cdn-fa.spotifycdn.com/image/ab67656300005f1fc40e36e37f64572ed91e4c2e',
     display_order: 90,
   }),
   seedSource({

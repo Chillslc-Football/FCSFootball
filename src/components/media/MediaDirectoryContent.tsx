@@ -159,11 +159,6 @@ export function useMediaDirectoryController(options?: {
           <MediaSourceCard key={source.id} source={source} />
         ))}
       </View>
-
-      <View style={styles.applePlaceholder}>
-        <Text style={styles.appleTitle}>Apple Podcasts</Text>
-        <Text style={styles.appleSub}>Coming with iPhone app</Text>
-      </View>
     </View>
   );
 
@@ -189,7 +184,7 @@ export function MediaDirectoryContent({
 }
 
 const styles = StyleSheet.create({
-  root: { gap: spacing.sm },
+  root: { gap: spacing.md },
   subtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.xs },
   searchRow: {
     flexDirection: 'row',
@@ -247,7 +242,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '600',
   },
-  list: { gap: spacing.sm - 2 },
+  list: { gap: spacing.sm + 2 },
   centerBox: {
     paddingVertical: spacing.xl,
     alignItems: 'center',
@@ -262,16 +257,5 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   messageText: { ...typography.caption, color: colors.textSecondary, textAlign: 'center' },
-  applePlaceholder: {
-    marginTop: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: spacing.md,
-    backgroundColor: colors.surface,
-    opacity: 0.7,
-  },
-  appleTitle: { ...typography.body, color: colors.textMuted, fontWeight: '700' },
-  appleSub: { ...typography.caption, color: colors.textMuted },
   pressed: { opacity: 0.85 },
 });

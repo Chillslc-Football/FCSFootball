@@ -14,6 +14,7 @@ import {
   validateMediaSuggestionInput,
 } from '@/data/mediaDirectory/mediaSourceValidation';
 import { MEDIA_SOURCE_SEEDS } from '@/data/mediaDirectory/mediaSourcesSeed';
+import { resolveMediaArtworkUrl } from '@/data/mediaDirectory/resolveMediaArtworkUrl';
 import {
   MONTANA_ESPN_TEAM_ID,
   MONTANA_STATE_ESPN_TEAM_ID,
@@ -56,6 +57,26 @@ test('rejects invalid provider domains', () => {
   assert.equal(isValidProviderUrl('spotify', 'https://open.spotify.com/show/abc'), true);
   assert.equal(isValidProviderUrl('youtube', 'https://youtu.be/abc'), true);
   assert.equal(isValidProviderUrl('x', 'https://twitter.com/fcs'), true);
+});
+
+test('artwork resolver uses stored logo_url only (no runtime provider fetch)', () => {
+  assert.equal(resolveMediaArtworkUrl({ logo_url: null }), null);
+  assert.equal(resolveMediaArtworkUrl({ logo_url: '  ' }), null);
+  assert.equal(resolveMediaArtworkUrl({ logo_url: 'not-a-url' }), null);
+  assert.equal(
+    resolveMediaArtworkUrl({
+      logo_url: 'https://image-cdn-fa.spotifycdn.com/image/ab67656300005f1fexample',
+    }),
+    'https://image-cdn-fa.spotifycdn.com/image/ab67656300005f1fexample',
+  );
+
+  const withSpotifyButNoLogo = baseSource({
+    id: 't-no-logo',
+    name: 'No Logo',
+    spotify_url: 'https://open.spotify.com/show/abc',
+    logo_url: null,
+  });
+  assert.equal(resolveMediaArtworkUrl(withSpotifyButNoLogo), null);
 });
 
 test('suggestion validation requires at least one coverage selection', () => {
