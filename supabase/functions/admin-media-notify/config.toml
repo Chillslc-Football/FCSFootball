@@ -1,0 +1,2 @@
+[functions.admin-media-notify]
+verify_jwt = true

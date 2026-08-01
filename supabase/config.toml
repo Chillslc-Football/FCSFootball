@@ -1,0 +1,6 @@
+# Supabase local / deploy config (project-specific overrides).
+
+[functions.review-media-suggestion]
+# Email Approve/Reject links open in a browser without a user JWT.
+# Auth is the signed review token + hashed nonce stored on the suggestion.
+verify_jwt = false

@@ -12,6 +12,7 @@
     "test:espn-broadcast": "npx --yes tsx --tsconfig tsconfig.json src/data/providers/runEspnBroadcastTests.ts",
     "test:media-submissions": "npx --yes tsx --tsconfig tsconfig.json src/data/media/runMediaValidationTests.ts",
     "test:media-directory": "npx --yes tsx --tsconfig tsconfig.json src/data/mediaDirectory/runMediaDirectoryTests.ts",
+    "test:media-admin": "npx --yes tsx --tsconfig tsconfig.json src/data/mediaDirectory/runMediaAdminTests.ts",
     "generate:brand": "node scripts/generate-brand-assets.mjs"
   },
   "dependencies": {

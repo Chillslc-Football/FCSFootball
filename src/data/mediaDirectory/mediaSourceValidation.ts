@@ -4,6 +4,25 @@ import {
   sourceMatchesTeam,
 } from '@/data/mediaDirectory/mediaCoverage';
 import {
+  mediaLinkRowsToPlatformLinks,
+  mediaLinkRowsToRpcJson,
+  platformLinksToMediaLinkRows,
+  validateMediaLinkRows,
+  type MediaLinkRow,
+  type MediaLinkRowInput,
+} from '@/data/mediaDirectory/mediaLinkRows';
+import {
+  MEDIA_PLATFORM_LINK_KEYS,
+  countMediaPlatformLinks,
+  normalizeMediaPlatformLinks,
+  type MediaPlatformLinkKey,
+  type MediaPlatformLinks,
+} from '@/data/mediaDirectory/mediaPlatformLinks';
+import {
+  isValidSubmitterEmail,
+  normalizeSubmitterEmail,
+} from '@/data/mediaDirectory/mediaSuggestionNotifyEmail';
+import {
   resolveConferenceBadgeLabel,
   resolveTeamBadgeLabel,
 } from '@/data/mediaDirectory/mediaScopeBadge';
@@ -18,9 +37,13 @@ function hasProviderUrl(url: string | null | undefined): boolean {
   return Boolean(url?.trim());
 }
 
+export type MediaSuggestionFieldErrors = Partial<
+  Record<'name' | 'submitterEmail' | 'coverage' | 'links' | MediaPlatformLinkKey | string, string>
+>;
+
 export type MediaSuggestionValidationResult =
   | { ok: true; value: MediaSuggestionInput }
-  | { ok: false; errors: string[] };
+  | { ok: false; errors: string[]; fieldErrors: MediaSuggestionFieldErrors };
 
 const PROVIDER_HOSTS: Record<MediaSuggestionProvider, string[]> = {
   spotify: ['open.spotify.com', 'spotify.com'],
@@ -30,6 +53,49 @@ const PROVIDER_HOSTS: Record<MediaSuggestionProvider, string[]> = {
 
 export function isMediaSuggestionProvider(value: string): value is MediaSuggestionProvider {
   return (MEDIA_SUGGESTION_PROVIDERS as readonly string[]).includes(value);
+}
+
+/** Legacy single-provider copy from older client / edge function / RPC paths. */
+export function isLegacyMediaSuggestionProviderError(message: string): boolean {
+  return /Choose Spotify,\s*YouTube,\s*or X\.?/i.test(message.trim());
+}
+
+/** Exact named args for public.submit_media_suggestion (repeatable links). */
+export type SubmitMediaSuggestionRpcPayload = {
+  p_name: string;
+  p_links: Array<{
+    platform: string;
+    label: string | null;
+    url: string;
+    sort_order: number;
+  }>;
+  p_is_national: boolean;
+  p_conference_ids: string[];
+  p_team_ids: string[];
+  p_notes: string | null;
+  p_submitter_email: string;
+  p_coverage_labels: {
+    teams?: Record<string, string>;
+    conferences?: Record<string, string>;
+  };
+  /** Compat dual-write for legacy column sync inside RPC. */
+  p_platform_links: MediaPlatformLinks;
+};
+
+export function buildSubmitMediaSuggestionRpcPayload(
+  value: MediaSuggestionInput,
+): SubmitMediaSuggestionRpcPayload {
+  return {
+    p_name: value.name,
+    p_links: mediaLinkRowsToRpcJson(value.links),
+    p_is_national: value.isNational,
+    p_conference_ids: value.conferenceIds,
+    p_team_ids: value.teamIds,
+    p_coverage_labels: value.coverageLabels ?? { teams: {}, conferences: {} },
+    p_submitter_email: value.submitterEmail,
+    p_notes: value.notes ?? null,
+    p_platform_links: value.platformLinks,
+  };
 }
 
 export function isValidHttpUrl(rawUrl: string): boolean {
@@ -74,12 +140,19 @@ export function validateMediaSuggestionInput(
     scope?: string;
     conferenceId?: string | null;
     teamId?: string | null;
+    /** @deprecated legacy single provider + url */
+    provider?: string;
+    submittedUrl?: string | null;
+    /** Draft rows from the repeatable editor (may include blanks). */
+    linkRows?: MediaLinkRowInput[];
   },
 ): MediaSuggestionValidationResult {
   const errors: string[] = [];
-  const provider = input.provider;
-  const submittedUrl = input.submittedUrl?.trim() ?? '';
+  const fieldErrors: MediaSuggestionFieldErrors = {};
+  const name = input.name?.trim() ?? '';
   const notes = input.notes?.trim() || null;
+  const submitterEmailRaw = input.submitterEmail ?? '';
+  const submitterEmail = normalizeSubmitterEmail(submitterEmailRaw);
 
   let isNational = Boolean(input.isNational);
   let conferenceIds = uniqueTrimmed(input.conferenceIds);
@@ -100,32 +173,84 @@ export function validateMediaSuggestionInput(
     }
   }
 
-  if (!provider || !isMediaSuggestionProvider(provider)) {
-    errors.push('Choose Spotify, YouTube, or X.');
+  let linkRowsInput: MediaLinkRowInput[] =
+    input.linkRows ??
+    input.links ??
+    [];
+
+  if (linkRowsInput.length === 0 && input.platformLinks) {
+    linkRowsInput = platformLinksToMediaLinkRows(input.platformLinks);
   }
-  if (!submittedUrl) {
-    errors.push('Link is required.');
-  } else if (provider && isMediaSuggestionProvider(provider) && !isValidProviderUrl(provider, submittedUrl)) {
-    errors.push(`Enter a valid ${provider === 'x' ? 'X' : provider} link.`);
+
+  if (
+    linkRowsInput.length === 0 &&
+    input.provider &&
+    input.submittedUrl?.trim()
+  ) {
+    const legacyKey = input.provider.trim().toLowerCase();
+    if ((MEDIA_PLATFORM_LINK_KEYS as readonly string[]).includes(legacyKey)) {
+      linkRowsInput = [
+        {
+          platform: legacyKey,
+          label: null,
+          url: input.submittedUrl.trim(),
+          sortOrder: 0,
+        },
+      ];
+    }
   }
+
+  const linksResult = validateMediaLinkRows(linkRowsInput);
+  let links: MediaLinkRow[] = [];
+  let platformLinks: MediaPlatformLinks = {};
+
+  if (!linksResult.ok) {
+    Object.assign(fieldErrors, linksResult.fieldErrors);
+    errors.push(linksResult.error);
+  } else {
+    links = linksResult.value;
+    platformLinks = mediaLinkRowsToPlatformLinks(links);
+  }
+
+  if (!name) {
+    const message = 'Creator or podcast name is required.';
+    fieldErrors.name = message;
+    errors.push(message);
+  }
+
+  if (!submitterEmail) {
+    const message = 'Your email is required.';
+    fieldErrors.submitterEmail = message;
+    errors.push(message);
+  } else if (!isValidSubmitterEmail(submitterEmail)) {
+    const message = 'Enter a valid email address.';
+    fieldErrors.submitterEmail = message;
+    errors.push(message);
+  }
+
   if (!isNational && conferenceIds.length === 0 && teamIds.length === 0) {
-    errors.push('Choose at least one coverage tag.');
+    const message = 'Choose at least one coverage tag.';
+    fieldErrors.coverage = message;
+    errors.push(message);
   }
 
   if (errors.length > 0) {
-    return { ok: false, errors };
+    return { ok: false, errors, fieldErrors };
   }
 
   return {
     ok: true,
     value: {
-      provider: provider as MediaSuggestionProvider,
-      submittedUrl,
+      name,
+      links,
+      platformLinks: normalizeMediaPlatformLinks(platformLinks),
       isNational,
       conferenceIds,
       teamIds,
+      submitterEmail,
       notes,
       coverageLabel: input.coverageLabel?.trim() || null,
+      coverageLabels: input.coverageLabels ?? { teams: {}, conferences: {} },
     },
   };
 }
@@ -222,6 +347,7 @@ export function filterMediaSourcesByTeam(
 }
 
 export function mediaSourceHasProviderUrl(source: MediaSource): boolean {
+  if (source.links?.length) return source.links.some((link) => hasProviderUrl(link.url));
   return (
     hasProviderUrl(source.spotify_url) ||
     hasProviderUrl(source.youtube_url) ||
@@ -229,3 +355,6 @@ export function mediaSourceHasProviderUrl(source: MediaSource): boolean {
     hasProviderUrl(source.apple_podcast_url)
   );
 }
+
+// Re-export for tests that still check count helpers.
+export { countMediaPlatformLinks };

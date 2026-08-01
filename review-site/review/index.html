@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FCS Pulse — Review Suggestion</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <div class="brand">FCS Pulse</div>
+      <p class="subtitle">Media suggestion review</p>
+
+      <section id="state-loading" class="card loading">
+        <p>Loading suggestion…</p>
+      </section>
+
+      <section id="state-error" class="card state hidden">
+        <h1>Unable to open review</h1>
+        <p id="error-detail" class="error">This review link is invalid or expired.</p>
+      </section>
+
+      <section id="state-result" class="card state hidden">
+        <h1 id="result-title">Done</h1>
+        <p id="result-detail">The submitter has been notified.</p>
+      </section>
+
+      <section id="state-detail" class="card hidden">
+        <span class="label">Creator or Podcast Name</span>
+        <p id="field-name" class="value title"></p>
+
+        <span class="label">Platform Links</span>
+        <div id="field-links" class="value links"></div>
+
+        <span class="label">National Coverage</span>
+        <p id="field-national" class="value"></p>
+
+        <span class="label">Teams</span>
+        <p id="field-teams" class="value"></p>
+
+        <span class="label">Conferences</span>
+        <p id="field-conferences" class="value"></p>
+
+        <span class="label">Notes</span>
+        <p id="field-notes" class="value"></p>
+
+        <span class="label">Submitter Email</span>
+        <p id="field-email" class="value"></p>
+
+        <span class="label">Submitted Timestamp</span>
+        <p id="field-submitted" class="value"></p>
+
+        <span class="label">Current Status</span>
+        <p id="field-status" class="value"></p>
+
+        <div id="reviewed-wrap" class="hidden">
+          <span class="label">Reviewed Timestamp</span>
+          <p id="field-reviewed" class="value"></p>
+        </div>
+
+        <div id="actions-pending" class="actions">
+          <button id="btn-approve" class="btn-approve" type="button">Approve</button>
+          <button id="btn-reject" class="btn-reject" type="button">Reject</button>
+          <a id="btn-reply" class="button btn-reply" href="#">Reply to Submitter</a>
+        </div>
+
+        <div id="confirm-box" class="confirm-box hidden">
+          <p id="confirm-text">Confirm this action.</p>
+          <div class="actions">
+            <button id="btn-confirm" class="btn-approve" type="button">Confirm</button>
+            <button id="btn-cancel" class="btn-reject" type="button">Cancel</button>
+          </div>
+          <p class="hint">Nothing is saved until you confirm.</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="./config.js"></script>
+    <script src="./review.js"></script>
+  </body>
+</html>

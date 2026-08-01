@@ -3,6 +3,8 @@
  * Run: npm run test:media-directory
  */
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
 
 import {
   buildMediaBrowseTeamOptions,
@@ -20,11 +22,58 @@ import {
   toggleMediaBrowseTeam,
 } from '@/data/mediaDirectory/mediaBrowse';
 import { normalizeMediaSourceCoverage } from '@/data/mediaDirectory/mediaCoverage';
+import {
+  MEDIA_PLATFORM_LINK_FIELD_ERRORS,
+  formatMediaPlatformLinksForEmail,
+  normalizeMediaPlatformLinks,
+} from '@/data/mediaDirectory/mediaPlatformLinks';
+import {
+  formatMediaLinkActionLabel,
+  validateMediaLinkRows,
+} from '@/data/mediaDirectory/mediaLinkRows';
+import {
+  buildMediaSuggestionCoverageLabels,
+  resolveMediaSuggestionConferenceNames,
+  resolveMediaSuggestionTeamNames,
+} from '@/data/mediaDirectory/mediaSuggestionCoverageLabels';
+import {
+  buildMediaSuggestionNotifyPayload,
+  buildMediaSuggestionReplyMailto,
+  formatMediaSuggestionOwnerEmail,
+  isValidSubmitterEmail,
+  normalizeSubmitterEmail,
+} from '@/data/mediaDirectory/mediaSuggestionNotifyEmail';
+import {
+  MEDIA_SUGGESTION_OUTCOME_FROM,
+  formatMediaSuggestionOutcomeEmail,
+} from '@/data/mediaDirectory/mediaSuggestionOutcomeEmail';
+import {
+  MEDIA_SUGGESTION_REVIEW_JSON_CONTENT_TYPE,
+  buildMediaSuggestionReviewCorsHeaders,
+  buildMediaSuggestionReviewDto,
+  buildMediaSuggestionReviewGetError,
+  buildMediaSuggestionReviewGetSuccess,
+  buildMediaSuggestionReviewPageCopy,
+  buildMediaSuggestionReviewPostError,
+  buildMediaSuggestionReviewPostSuccess,
+  createMediaSuggestionReviewJsonResponse,
+  isAllowedMediaSuggestionReviewOrigin,
+  isMediaSuggestionReviewJsonContentType,
+} from '@/data/mediaDirectory/mediaSuggestionReviewApi';
+import {
+  createMediaSuggestionReviewNonce,
+  getMediaSuggestionReviewTokenTtlSeconds,
+  hashMediaSuggestionReviewNonce,
+  issueMediaSuggestionReviewToken,
+  verifyMediaSuggestionReviewToken,
+} from '@/data/mediaDirectory/mediaSuggestionReviewToken';
 import { resolveMediaScopeBadges } from '@/data/mediaDirectory/mediaScopeBadge';
 import {
+  buildSubmitMediaSuggestionRpcPayload,
   compareMediaSourcesByName,
   filterMediaSources,
   filterMediaSourcesByTeam,
+  isLegacyMediaSuggestionProviderError,
   isValidProviderUrl,
   validateMediaSuggestionInput,
 } from '@/data/mediaDirectory/mediaSourceValidation';
@@ -47,10 +96,10 @@ function test(name: string, fn: () => void) {
 }
 
 function baseSource(partial: Partial<MediaSource> & Pick<MediaSource, 'id' | 'name'>): MediaSource {
-  return {
+  const merged = {
     subtitle: null,
     description: null,
-    scope: 'national',
+    scope: 'national' as const,
     conference_id: null,
     team_id: null,
     logo_url: null,
@@ -63,8 +112,46 @@ function baseSource(partial: Partial<MediaSource> & Pick<MediaSource, 'id' | 'na
     isNational: false,
     teamIds: [],
     conferenceIds: [],
+    links: [],
     ...partial,
   };
+  if (!partial.links) {
+    const derived = [];
+    if (merged.spotify_url) {
+      derived.push({
+        platform: 'spotify' as const,
+        label: null,
+        url: merged.spotify_url,
+        sortOrder: derived.length,
+      });
+    }
+    if (merged.youtube_url) {
+      derived.push({
+        platform: 'youtube' as const,
+        label: null,
+        url: merged.youtube_url,
+        sortOrder: derived.length,
+      });
+    }
+    if (merged.x_url) {
+      derived.push({
+        platform: 'x' as const,
+        label: null,
+        url: merged.x_url,
+        sortOrder: derived.length,
+      });
+    }
+    if (merged.apple_podcast_url) {
+      derived.push({
+        platform: 'apple' as const,
+        label: null,
+        url: merged.apple_podcast_url,
+        sortOrder: derived.length,
+      });
+    }
+    merged.links = derived;
+  }
+  return merged;
 }
 
 test('rejects invalid provider domains', () => {
@@ -115,26 +202,39 @@ test('approved seeds that previously lacked artwork now have https logo_url', ()
   }
 });
 
-test('suggestion validation requires at least one coverage selection', () => {
-  const missing = validateMediaSuggestionInput({
-    provider: 'youtube',
-    submittedUrl: 'https://www.youtube.com/@fcs',
+test('suggestion validation requires name, coverage, and at least one link', () => {
+  const missingCoverage = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+    name: 'FCS Show',
+    platformLinks: { youtube: 'https://www.youtube.com/@fcs' },
   });
-  assert.equal(missing.ok, false);
-  if (!missing.ok) {
-    assert.ok(missing.errors.some((error) => /coverage tag/i.test(error)));
+  assert.equal(missingCoverage.ok, false);
+  if (!missingCoverage.ok) {
+    assert.ok(missingCoverage.errors.some((error) => /coverage tag/i.test(error)));
+  }
+
+  const missingName = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+    platformLinks: { youtube: 'https://www.youtube.com/@fcs' },
+    isNational: true,
+  });
+  assert.equal(missingName.ok, false);
+  if (!missingName.ok) {
+    assert.ok(missingName.fieldErrors.name);
   }
 
   const nationalOnly = validateMediaSuggestionInput({
-    provider: 'youtube',
-    submittedUrl: 'https://www.youtube.com/@fcs',
+    submitterEmail: 'fan@example.com',
+    name: 'FCS Show',
+    platformLinks: { youtube: 'https://www.youtube.com/@fcs' },
     isNational: true,
   });
   assert.equal(nationalOnly.ok, true);
 
   const blankNotes = validateMediaSuggestionInput({
-    provider: 'youtube',
-    submittedUrl: 'https://www.youtube.com/@fcs',
+    submitterEmail: 'fan@example.com',
+    name: 'FCS Show',
+    platformLinks: { youtube: 'https://www.youtube.com/@fcs' },
     isNational: true,
     notes: '   ',
   });
@@ -144,8 +244,9 @@ test('suggestion validation requires at least one coverage selection', () => {
   }
 
   const withNotes = validateMediaSuggestionInput({
-    provider: 'youtube',
-    submittedUrl: 'https://www.youtube.com/@fcs',
+    submitterEmail: 'fan@example.com',
+    name: 'FCS Show',
+    platformLinks: { youtube: 'https://www.youtube.com/@fcs' },
     isNational: true,
     notes: '  Great show  ',
   });
@@ -155,8 +256,9 @@ test('suggestion validation requires at least one coverage selection', () => {
   }
 
   const teamAndConference = validateMediaSuggestionInput({
-    provider: 'spotify',
-    submittedUrl: 'https://open.spotify.com/show/abc',
+    submitterEmail: 'fan@example.com',
+    name: 'Bobcat Show',
+    platformLinks: { spotify: 'https://open.spotify.com/show/abc' },
     isNational: true,
     teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
     conferenceIds: ['big-sky'],
@@ -167,6 +269,825 @@ test('suggestion validation requires at least one coverage selection', () => {
     assert.deepEqual(teamAndConference.value.teamIds, [MONTANA_STATE_ESPN_TEAM_ID]);
     assert.deepEqual(teamAndConference.value.conferenceIds, ['big-sky']);
   }
+});
+
+test('submit_media_suggestion RPC payload matches live multi-link signature', () => {
+  const rpcKeys = [
+    'p_name',
+    'p_links',
+    'p_platform_links',
+    'p_is_national',
+    'p_conference_ids',
+    'p_team_ids',
+    'p_notes',
+    'p_submitter_email',
+    'p_coverage_labels',
+  ] as const;
+
+  function assertRpc(input: Parameters<typeof validateMediaSuggestionInput>[0]) {
+    const validated = validateMediaSuggestionInput({
+      submitterEmail: 'fan@example.com',
+      ...input,
+    });
+    assert.equal(validated.ok, true, JSON.stringify(input));
+    if (!validated.ok) return;
+    const payload = buildSubmitMediaSuggestionRpcPayload(validated.value);
+    assert.deepEqual(Object.keys(payload).sort(), [...rpcKeys].sort());
+    assert.equal(payload.p_name, validated.value.name);
+    assert.deepEqual(payload.p_platform_links, validated.value.platformLinks);
+    assert.equal(payload.p_links.length, validated.value.links.length);
+    assert.equal(payload.p_is_national, validated.value.isNational);
+    assert.deepEqual(payload.p_conference_ids, validated.value.conferenceIds);
+    assert.deepEqual(payload.p_team_ids, validated.value.teamIds);
+    assert.equal(payload.p_notes, validated.value.notes ?? null);
+    assert.equal(payload.p_submitter_email, validated.value.submitterEmail);
+    return payload;
+  }
+
+  // National only + one platform link
+  const national = assertRpc({
+    name: 'National Show',
+    isNational: true,
+    platformLinks: { youtube: 'https://www.youtube.com/@fcs' },
+  });
+  assert.equal(national?.p_is_national, true);
+  assert.deepEqual(national?.p_team_ids, []);
+  assert.deepEqual(national?.p_conference_ids, []);
+  assert.deepEqual(national?.p_platform_links, {
+    youtube: 'https://www.youtube.com/@fcs',
+  });
+  assert.equal(national?.p_notes, null);
+  assert.equal(national?.p_submitter_email, 'fan@example.com');
+
+  // One team
+  const oneTeam = assertRpc({
+    name: 'Team Show',
+    teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+    platformLinks: { website: 'https://example.com' },
+  });
+  assert.deepEqual(oneTeam?.p_team_ids, [MONTANA_STATE_ESPN_TEAM_ID]);
+  assert.equal(oneTeam?.p_is_national, false);
+
+  // Multiple teams
+  const multiTeam = assertRpc({
+    name: 'Multi Team Show',
+    teamIds: [MONTANA_STATE_ESPN_TEAM_ID, MONTANA_ESPN_TEAM_ID],
+    platformLinks: { spotify: 'https://open.spotify.com/show/abc' },
+  });
+  assert.deepEqual(multiTeam?.p_team_ids, [
+    MONTANA_STATE_ESPN_TEAM_ID,
+    MONTANA_ESPN_TEAM_ID,
+  ]);
+
+  // One conference
+  const oneConf = assertRpc({
+    name: 'Conference Show',
+    conferenceIds: ['big-sky'],
+    platformLinks: { apple: 'https://podcasts.apple.com/us/podcast/id1' },
+  });
+  assert.deepEqual(oneConf?.p_conference_ids, ['big-sky']);
+
+  // Multiple conferences
+  const multiConf = assertRpc({
+    name: 'Multi Conference Show',
+    conferenceIds: ['big-sky', 'mvfc'],
+    platformLinks: { rss: 'https://example.com/feed.xml' },
+  });
+  assert.deepEqual(multiConf?.p_conference_ids, ['big-sky', 'mvfc']);
+
+  // Mixed national + teams + conferences + multiple links + notes
+  const mixed = assertRpc({
+    name: 'Mixed Coverage Show',
+    isNational: true,
+    teamIds: [MONTANA_STATE_ESPN_TEAM_ID, MONTANA_ESPN_TEAM_ID],
+    conferenceIds: ['big-sky', 'mvfc'],
+    notes: '  Optional note  ',
+    platformLinks: {
+      website: 'https://example.com',
+      youtube: 'https://www.youtube.com/@fcs',
+      spotify: 'https://open.spotify.com/show/abc',
+    },
+    coverageLabels: buildMediaSuggestionCoverageLabels({
+      teams: [
+        { id: MONTANA_STATE_ESPN_TEAM_ID, label: 'Montana State' },
+        { id: MONTANA_ESPN_TEAM_ID, label: 'Montana' },
+      ],
+      conferences: [
+        { id: 'big-sky', label: 'Big Sky' },
+        { id: 'mvfc', label: 'Missouri Valley Football Conference' },
+      ],
+    }),
+  });
+  assert.equal(mixed?.p_is_national, true);
+  assert.deepEqual(mixed?.p_team_ids, [
+    MONTANA_STATE_ESPN_TEAM_ID,
+    MONTANA_ESPN_TEAM_ID,
+  ]);
+  assert.deepEqual(mixed?.p_conference_ids, ['big-sky', 'mvfc']);
+  assert.equal(mixed?.p_notes, 'Optional note');
+  assert.deepEqual(mixed?.p_platform_links, {
+    website: 'https://example.com',
+    youtube: 'https://www.youtube.com/@fcs',
+    spotify: 'https://open.spotify.com/show/abc',
+  });
+  assert.equal(mixed?.p_coverage_labels.teams?.[MONTANA_STATE_ESPN_TEAM_ID], 'Montana State');
+});
+
+test('suggestion platform links: field-specific errors, trim, and email format', () => {
+  const noLinks = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+    name: 'FCS Show',
+    isNational: true,
+    platformLinks: { website: '  ', spotify: '' },
+  });
+  assert.equal(noLinks.ok, false);
+  if (!noLinks.ok) {
+    assert.equal(noLinks.fieldErrors.links, 'Add at least one link.');
+    assert.ok(noLinks.errors.includes('Add at least one link.'));
+    assert.equal(noLinks.fieldErrors.website, undefined);
+    assert.ok(!noLinks.errors.some((error) => isLegacyMediaSuggestionProviderError(error)));
+  }
+
+  const websiteOnly = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+    name: 'Website Only',
+    isNational: true,
+    platformLinks: { website: 'https://example.com' },
+  });
+  assert.equal(websiteOnly.ok, true);
+
+  const appleOnly = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+    name: 'Apple Only',
+    isNational: true,
+    platformLinks: { apple: 'https://podcasts.apple.com/us/podcast/id1' },
+  });
+  assert.equal(appleOnly.ok, true);
+
+  const youtubeOnly = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+    name: 'YouTube Only',
+    isNational: true,
+    platformLinks: { youtube: 'https://www.youtube.com/@fcs' },
+  });
+  assert.equal(youtubeOnly.ok, true);
+
+  const rssOnly = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+    name: 'RSS Only',
+    isNational: true,
+    platformLinks: { rss: 'https://example.com/feed.xml' },
+  });
+  assert.equal(rssOnly.ok, true);
+
+  const invalidWebsite = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+    name: 'FCS Show',
+    isNational: true,
+    platformLinks: { website: 'not-a-url' },
+  });
+  assert.equal(invalidWebsite.ok, false);
+  if (!invalidWebsite.ok) {
+    assert.match(String(invalidWebsite.fieldErrors['links.0.url'] ?? ''), /valid/i);
+  }
+
+  const invalidYoutube = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+    name: 'FCS Show',
+    isNational: true,
+    platformLinks: { youtube: 'ftp://youtube.com/x' },
+  });
+  assert.equal(invalidYoutube.ok, false);
+  if (!invalidYoutube.ok) {
+    assert.match(String(invalidYoutube.fieldErrors['links.0.url'] ?? ''), /valid/i);
+  }
+
+  const validPlusInvalid = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+    name: 'FCS Show',
+    isNational: true,
+    linkRows: [
+      { platform: 'website', label: '', url: 'not-a-url' },
+      { platform: 'youtube', label: '', url: 'https://www.youtube.com/@fcs' },
+    ],
+  });
+  assert.equal(validPlusInvalid.ok, false);
+  if (!validPlusInvalid.ok) {
+    assert.match(String(validPlusInvalid.fieldErrors['links.0.url'] ?? ''), /valid/i);
+    assert.equal(validPlusInvalid.fieldErrors['links.1.url'], undefined);
+  }
+
+  const singleLinkCases = [
+    { youtube: 'https://www.youtube.com/@fcs' },
+    { apple: 'https://podcasts.apple.com/us/podcast/id1' },
+    { website: 'https://example.com' },
+    { spotify: 'https://open.spotify.com/show/abc' },
+    { rss: 'https://example.com/feed.xml' },
+    { other: 'https://example.com/listen' },
+    { x: 'https://x.com/fcs' },
+    { facebook: 'https://facebook.com/fcs' },
+    { instagram: 'https://instagram.com/fcs' },
+  ] as const;
+
+  for (const platformLinks of singleLinkCases) {
+    const result = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+      name: 'Single Link Show',
+      isNational: true,
+      platformLinks: {
+        website: '',
+        spotify: '',
+        apple: '',
+        youtube: '',
+        x: '',
+        facebook: '',
+        instagram: '',
+        rss: '',
+        other: '',
+        ...platformLinks,
+      },
+    });
+    assert.equal(result.ok, true, `expected pass for ${JSON.stringify(platformLinks)}`);
+    if (result.ok) {
+      assert.equal(Object.keys(result.value.platformLinks).length, 1);
+    }
+  }
+
+  const trimmed = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+    name: '  FCS Show  ',
+    isNational: true,
+    platformLinks: {
+      spotify: '  https://open.spotify.com/show/abc  ',
+      youtube: '   ',
+      website: '',
+      apple: '',
+    },
+  });
+  assert.equal(trimmed.ok, true);
+  if (trimmed.ok) {
+    assert.equal(trimmed.value.name, 'FCS Show');
+    assert.deepEqual(trimmed.value.platformLinks, {
+      spotify: 'https://open.spotify.com/show/abc',
+    });
+  }
+
+  const several = validateMediaSuggestionInput({
+    submitterEmail: 'fan@example.com',
+    name: 'Multi Link Show',
+    isNational: true,
+    platformLinks: {
+      website: 'https://example.com',
+      spotify: 'https://open.spotify.com/show/abc',
+      apple: 'https://podcasts.apple.com/us/podcast/id1',
+      youtube: 'https://www.youtube.com/@fcs',
+      x: '',
+    },
+  });
+  assert.equal(several.ok, true);
+  if (several.ok) {
+    assert.deepEqual(several.value.platformLinks, {
+      website: 'https://example.com',
+      spotify: 'https://open.spotify.com/show/abc',
+      apple: 'https://podcasts.apple.com/us/podcast/id1',
+      youtube: 'https://www.youtube.com/@fcs',
+    });
+  }
+
+  assert.deepEqual(MEDIA_PLATFORM_LINK_FIELD_ERRORS, {
+    website: 'Enter a valid website URL.',
+    spotify: 'Enter a valid Spotify URL.',
+    apple: 'Enter a valid Apple Podcasts URL.',
+    youtube: 'Enter a valid YouTube URL.',
+    x: 'Enter a valid X URL.',
+    facebook: 'Enter a valid Facebook URL.',
+    instagram: 'Enter a valid Instagram URL.',
+    rss: 'Enter a valid RSS feed URL.',
+    other: 'Enter a valid URL.',
+  });
+
+  const stored = normalizeMediaPlatformLinks({
+    website: ' https://example.com ',
+    other: '',
+    rss: null,
+  });
+  assert.deepEqual(stored, { website: 'https://example.com' });
+
+  const email = formatMediaPlatformLinksForEmail({
+    website: 'https://example.com',
+    spotify: 'https://open.spotify.com/show/abc',
+    youtube: 'https://www.youtube.com/@fcs',
+  });
+  assert.match(email, /^Platform Links\n/);
+  assert.match(email, /Website: https:\/\/example\.com/);
+  assert.match(email, /Spotify: https:\/\/open\.spotify\.com\/show\/abc/);
+  assert.match(email, /YouTube: https:\/\/www\.youtube\.com\/@fcs/);
+  assert.equal(email.includes('Apple Podcasts'), false);
+});
+
+test('submitter email validation and storage normalization', () => {
+  assert.equal(isValidSubmitterEmail('  Fan@Example.COM '), true);
+  assert.equal(normalizeSubmitterEmail('  Fan@Example.COM '), 'fan@example.com');
+  assert.equal(isValidSubmitterEmail('not-an-email'), false);
+
+  const missing = validateMediaSuggestionInput({
+    name: 'FCS Show',
+    isNational: true,
+    platformLinks: { website: 'https://example.com' },
+  });
+  assert.equal(missing.ok, false);
+  if (!missing.ok) {
+    assert.ok(missing.fieldErrors.submitterEmail);
+  }
+
+  const invalid = validateMediaSuggestionInput({
+    name: 'FCS Show',
+    isNational: true,
+    submitterEmail: 'bad',
+    platformLinks: { website: 'https://example.com' },
+  });
+  assert.equal(invalid.ok, false);
+  if (!invalid.ok) {
+    assert.equal(invalid.fieldErrors.submitterEmail, 'Enter a valid email address.');
+  }
+
+  const ok = validateMediaSuggestionInput({
+    name: 'FCS Show',
+    isNational: true,
+    submitterEmail: '  Fan@Example.COM ',
+    platformLinks: { website: 'https://example.com' },
+  });
+  assert.equal(ok.ok, true);
+  if (ok.ok) {
+    assert.equal(ok.value.submitterEmail, 'fan@example.com');
+  }
+});
+
+test('repeatable links validation and public action labels', () => {
+  const repeated = validateMediaLinkRows([
+    { platform: 'youtube', label: 'Main', url: 'https://youtube.com/@main' },
+    { platform: 'youtube', label: 'Podcast', url: 'https://youtube.com/@podcast' },
+    { platform: 'spotify', label: 'Weekly Show', url: 'https://open.spotify.com/show/1' },
+  ]);
+  assert.equal(repeated.ok, true);
+  if (repeated.ok) {
+    assert.equal(formatMediaLinkActionLabel(repeated.value[0]!), 'YouTube · Main');
+    assert.equal(formatMediaLinkActionLabel(repeated.value[1]!), 'YouTube · Podcast');
+    assert.equal(formatMediaLinkActionLabel({ platform: 'spotify', label: null }), 'Spotify');
+  }
+
+  const validated = validateMediaSuggestionInput({
+    name: 'Multi Link Show',
+    submitterEmail: 'fan@example.com',
+    isNational: true,
+    linkRows: [
+      { platform: 'youtube', label: 'Main', url: 'https://youtube.com/@main' },
+      { platform: 'youtube', label: 'Clips', url: 'https://youtube.com/@clips' },
+      { platform: 'website', label: '', url: '' },
+    ],
+  });
+  assert.equal(validated.ok, true);
+  if (validated.ok) {
+    assert.equal(validated.value.links.length, 2);
+    const payload = buildSubmitMediaSuggestionRpcPayload(validated.value);
+    assert.equal(payload.p_links.length, 2);
+    assert.equal(payload.p_links[0]?.label, 'Main');
+  }
+
+  const email = formatMediaSuggestionOwnerEmail({
+    id: 'abc',
+    name: 'Multi Link Show',
+    links: [
+      {
+        platform: 'youtube',
+        label: 'Main Channel',
+        url: 'https://youtube.com/@main',
+        sortOrder: 0,
+      },
+      {
+        platform: 'youtube',
+        label: 'Podcast',
+        url: 'https://youtube.com/@podcast',
+        sortOrder: 1,
+      },
+    ],
+    platformLinks: {},
+    isNational: true,
+    teamIds: [],
+    conferenceIds: [],
+    notes: null,
+    submitterEmail: null,
+    status: 'pending',
+    submittedAt: '2026-08-01T17:00:00.000Z',
+    reviewUrl: 'https://admin.fcspulse.com/suggestions/abc',
+  });
+  assert.match(email.text, /YouTube · Main Channel/);
+  assert.match(email.text, /YouTube · Podcast/);
+  assert.match(email.html, /YouTube · Main Channel/);
+});
+
+test('owner notification email resolves names, HTML links, reply-to, and Media Admin link', () => {
+  const notify = buildMediaSuggestionNotifyPayload('  abc-123  ', {
+    teams: { '2000': 'Eastern Washington' },
+    conferences: { 'big-sky': 'Big Sky' },
+  });
+  assert.deepEqual(notify, {
+    suggestion_id: 'abc-123',
+    coverage_labels: {
+      teams: { '2000': 'Eastern Washington' },
+      conferences: { 'big-sky': 'Big Sky' },
+    },
+  });
+
+  assert.deepEqual(
+    resolveMediaSuggestionTeamNames([MONTANA_STATE_ESPN_TEAM_ID, '999'], {
+      teams: { '999': 'Custom Team' },
+    }),
+    ['Montana State', 'Custom Team'],
+  );
+  assert.deepEqual(resolveMediaSuggestionConferenceNames(['big-sky', 'mvfc']), [
+    'Big Sky',
+    'Missouri Valley Football Conference',
+  ]);
+
+  const reviewUrl = 'https://admin.fcspulse.com/suggestions/abc-123';
+
+  const email = formatMediaSuggestionOwnerEmail({
+    id: 'abc-123',
+    name: 'Skyline Sports',
+    platformLinks: {
+      website: 'https://example.com',
+      youtube: 'https://www.youtube.com/@fcs',
+      spotify: '',
+    },
+    isNational: true,
+    teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+    conferenceIds: ['big-sky'],
+    coverageLabels: {
+      teams: { [MONTANA_STATE_ESPN_TEAM_ID]: 'Montana State' },
+      conferences: { 'big-sky': 'Big Sky' },
+    },
+    notes: 'Great show',
+    submitterEmail: 'fan@example.com',
+    status: 'pending',
+    submittedAt: '2026-08-01T17:00:00.000Z',
+    reviewUrl,
+  });
+
+  assert.equal(email.subject, 'New FCS Pulse media suggestion: Skyline Sports');
+  assert.equal(email.replyTo, 'fan@example.com');
+  assert.match(email.text, /Creator or Podcast Name: Skyline Sports/);
+  assert.match(email.text, /Website/);
+  assert.match(email.text, /https:\/\/example\.com/);
+  assert.match(email.text, /YouTube/);
+  assert.match(email.text, /https:\/\/www\.youtube\.com\/@fcs/);
+  assert.equal(email.text.includes('Spotify'), false);
+  assert.match(email.text, /National: Yes/);
+  assert.match(email.text, /Teams: Montana State/);
+  assert.match(email.text, /Conferences: Big Sky/);
+  assert.match(email.text, /Submitter Email: fan@example.com/);
+  assert.match(email.html, /href="https:\/\/example\.com"/);
+  assert.match(email.html, /href="https:\/\/www\.youtube\.com\/@fcs"/);
+  assert.match(email.html, /Review Suggestion|Open in Media Admin/);
+  assert.match(email.html, /href="https:\/\/admin\.fcspulse\.com\/suggestions\/abc-123"/);
+  assert.equal(email.html.includes('/review?token='), false);
+  assert.equal(email.html.includes('/functions/v1/review-media-suggestion'), false);
+
+  const replyMailto = buildMediaSuggestionReplyMailto({
+    submitterEmail: 'fan@example.com',
+    creatorName: 'Skyline Sports',
+  });
+  assert.match(email.html, /Reply/);
+  assert.ok(
+    email.html.includes(replyMailto.replace(/&/g, '&amp;')) ||
+      email.html.includes('mailto:fan%40example.com'),
+  );
+  assert.match(replyMailto, /^mailto:/);
+  assert.match(replyMailto, /fan%40example\.com|fan@example\.com/);
+  assert.match(
+    replyMailto,
+    /Question%20about%20your%20FCS%20Pulse%20media%20suggestion/,
+  );
+
+  const older = formatMediaSuggestionOwnerEmail({
+    id: 'old-1',
+    name: 'Legacy Show',
+    platformLinks: { website: 'https://example.com' },
+    isNational: true,
+    teamIds: [],
+    conferenceIds: [],
+    notes: null,
+    submitterEmail: null,
+    status: 'pending',
+    submittedAt: '2026-08-01T17:00:00.000Z',
+    reviewUrl,
+  });
+  assert.equal(older.replyTo, null);
+  assert.equal(older.html.includes('>Reply<'), false);
+  assert.match(older.html, /Review Suggestion|Open in Media Admin/);
+  assert.match(older.text, /Submitter Email: None/);
+});
+
+test('review API helpers remain JSON-only (legacy token review disabled)', () => {
+  const pending = buildMediaSuggestionReviewDto({
+    id: 'sug-1',
+    name: 'Skyline Sports',
+    status: 'pending',
+    platformLinks: { website: 'https://example.com' },
+    isNational: true,
+    teamIds: [MONTANA_STATE_ESPN_TEAM_ID, MONTANA_ESPN_TEAM_ID],
+    conferenceIds: ['big-sky'],
+    coverageLabels: {
+      teams: {
+        [MONTANA_STATE_ESPN_TEAM_ID]: 'Montana State',
+        [MONTANA_ESPN_TEAM_ID]: 'Montana',
+      },
+      conferences: { 'big-sky': 'Big Sky' },
+    },
+    notes: 'Great show',
+    submitterEmail: 'fan@example.com',
+    submittedAt: '2026-08-01T17:00:00.000Z',
+  });
+  assert.deepEqual(pending.teams, ['Montana State', 'Montana']);
+  assert.deepEqual(pending.conferences, ['Big Sky']);
+  assert.equal(pending.submitterEmail, 'fan@example.com');
+
+  const pendingGet = buildMediaSuggestionReviewGetSuccess(pending);
+  assert.equal(pendingGet.ok, true);
+  assert.equal(pendingGet.suggestion.status, 'pending');
+
+  const approvedGet = buildMediaSuggestionReviewGetSuccess(
+    buildMediaSuggestionReviewDto({
+      id: pending.id,
+      name: pending.name,
+      status: 'approved',
+      platformLinks: pending.platformLinks,
+      isNational: pending.isNational,
+      teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+      conferenceIds: ['big-sky'],
+      coverageLabels: {
+        teams: { [MONTANA_STATE_ESPN_TEAM_ID]: 'Montana State' },
+        conferences: { 'big-sky': 'Big Sky' },
+      },
+      notes: pending.notes,
+      submitterEmail: pending.submitterEmail,
+      submittedAt: pending.submittedAt,
+      reviewedAt: '2026-08-02T12:00:00.000Z',
+    }),
+  );
+  assert.equal(approvedGet.suggestion.status, 'approved');
+  assert.equal(approvedGet.suggestion.reviewedAt, '2026-08-02T12:00:00.000Z');
+
+  const rejectedGet = buildMediaSuggestionReviewGetSuccess(
+    buildMediaSuggestionReviewDto({
+      id: pending.id,
+      name: pending.name,
+      status: 'rejected',
+      platformLinks: pending.platformLinks,
+      isNational: pending.isNational,
+      teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+      conferenceIds: ['big-sky'],
+      coverageLabels: {
+        teams: { [MONTANA_STATE_ESPN_TEAM_ID]: 'Montana State' },
+        conferences: { 'big-sky': 'Big Sky' },
+      },
+      notes: pending.notes,
+      submitterEmail: pending.submitterEmail,
+      submittedAt: pending.submittedAt,
+      reviewedAt: '2026-08-02T13:00:00.000Z',
+    }),
+  );
+  assert.equal(rejectedGet.suggestion.status, 'rejected');
+
+  const invalid = buildMediaSuggestionReviewGetError('invalid_token');
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error, 'invalid_token');
+  assert.match(invalid.message, /invalid/i);
+  assert.equal(invalid.message.includes('HMAC'), false);
+  assert.equal(invalid.message.includes('signature'), false);
+
+  const expired = buildMediaSuggestionReviewGetError('expired_token');
+  assert.equal(expired.error, 'expired_token');
+  assert.match(expired.message, /expired/i);
+
+  const approveOk = buildMediaSuggestionReviewPostSuccess({
+    status: 'approved',
+    submitterNotified: true,
+  });
+  assert.deepEqual(approveOk, {
+    ok: true,
+    status: 'approved',
+    submitterNotified: true,
+  });
+
+  const rejectOk = buildMediaSuggestionReviewPostSuccess({
+    status: 'rejected',
+    submitterNotified: true,
+  });
+  assert.equal(rejectOk.status, 'rejected');
+
+  const duplicate = buildMediaSuggestionReviewPostError('already_reviewed');
+  assert.equal(duplicate.ok, false);
+  assert.equal(duplicate.error, 'already_reviewed');
+
+  assert.equal(isAllowedMediaSuggestionReviewOrigin('https://fcspulse.com'), true);
+  assert.equal(isAllowedMediaSuggestionReviewOrigin('http://localhost:4173'), true);
+  assert.equal(isAllowedMediaSuggestionReviewOrigin('https://evil.example'), false);
+  assert.equal(isAllowedMediaSuggestionReviewOrigin(null), false);
+  assert.equal(isAllowedMediaSuggestionReviewOrigin('*'), false);
+
+  const allowedHeaders = buildMediaSuggestionReviewCorsHeaders('https://fcspulse.com');
+  assert.equal(allowedHeaders['Access-Control-Allow-Origin'], 'https://fcspulse.com');
+  assert.equal(allowedHeaders['Content-Type'], MEDIA_SUGGESTION_REVIEW_JSON_CONTENT_TYPE);
+  assert.notEqual(String(allowedHeaders['Access-Control-Allow-Origin'] ?? ''), '*');
+
+  const deniedHeaders = buildMediaSuggestionReviewCorsHeaders('https://evil.example');
+  assert.equal(deniedHeaders['Access-Control-Allow-Origin'], undefined);
+  assert.equal(deniedHeaders['Content-Type'], MEDIA_SUGGESTION_REVIEW_JSON_CONTENT_TYPE);
+
+  const payloads = [
+    pendingGet,
+    approvedGet,
+    rejectedGet,
+    invalid,
+    expired,
+    approveOk,
+    rejectOk,
+    duplicate,
+  ];
+  for (const payload of payloads) {
+    const response = createMediaSuggestionReviewJsonResponse(
+      payload,
+      payload.ok ? 200 : 400,
+      'https://fcspulse.com',
+    );
+    const contentType = response.headers.get('content-type');
+    assert.equal(
+      isMediaSuggestionReviewJsonContentType(contentType),
+      true,
+      `expected JSON content-type, got ${contentType}`,
+    );
+    assert.equal(contentType?.includes('text/html'), false);
+    assert.equal(response.headers.get('access-control-allow-origin'), 'https://fcspulse.com');
+  }
+
+  const rejectedOriginResponse = createMediaSuggestionReviewJsonResponse(
+    buildMediaSuggestionReviewGetError('forbidden'),
+    403,
+    'https://evil.example',
+  );
+  assert.equal(rejectedOriginResponse.headers.get('access-control-allow-origin'), null);
+  assert.equal(
+    isMediaSuggestionReviewJsonContentType(rejectedOriginResponse.headers.get('content-type')),
+    true,
+  );
+
+  const approvedPage = buildMediaSuggestionReviewPageCopy('approved');
+  assert.equal(approvedPage.heading, 'Suggestion Approved');
+  assert.match(approvedPage.detail, /submitter has been notified/i);
+
+  const rejectedPage = buildMediaSuggestionReviewPageCopy('rejected');
+  assert.equal(rejectedPage.heading, 'Suggestion Rejected');
+
+  const already = buildMediaSuggestionReviewPageCopy('already_reviewed');
+  assert.match(already.heading, /already reviewed/i);
+
+  const expiredPage = buildMediaSuggestionReviewPageCopy('expired_token');
+  assert.match(expiredPage.detail, /expired/i);
+
+  const invalidPage = buildMediaSuggestionReviewPageCopy('invalid_token');
+  assert.match(invalidPage.detail, /invalid/i);
+
+  const approvedEmail = formatMediaSuggestionOutcomeEmail({
+    outcome: 'approved',
+    creatorName: 'Skyline Sports',
+  });
+  assert.equal(approvedEmail.from, MEDIA_SUGGESTION_OUTCOME_FROM);
+  assert.equal(approvedEmail.subject, 'Your FCS Pulse media suggestion was accepted');
+  assert.match(approvedEmail.text, /accepted for inclusion/i);
+  assert.match(approvedEmail.text, /Skyline Sports/);
+  assert.match(approvedEmail.html, /Skyline Sports/);
+
+  const rejectedEmail = formatMediaSuggestionOutcomeEmail({
+    outcome: 'rejected',
+    creatorName: 'Skyline Sports',
+  });
+  assert.equal(rejectedEmail.subject, 'Update on your FCS Pulse media suggestion');
+  assert.match(rejectedEmail.text, /not to add it at this time/i);
+  assert.notEqual(approvedEmail.subject, rejectedEmail.subject);
+
+  // Token review Edge Function is disabled (410) — Media Admin is the active path.
+  const reviewFn = readFileSync(
+    path.resolve(process.cwd(), 'supabase/functions/review-media-suggestion/index.ts'),
+    'utf8',
+  );
+  assert.match(reviewFn, /410|gone/i);
+  assert.match(reviewFn, /admin\.fcspulse\.com/);
+  assert.equal(reviewFn.includes('<!DOCTYPE html>'), false);
+});
+
+test('media suggestion review tokens: issue, expire, forge, and single-use hash', () => {
+  const secret = 'test-review-secret';
+  const nonce = createMediaSuggestionReviewNonce();
+  const hash = hashMediaSuggestionReviewNonce(nonce);
+  assert.equal(hash.length, 64);
+  assert.equal(getMediaSuggestionReviewTokenTtlSeconds(), 7 * 24 * 60 * 60);
+
+  const review = issueMediaSuggestionReviewToken({
+    secret,
+    suggestionId: 'sid-1',
+    action: 'review',
+    nonce,
+    nowMs: 1_700_000_000_000,
+  });
+  const legacyApprove = issueMediaSuggestionReviewToken({
+    secret,
+    suggestionId: 'sid-1',
+    action: 'approve',
+    nonce,
+    nowMs: 1_700_000_000_000,
+  });
+  assert.notEqual(review, legacyApprove);
+
+  const okReview = verifyMediaSuggestionReviewToken({
+    secret,
+    token: review,
+    nowMs: 1_700_000_000_000,
+  });
+  assert.equal(okReview.ok, true);
+  if (okReview.ok) {
+    assert.equal(okReview.payload.act, 'review');
+    assert.equal(okReview.payload.sid, 'sid-1');
+    assert.equal(hashMediaSuggestionReviewNonce(okReview.payload.n), hash);
+  }
+
+  const okLegacy = verifyMediaSuggestionReviewToken({
+    secret,
+    token: legacyApprove,
+    nowMs: 1_700_000_000_000,
+  });
+  assert.equal(okLegacy.ok, true);
+  if (okLegacy.ok) {
+    assert.equal(okLegacy.payload.act, 'approve');
+  }
+
+  const expired = verifyMediaSuggestionReviewToken({
+    secret,
+    token: review,
+    nowMs: 1_700_000_000_000 + 8 * 24 * 60 * 60 * 1000,
+  });
+  assert.equal(expired.ok, false);
+  if (!expired.ok) assert.equal(expired.reason, 'expired_token');
+
+  const forged = verifyMediaSuggestionReviewToken({
+    secret: 'wrong-secret',
+    token: review,
+    nowMs: 1_700_000_000_000,
+  });
+  assert.equal(forged.ok, false);
+  if (!forged.ok) assert.equal(forged.reason, 'invalid_token');
+
+  const mangled = verifyMediaSuggestionReviewToken({
+    secret,
+    token: `${review}x`,
+    nowMs: 1_700_000_000_000,
+  });
+  assert.equal(mangled.ok, false);
+
+  // Single-use semantics: after a successful review the stored nonce hash is cleared.
+  // A reused token still verifies cryptographically, but DB hash mismatch rejects it.
+  const reusedHash = hashMediaSuggestionReviewNonce('different-nonce');
+  assert.notEqual(reusedHash, hash);
+});
+
+test('legacy Choose Spotify/YouTube/X message is gone from app + edge function source', () => {
+  const legacy = 'Choose Spotify, YouTube, or X.';
+  assert.equal(isLegacyMediaSuggestionProviderError(legacy), true);
+
+  const roots = [
+    path.resolve(process.cwd(), 'src'),
+    path.resolve(process.cwd(), 'supabase', 'functions'),
+  ];
+  const hits: string[] = [];
+
+  function walk(dir: string) {
+    for (const entry of readdirSync(dir)) {
+      const full = path.join(dir, entry);
+      const st = statSync(full);
+      if (st.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/\.(ts|tsx|js|jsx)$/.test(entry)) continue;
+      // This test file intentionally mentions the legacy string.
+      if (full.replace(/\\/g, '/').endsWith('/runMediaDirectoryTests.ts')) continue;
+      const text = readFileSync(full, 'utf8');
+      if (text.includes(legacy)) hits.push(path.relative(process.cwd(), full));
+    }
+  }
+
+  for (const root of roots) walk(root);
+  assert.deepEqual(hits, [], `legacy message still present in: ${hits.join(', ')}`);
 });
 
 test('directory lists all approved sources alphabetically', () => {

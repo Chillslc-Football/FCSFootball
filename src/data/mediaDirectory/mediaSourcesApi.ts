@@ -1,4 +1,8 @@
 import { normalizeMediaSourceCoverage } from '@/data/mediaDirectory/mediaCoverage';
+import {
+  parseMediaLinkRowsFromApi,
+  platformLinksToMediaLinkRows,
+} from '@/data/mediaDirectory/mediaLinkRows';
 import { MEDIA_SOURCE_SEEDS } from '@/data/mediaDirectory/mediaSourcesSeed';
 import type { MediaSource, MediaSourceScope } from '@/data/mediaDirectory/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/data/notifications/supabaseClient';
@@ -10,10 +14,21 @@ type MediaSourceRow = Partial<MediaSource> & {
   team_ids?: string[] | null;
   conference_ids?: string[] | null;
   scope?: MediaSourceScope;
+  links?: unknown;
 };
 
 function mapRow(row: MediaSourceRow): MediaSource {
   const coverage = normalizeMediaSourceCoverage(row);
+  const fromApi = parseMediaLinkRowsFromApi(row.links);
+  const links =
+    fromApi.length > 0
+      ? fromApi
+      : platformLinksToMediaLinkRows({
+          spotify: row.spotify_url ?? undefined,
+          youtube: row.youtube_url ?? undefined,
+          x: row.x_url ?? undefined,
+          apple: row.apple_podcast_url ?? undefined,
+        });
   return {
     id: row.id,
     name: row.name,
@@ -32,6 +47,7 @@ function mapRow(row: MediaSourceRow): MediaSource {
     isNational: coverage.isNational,
     teamIds: coverage.teamIds,
     conferenceIds: coverage.conferenceIds,
+    links,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

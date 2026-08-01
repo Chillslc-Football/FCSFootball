@@ -1,7 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import {
+  formatMediaLinkActionLabel,
+  platformLinksToMediaLinkRows,
+  type MediaLinkRow,
+} from '@/data/mediaDirectory/mediaLinkRows';
 import { resolveMediaScopeBadges } from '@/data/mediaDirectory/mediaScopeBadge';
 import { hasMediaUrl, openMediaUrl } from '@/data/mediaDirectory/openMediaUrl';
 import { resolveMediaArtworkUrl } from '@/data/mediaDirectory/resolveMediaArtworkUrl';
@@ -30,6 +35,41 @@ function resolveShortDescription(source: MediaSource): string | null {
   if (subtitle) return subtitle;
   const description = source.description?.trim();
   return description || null;
+}
+
+function iconForPlatform(platform: string): keyof typeof Ionicons.glyphMap {
+  switch (platform) {
+    case 'spotify':
+      return 'musical-notes';
+    case 'youtube':
+      return 'logo-youtube';
+    case 'x':
+      return 'logo-twitter';
+    case 'apple':
+      return 'logo-apple';
+    case 'website':
+      return 'globe-outline';
+    case 'facebook':
+      return 'logo-facebook';
+    case 'instagram':
+      return 'logo-instagram';
+    case 'rss':
+      return 'radio-outline';
+    default:
+      return 'link-outline';
+  }
+}
+
+function resolveActionLinks(source: MediaSource): MediaLinkRow[] {
+  if (source.links?.length) {
+    return source.links.filter((link) => hasMediaUrl(link.url));
+  }
+  return platformLinksToMediaLinkRows({
+    spotify: source.spotify_url ?? undefined,
+    youtube: source.youtube_url ?? undefined,
+    x: source.x_url ?? undefined,
+    apple: source.apple_podcast_url ?? undefined,
+  }).filter((link) => hasMediaUrl(link.url));
 }
 
 function MediaArtwork({
@@ -83,11 +123,8 @@ export function MediaSourceCard({
   variant?: 'default' | 'compact';
 }) {
   const compact = variant === 'compact';
-  const showSpotify = hasMediaUrl(source.spotify_url);
-  const showYoutube = hasMediaUrl(source.youtube_url);
-  const showX = hasMediaUrl(source.x_url);
-  const showApplePodcasts = hasMediaUrl(source.apple_podcast_url);
-  const hasAnyProvider = showSpotify || showYoutube || showX || showApplePodcasts;
+  const actionLinks = useMemo(() => resolveActionLinks(source), [source]);
+  const hasAnyProvider = actionLinks.length > 0;
   const scopeMeta = resolveScopeMeta(source);
   const shortDescription = resolveShortDescription(source);
   const logoSize = compact ? COMPACT_LOGO_SIZE : LOGO_SIZE;
@@ -115,39 +152,18 @@ export function MediaSourceCard({
 
       {hasAnyProvider ? (
         <View style={[styles.providerRow, compact && styles.providerRowCompact]}>
-          {showSpotify ? (
-            <ProviderButton
-              sourceName={source.name}
-              label="Spotify"
-              icon="musical-notes"
-              onPress={() => void openMediaUrl(source.spotify_url)}
-            />
-          ) : null}
-          {showYoutube ? (
-            <ProviderButton
-              sourceName={source.name}
-              label="YouTube"
-              icon="logo-youtube"
-              onPress={() => void openMediaUrl(source.youtube_url)}
-            />
-          ) : null}
-          {showX ? (
-            <ProviderButton
-              sourceName={source.name}
-              label="X"
-              icon="logo-twitter"
-              onPress={() => void openMediaUrl(source.x_url)}
-            />
-          ) : null}
-          {showApplePodcasts ? (
-            <ProviderButton
-              sourceName={source.name}
-              label="Apple"
-              accessibilityLabel="Apple Podcasts"
-              icon="logo-apple"
-              onPress={() => void openMediaUrl(source.apple_podcast_url)}
-            />
-          ) : null}
+          {actionLinks.map((link) => {
+            const label = formatMediaLinkActionLabel(link);
+            return (
+              <ProviderButton
+                key={`${link.platform}-${link.url}-${link.sortOrder}`}
+                sourceName={source.name}
+                label={label}
+                icon={iconForPlatform(link.platform)}
+                onPress={() => void openMediaUrl(link.url)}
+              />
+            );
+          })}
         </View>
       ) : compact ? null : (
         <Text style={styles.pendingLinks}>Media links coming soon</Text>
@@ -159,26 +175,25 @@ export function MediaSourceCard({
 function ProviderButton({
   sourceName,
   label,
-  accessibilityLabel,
   icon,
   onPress,
 }: {
   sourceName: string;
   label: string;
-  accessibilityLabel?: string;
   icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
 }) {
-  const a11y = accessibilityLabel ?? label;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Open ${sourceName} on ${a11y}`}
+      accessibilityLabel={`Open ${sourceName} — ${label}`}
       hitSlop={4}
       onPress={onPress}
       style={({ pressed }) => [styles.providerButton, pressed && styles.pressed]}>
       <Ionicons name={icon} size={14} color={colors.primary} />
-      <Text style={styles.providerLabel}>{label}</Text>
+      <Text style={styles.providerLabel} numberOfLines={1}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -270,6 +285,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     minHeight: 32,
+    maxWidth: '100%',
     backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
     borderColor: colors.border,
@@ -283,6 +299,7 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     color: colors.textSecondary,
     fontWeight: '600',
+    flexShrink: 1,
   },
   pendingLinks: {
     ...typography.caption,

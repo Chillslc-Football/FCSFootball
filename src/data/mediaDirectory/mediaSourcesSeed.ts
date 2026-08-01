@@ -4,6 +4,7 @@
  * Provider URLs are intentionally null until verified — do not invent links.
  * When Supabase has no approved rows (or is offline), the Media screen uses this list.
  */
+import { platformLinksToMediaLinkRows } from '@/data/mediaDirectory/mediaLinkRows';
 import {
   MONTANA_ESPN_TEAM_ID,
   MONTANA_STATE_ESPN_TEAM_ID,
@@ -22,6 +23,7 @@ function seedSource(
     | 'isNational'
     | 'teamIds'
     | 'conferenceIds'
+    | 'links'
   > & {
     logo_url?: string | null;
     spotify_url?: string | null;
@@ -32,6 +34,7 @@ function seedSource(
     isNational?: boolean;
     teamIds?: string[];
     conferenceIds?: string[];
+    links?: MediaSource['links'];
   },
 ): MediaSource {
   const teamIds = partial.teamIds ?? (partial.team_id ? [partial.team_id] : []);
@@ -42,18 +45,32 @@ function seedSource(
       ? partial.isNational
       : partial.scope === 'national';
 
+  const spotify_url = partial.spotify_url ?? null;
+  const youtube_url = partial.youtube_url ?? null;
+  const x_url = partial.x_url ?? null;
+  const apple_podcast_url = partial.apple_podcast_url ?? null;
+  const links =
+    partial.links ??
+    platformLinksToMediaLinkRows({
+      spotify: spotify_url ?? undefined,
+      youtube: youtube_url ?? undefined,
+      x: x_url ?? undefined,
+      apple: apple_podcast_url ?? undefined,
+    });
+
   return {
-    spotify_url: null,
-    youtube_url: null,
-    x_url: null,
-    apple_podcast_url: null,
-    logo_url: partial.logo_url ?? null,
     ...partial,
+    spotify_url,
+    youtube_url,
+    x_url,
+    apple_podcast_url,
+    logo_url: partial.logo_url ?? null,
     conference_id: partial.conference_id ?? conferenceIds[0] ?? null,
     team_id: partial.team_id ?? teamIds[0] ?? null,
     isNational,
     teamIds,
     conferenceIds,
+    links,
     is_approved:
       typeof partial.is_approved === 'boolean' ? partial.is_approved : true,
   };

@@ -14,6 +14,10 @@ import { getAllConferenceMetadata } from '@/data/conferences/conferenceList';
 import { checkIsAppAdmin } from '@/data/media/mediaAdminApi';
 import { useAdminAuth } from '@/data/media/useAdminAuth';
 import {
+  MEDIA_PLATFORM_LINK_LABELS,
+  MEDIA_PLATFORM_LINK_KEYS,
+} from '@/data/mediaDirectory/mediaPlatformLinks';
+import {
   resolveConferenceBadgeLabel,
   resolveTeamBadgeLabel,
 } from '@/data/mediaDirectory/mediaScopeBadge';
@@ -180,8 +184,19 @@ export default function DeveloperMediaSuggestionsScreen() {
 
         return (
           <View key={row.id} style={styles.card}>
-            <Text style={styles.title}>{row.provider.toUpperCase()}</Text>
-            <Text style={styles.meta}>{row.submitted_url}</Text>
+            <Text style={styles.title}>{row.name?.trim() || row.provider.toUpperCase()}</Text>
+            {MEDIA_PLATFORM_LINK_KEYS.map((key) => {
+              const url = row.platformLinks[key];
+              if (!url) return null;
+              return (
+                <Text key={key} style={styles.meta}>
+                  {MEDIA_PLATFORM_LINK_LABELS[key]}: {url}
+                </Text>
+              );
+            })}
+            {!Object.keys(row.platformLinks).length ? (
+              <Text style={styles.meta}>{row.submitted_url}</Text>
+            ) : null}
             <Text style={styles.meta}>National: {draft.isNational ? 'Yes' : 'No'}</Text>
             <Text style={styles.meta}>
               Conferences: {formatConferenceList(draft.conferenceIds)}

@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,36 +27,48 @@ import {
   type MediaBrowseFilter,
   type MediaBrowseTeamOption,
 } from '@/data/mediaDirectory/mediaBrowse';
+import {
+  createEmptyMediaLinkRow,
+  type MediaLinkRowInput,
+} from '@/data/mediaDirectory/mediaLinkRows';
+import {
+  MEDIA_PLATFORM_LINK_KEYS,
+  MEDIA_PLATFORM_LINK_LABELS,
+  MEDIA_PLATFORM_LINK_PLACEHOLDERS,
+  type MediaPlatformLinkKey,
+} from '@/data/mediaDirectory/mediaPlatformLinks';
+import { buildMediaSuggestionCoverageLabels } from '@/data/mediaDirectory/mediaSuggestionCoverageLabels';
 import { submitMediaSuggestion } from '@/data/mediaDirectory/mediaSuggestionsApi';
+import type { MediaSuggestionFieldErrors } from '@/data/mediaDirectory/mediaSourceValidation';
 import {
   MONTANA_ESPN_TEAM_ID,
   MONTANA_STATE_ESPN_TEAM_ID,
   MONTANA_STATE_TEAM_NAME,
   MONTANA_TEAM_NAME,
-  type MediaSuggestionProvider,
 } from '@/data/mediaDirectory/types';
+import { debugLogSupabaseConfig } from '@/data/notifications/supabaseClient';
 import { getAllCachedEspnGames } from '@/data/teams/teamGamesStore';
 import { colors, spacing, typography } from '@/theme';
-
-const PROVIDERS: { id: MediaSuggestionProvider; label: string }[] = [
-  { id: 'spotify', label: 'Spotify' },
-  { id: 'youtube', label: 'YouTube' },
-  { id: 'x', label: 'X' },
-];
 
 export default function SuggestFcsMediaScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { favorites } = useFavoriteTeams();
 
-  const [provider, setProvider] = useState<MediaSuggestionProvider | null>(null);
-  const [submittedUrl, setSubmittedUrl] = useState('');
+  const [name, setName] = useState('');
+  const [submitterEmail, setSubmitterEmail] = useState('');
+  const [linkRows, setLinkRows] = useState<MediaLinkRowInput[]>([createEmptyMediaLinkRow(0)]);
   const [coverage, setCoverage] = useState<MediaBrowseFilter>(createEmptyMediaBrowseFilter);
   const [coverageOpen, setCoverageOpen] = useState(false);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<MediaSuggestionFieldErrors>({});
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    debugLogSupabaseConfig('SuggestFcsMediaScreen.mount');
+  }, []);
 
   const conferences = useMemo(() => getMediaBrowseConferenceOptions(), []);
 
@@ -64,24 +78,59 @@ export default function SuggestFcsMediaScreen() {
     byId.set(MONTANA_ESPN_TEAM_ID, MONTANA_TEAM_NAME);
     for (const favorite of favorites) {
       const id = (favorite.espnTeamId ?? favorite.key)?.trim();
-      const name = favorite.name?.trim();
-      if (id && name && !byId.has(id)) byId.set(id, name);
+      const favoriteName = favorite.name?.trim();
+      if (id && favoriteName && !byId.has(id)) byId.set(id, favoriteName);
     }
     for (const team of buildMediaBrowseTeamOptions([], getAllCachedEspnGames())) {
       if (!byId.has(team.id)) byId.set(team.id, team.name);
     }
     return [...byId.entries()]
-      .map(([id, name]) => ({ id, name }))
+      .map(([id, teamName]) => ({ id, name: teamName }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   }, [favorites, coverageOpen]);
 
   const coverageChips = useMemo(() => getMediaBrowseChips(coverage), [coverage]);
 
+  function updateLinkRow(index: number, patch: Partial<MediaLinkRowInput>) {
+    setLinkRows((current) =>
+      current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)),
+    );
+    setFieldErrors((current) => {
+      const next = { ...current };
+      delete next.links;
+      delete next[`links.${index}.url`];
+      delete next[`links.${index}.platform`];
+      return next;
+    });
+  }
+
+  function addLinkRow() {
+    setLinkRows((current) => [...current, createEmptyMediaLinkRow(current.length)]);
+  }
+
+  function removeLinkRow(index: number) {
+    setLinkRows((current) => {
+      if (current.length <= 1) {
+        return [createEmptyMediaLinkRow(0)];
+      }
+      return current
+        .filter((_, rowIndex) => rowIndex !== index)
+        .map((row, sortOrder) => ({ ...row, sortOrder }));
+    });
+    setFieldErrors((current) => {
+      const next = { ...current };
+      delete next.links;
+      return next;
+    });
+  }
+
   function resetForm() {
-    setProvider(null);
-    setSubmittedUrl('');
+    setName('');
+    setSubmitterEmail('');
+    setLinkRows([createEmptyMediaLinkRow(0)]);
     setCoverage(createEmptyMediaBrowseFilter());
     setNotes('');
+    setFieldErrors({});
   }
 
   async function handleSubmit() {
@@ -89,20 +138,27 @@ export default function SuggestFcsMediaScreen() {
     setSubmitting(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+    setFieldErrors({});
     try {
       const mapped = mediaBrowseFilterToCoverage(coverage);
-      const trimmedNotes = notes.trim() || null;
       const result = await submitMediaSuggestion({
-        provider: provider ?? undefined,
-        submittedUrl,
+        name,
+        submitterEmail,
+        linkRows,
         isNational: mapped.isNational,
         conferenceIds: mapped.conferenceIds,
         teamIds: mapped.teamIds,
-        notes: trimmedNotes,
+        notes: notes.trim() || null,
         coverageLabel: formatMediaBrowseCoverageLabel(coverage) || undefined,
+        coverageLabels: buildMediaSuggestionCoverageLabels(coverage),
       });
       if (!result.ok) {
-        setErrorMessage(result.error);
+        if (result.fieldErrors && Object.keys(result.fieldErrors).length > 0) {
+          setFieldErrors(result.fieldErrors);
+        }
+        if (result.error?.trim()) {
+          setErrorMessage(result.error.trim());
+        }
         return;
       }
       resetForm();
@@ -120,89 +176,213 @@ export default function SuggestFcsMediaScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Suggest FCS Media', headerBackTitle: 'Back' }} />
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: Math.max(insets.bottom, spacing.xxl) },
-        ]}
-        keyboardShouldPersistTaps="handled">
-        <Text style={styles.heading}>Suggest FCS Media</Text>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: Math.max(insets.bottom, spacing.xxl) + spacing.xl },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
+          <Text style={styles.heading}>Suggest FCS Media</Text>
 
-        <Text style={styles.label}>What are you sharing?</Text>
-        <View style={styles.chipRow}>
-          {PROVIDERS.map((option) => (
-            <Chip
-              key={option.id}
-              label={option.label}
-              selected={provider === option.id}
-              onPress={() => setProvider(option.id)}
-            />
-          ))}
-        </View>
-
-        <Text style={styles.label}>Link</Text>
-        <TextInput
-          value={submittedUrl}
-          onChangeText={setSubmittedUrl}
-          placeholder="https://"
-          placeholderTextColor={colors.textMuted}
-          autoCapitalize="none"
-          keyboardType="url"
-          style={styles.input}
-        />
-
-        <Text style={styles.label}>Coverage Tags</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Select coverage tags"
-          onPress={() => setCoverageOpen(true)}
-          style={({ pressed }) => [styles.coverageTrigger, pressed && styles.pressed]}>
-          <Text style={styles.coverageTriggerText}>Select coverage</Text>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-        </Pressable>
-
-        {coverageChips.length > 0 ? (
-          <MediaBrowseFilterChips
-            chips={coverageChips}
-            onRemove={(chip) => setCoverage((current) => removeMediaBrowseChip(current, chip))}
+          <Text style={styles.label}>Creator or Podcast Name</Text>
+          <TextInput
+            value={name}
+            onChangeText={(value) => {
+              setName(value);
+              setFieldErrors((current) => {
+                if (!current.name) return current;
+                const next = { ...current };
+                delete next.name;
+                return next;
+              });
+            }}
+            placeholder="e.g. Bobcat Insider Podcast"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="words"
+            style={styles.input}
           />
-        ) : (
-          <Text style={styles.hint}>Choose at least one coverage tag</Text>
-        )}
+          {fieldErrors.name ? <Text style={styles.fieldError}>{fieldErrors.name}</Text> : null}
 
-        <Text style={styles.label}>Notes</Text>
-        <TextInput
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="Optional"
-          placeholderTextColor={colors.textMuted}
-          multiline
-          style={[styles.input, styles.inputMultiline]}
-        />
+          <Text style={styles.label}>Your Email</Text>
+          <Text style={styles.hint}>Used only if we need clarification about your suggestion.</Text>
+          <TextInput
+            value={submitterEmail}
+            onChangeText={(value) => {
+              setSubmitterEmail(value);
+              setFieldErrors((current) => {
+                if (!current.submitterEmail) return current;
+                const next = { ...current };
+                delete next.submitterEmail;
+                return next;
+              });
+            }}
+            placeholder="you@example.com"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            textContentType="emailAddress"
+            autoComplete="email"
+            style={styles.input}
+          />
+          {fieldErrors.submitterEmail ? (
+            <Text style={styles.fieldError}>{fieldErrors.submitterEmail}</Text>
+          ) : null}
 
-        {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-        {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
+          <Text style={styles.label}>Platform Links</Text>
+          <Text style={styles.hint}>
+            Add at least one link. You can add multiple YouTube, Spotify, or other links.
+          </Text>
 
-        <Pressable
-          disabled={submitting}
-          onPress={() => void handleSubmit()}
-          style={({ pressed }) => [
-            styles.submitButton,
-            (pressed || submitting) && styles.pressed,
-          ]}>
-          {submitting ? (
-            <ActivityIndicator color={colors.background} />
+          {linkRows.map((row, index) => (
+            <View key={`link-${index}`} style={styles.linkCard}>
+              <View style={styles.linkCardHeader}>
+                <Text style={styles.linkLabel}>Link {index + 1}</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove link ${index + 1}`}
+                  onPress={() => removeLinkRow(index)}
+                  hitSlop={8}
+                  style={({ pressed }) => [styles.removeLink, pressed && styles.pressed]}>
+                  <Text style={styles.removeLinkText}>Remove</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.linkLabel}>Platform</Text>
+              <View style={styles.platformChips}>
+                {MEDIA_PLATFORM_LINK_KEYS.map((key) => {
+                  const selected = (row.platform || 'website') === key;
+                  return (
+                    <Pressable
+                      key={key}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      onPress={() => updateLinkRow(index, { platform: key })}
+                      style={({ pressed }) => [
+                        styles.platformChip,
+                        selected && styles.platformChipOn,
+                        pressed && styles.pressed,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.platformChipText,
+                          selected && styles.platformChipTextOn,
+                        ]}>
+                        {MEDIA_PLATFORM_LINK_LABELS[key]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {fieldErrors[`links.${index}.platform`] ? (
+                <Text style={styles.fieldError}>{fieldErrors[`links.${index}.platform`]}</Text>
+              ) : null}
+
+              <Text style={styles.linkLabel}>Label (optional)</Text>
+              <TextInput
+                value={row.label ?? ''}
+                onChangeText={(value) => updateLinkRow(index, { label: value })}
+                placeholder="e.g. Main Channel"
+                placeholderTextColor={colors.textMuted}
+                style={styles.input}
+              />
+
+              <Text style={styles.linkLabel}>URL</Text>
+              <TextInput
+                value={row.url ?? ''}
+                onChangeText={(value) => updateLinkRow(index, { url: value })}
+                placeholder={
+                  MEDIA_PLATFORM_LINK_PLACEHOLDERS[
+                    ((row.platform || 'website') as MediaPlatformLinkKey)
+                  ]
+                }
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                style={styles.input}
+              />
+              {fieldErrors[`links.${index}.url`] ? (
+                <Text style={styles.fieldError}>{fieldErrors[`links.${index}.url`]}</Text>
+              ) : null}
+            </View>
+          ))}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Add another link"
+            onPress={addLinkRow}
+            style={({ pressed }) => [styles.addLinkButton, pressed && styles.pressed]}>
+            <Ionicons name="add" size={18} color={colors.primary} />
+            <Text style={styles.addLinkText}>Add Another Link</Text>
+          </Pressable>
+          {fieldErrors.links ? <Text style={styles.fieldError}>{fieldErrors.links}</Text> : null}
+
+          <Text style={styles.label}>Coverage Tags</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Select coverage tags"
+            onPress={() => setCoverageOpen(true)}
+            style={({ pressed }) => [styles.coverageTrigger, pressed && styles.pressed]}>
+            <Text style={styles.coverageTriggerText}>Select coverage</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </Pressable>
+
+          {coverageChips.length > 0 ? (
+            <MediaBrowseFilterChips
+              chips={coverageChips}
+              onRemove={(chip) => {
+                setCoverage((current) => removeMediaBrowseChip(current, chip));
+                setFieldErrors((current) => {
+                  if (!current.coverage) return current;
+                  const next = { ...current };
+                  delete next.coverage;
+                  return next;
+                });
+              }}
+            />
           ) : (
-            <Text style={styles.submitText}>Submit for Review</Text>
+            <Text style={styles.hint}>Choose at least one coverage tag</Text>
           )}
-        </Pressable>
+          {fieldErrors.coverage ? (
+            <Text style={styles.fieldError}>{fieldErrors.coverage}</Text>
+          ) : null}
 
-        <View style={styles.applePlaceholder}>
-          <Text style={styles.appleTitle}>Apple Podcasts</Text>
-          <Text style={styles.appleSub}>Coming with iPhone app</Text>
-        </View>
-      </ScrollView>
+          <Text style={styles.label}>Notes</Text>
+          <TextInput
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="Optional"
+            placeholderTextColor={colors.textMuted}
+            multiline
+            style={[styles.input, styles.inputMultiline]}
+          />
+
+          {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+          {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
+
+          <Pressable
+            disabled={submitting}
+            onPress={() => void handleSubmit()}
+            style={({ pressed }) => [
+              styles.submitButton,
+              (pressed || submitting) && styles.pressed,
+            ]}>
+            {submitting ? (
+              <ActivityIndicator color={colors.background} />
+            ) : (
+              <Text style={styles.submitText}>Submit for Review</Text>
+            )}
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <MediaBrowseSheet
         visible={coverageOpen}
@@ -217,32 +397,50 @@ export default function SuggestFcsMediaScreen() {
   );
 }
 
-function Chip({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: selected }}
-      onPress={onPress}
-      style={[styles.chip, selected && styles.chipSelected]}>
-      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
+  flex: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, gap: spacing.sm },
   heading: { ...typography.heading, color: colors.text, marginBottom: spacing.xs },
-  label: { ...typography.caption, color: colors.textMuted, fontWeight: '600' },
+  label: { ...typography.caption, color: colors.textMuted, fontWeight: '600', marginTop: spacing.xs },
   hint: { ...typography.caption, color: colors.textMuted },
+  linkCard: {
+    gap: 6,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: spacing.sm + 2,
+    marginTop: spacing.xs,
+  },
+  linkCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  linkLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
+  removeLink: { paddingVertical: 4, paddingHorizontal: 4 },
+  removeLinkText: { ...typography.caption, color: colors.error, fontWeight: '600' },
+  platformChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  platformChip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: colors.surfaceElevated,
+  },
+  platformChipOn: { borderColor: colors.primary },
+  platformChipText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
+  platformChipTextOn: { color: colors.primary },
+  addLinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 40,
+    marginTop: spacing.xs,
+  },
+  addLinkText: { ...typography.body, fontWeight: '600', color: colors.primary },
   input: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -254,18 +452,6 @@ const styles = StyleSheet.create({
     ...typography.body,
   },
   inputMultiline: { minHeight: 88, textAlignVertical: 'top' },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  chip: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: 999,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  chipSelected: { borderColor: colors.primary, backgroundColor: colors.primaryMuted },
-  chipText: { ...typography.caption, color: colors.textSecondary },
-  chipTextSelected: { color: colors.background, fontWeight: '700' },
   coverageTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -293,17 +479,7 @@ const styles = StyleSheet.create({
   },
   submitText: { ...typography.body, color: colors.background, fontWeight: '700' },
   pressed: { opacity: 0.85 },
+  fieldError: { ...typography.caption, color: colors.error },
   error: { ...typography.caption, color: colors.error },
   success: { ...typography.caption, color: colors.primary },
-  applePlaceholder: {
-    marginTop: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: spacing.md,
-    backgroundColor: colors.surface,
-    opacity: 0.7,
-  },
-  appleTitle: { ...typography.body, color: colors.textMuted, fontWeight: '700' },
-  appleSub: { ...typography.caption, color: colors.textMuted },
 });

@@ -3,23 +3,36 @@ import {
   getSupabaseClient,
   getSupabaseUrl,
 } from '@/data/notifications/supabaseClient';
-import { validateMediaSuggestionInput } from '@/data/mediaDirectory/mediaSourceValidation';
+import { normalizeMediaPlatformLinks } from '@/data/mediaDirectory/mediaPlatformLinks';
+import { buildMediaSuggestionNotifyPayload } from '@/data/mediaDirectory/mediaSuggestionNotifyEmail';
+import type { MediaLinkRowInput } from '@/data/mediaDirectory/mediaLinkRows';
+import {
+  buildSubmitMediaSuggestionRpcPayload,
+  isLegacyMediaSuggestionProviderError,
+  type MediaSuggestionFieldErrors,
+  validateMediaSuggestionInput,
+} from '@/data/mediaDirectory/mediaSourceValidation';
 import type {
   MediaSourceScope,
   MediaSuggestion,
   MediaSuggestionInput,
-  MediaSuggestionProvider,
   MediaSuggestionStatus,
 } from '@/data/mediaDirectory/types';
 
 export type SubmitMediaSuggestionResult =
   | { ok: true; id: string; emailSent?: boolean }
-  | { ok: false; error: string };
+  | { ok: false; error: string; fieldErrors?: MediaSuggestionFieldErrors };
+
+export type SubmitMediaSuggestionClientInput = Partial<MediaSuggestionInput> & {
+  linkRows?: MediaLinkRowInput[];
+};
 
 type SuggestionRow = {
   id: string;
-  provider: MediaSuggestionProvider;
+  name?: string | null;
+  provider: string;
   submitted_url: string;
+  platform_links?: Record<string, string> | null;
   scope: MediaSourceScope;
   conference_id: string | null;
   team_id: string | null;
@@ -51,11 +64,19 @@ function mapSuggestion(row: SuggestionRow): MediaSuggestion {
   const conferenceIds = uniqueIds([...(row.conference_ids ?? []), row.conference_id]);
   const isNational =
     typeof row.is_national === 'boolean' ? row.is_national : row.scope === 'national';
+  const platformLinks = normalizeMediaPlatformLinks(
+    (row.platform_links as Record<string, string> | null | undefined) ??
+      (row.provider && row.submitted_url
+        ? { [row.provider]: row.submitted_url }
+        : {}),
+  );
 
   return {
     id: row.id,
+    name: row.name?.trim() || null,
     provider: row.provider,
     submitted_url: row.submitted_url,
+    platformLinks,
     scope: row.scope,
     conference_id: row.conference_id,
     team_id: row.team_id,
@@ -72,20 +93,59 @@ function mapSuggestion(row: SuggestionRow): MediaSuggestion {
 }
 
 /**
+ * Ask the Edge Function to email the owner from the saved suggestion row.
+ * Failures are logged server-side; the client always treats notify as best-effort.
+ */
+async function notifyMediaSuggestionOwner(
+  suggestionId: string,
+  coverageLabels?: MediaSuggestionInput['coverageLabels'],
+): Promise<boolean> {
+  const baseUrl = getSupabaseUrl();
+  const anonKey = getSupabaseAnonKey();
+  if (!baseUrl || !anonKey) return false;
+
+  try {
+    const response = await fetch(`${baseUrl}/functions/v1/submit-media-suggestion`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${anonKey}`,
+        apikey: anonKey,
+      },
+      body: JSON.stringify(
+        buildMediaSuggestionNotifyPayload(suggestionId, coverageLabels ?? null),
+      ),
+    });
+
+    let payload: { emailSent?: boolean } = {};
+    try {
+      payload = (await response.json()) as typeof payload;
+    } catch {
+      return false;
+    }
+    return Boolean(payload.emailSent);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Public FCS Media suggestion.
- * Uses the shared Supabase client / EXPO_PUBLIC_* config (same as the rest of the app).
- * Prefers the edge function (save + owner email); falls back to RPC save when needed.
- * Edge Function / email failures never produce the “not configured” message.
+ * 1) Save via RPC (source of truth)
+ * 2) Best-effort Edge Function notify-by-id (Resend), never failing the save
  */
 export async function submitMediaSuggestion(
-  input: Partial<MediaSuggestionInput>,
+  input: SubmitMediaSuggestionClientInput,
 ): Promise<SubmitMediaSuggestionResult> {
   const validated = validateMediaSuggestionInput(input);
   if (!validated.ok) {
-    return { ok: false, error: validated.errors.join(' ') };
+    return {
+      ok: false,
+      error: '',
+      fieldErrors: validated.fieldErrors,
+    };
   }
 
-  // Same configuration gate as mediaSourcesApi / notifications / admin.
   const client = getSupabaseClient();
   if (!client) {
     return {
@@ -95,77 +155,25 @@ export async function submitMediaSuggestion(
   }
 
   const value = validated.value;
-  const baseUrl = getSupabaseUrl();
-  const anonKey = getSupabaseAnonKey();
-
-  if (baseUrl && anonKey) {
-    try {
-      const response = await fetch(`${baseUrl}/functions/v1/submit-media-suggestion`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${anonKey}`,
-          apikey: anonKey,
-        },
-        body: JSON.stringify({
-          provider: value.provider,
-          submitted_url: value.submittedUrl,
-          is_national: value.isNational,
-          conference_ids: value.conferenceIds,
-          team_ids: value.teamIds,
-          notes: value.notes ?? null,
-          coverage_label: value.coverageLabel ?? null,
-        }),
-      });
-
-      let payload: {
-        ok?: boolean;
-        id?: string;
-        suggestionId?: string;
-        emailSent?: boolean;
-        error?: string;
-      } = {};
-      try {
-        payload = (await response.json()) as typeof payload;
-      } catch {
-        // fall through to RPC
-      }
-
-      if (response.ok) {
-        const id = payload.id ?? payload.suggestionId;
-        if (id) {
-          return { ok: true, id: String(id), emailSent: Boolean(payload.emailSent) };
-        }
-      }
-
-      // Validation errors from the function (not “missing function”)
-      if (
-        response.status >= 400 &&
-        response.status < 500 &&
-        response.status !== 404 &&
-        payload.error
-      ) {
-        return { ok: false, error: payload.error };
-      }
-    } catch {
-      // Network / function unavailable — fall through to shared-client RPC.
-    }
-  }
-
-  const { data, error } = await client.rpc('submit_media_suggestion', {
-    p_provider: value.provider,
-    p_submitted_url: value.submittedUrl,
-    p_is_national: value.isNational,
-    p_conference_ids: value.conferenceIds,
-    p_team_ids: value.teamIds,
-    p_notes: value.notes ?? null,
-  });
+  const { data, error } = await client.rpc(
+    'submit_media_suggestion',
+    buildSubmitMediaSuggestionRpcPayload(value),
+  );
 
   if (error) {
+    if (isLegacyMediaSuggestionProviderError(error.message)) {
+      return {
+        ok: false,
+        error: '',
+        fieldErrors: { links: 'Add at least one link.' },
+      };
+    }
     return { ok: false, error: error.message };
   }
 
-  return { ok: true, id: String(data), emailSent: false };
+  const id = String(data);
+  const emailSent = await notifyMediaSuggestionOwner(id, value.coverageLabels);
+  return { ok: true, id, emailSent };
 }
 
 export async function adminListMediaSuggestions(
