@@ -13,7 +13,9 @@ import {
   ConferenceViewTabs,
   type ConferenceViewTabId,
 } from '@/components/conferences/ConferenceViewTabs';
+import { ConferenceMediaSection } from '@/components/media/ConferenceMediaSection';
 import { Screen } from '@/components/Screen';
+import { getConferenceMetadata } from '@/data/conferences/conferenceList';
 import { useSelectedConference } from '@/data/conferences/SelectedConferenceContext';
 import { useConferenceStandings } from '@/data/conferences/useConferenceStandings';
 import { useConferenceWeekSchedule } from '@/data/conferences/useConferenceWeekSchedule';
@@ -27,6 +29,8 @@ import type { ScheduleWeekId } from '@/types';
 
 export default function ConferencesScreen() {
   const { selectedConference, setSelectedConference } = useSelectedConference();
+  const conferenceLabel =
+    getConferenceMetadata(selectedConference)?.displayName ?? selectedConference;
   const [activeView, setActiveView] = useState<ConferenceViewTabId>('schedule');
   const [selectedWeek, setSelectedWeek] = useState<ScheduleWeekId>('week-1');
   const standings = useConferenceStandings(selectedConference);
@@ -130,6 +134,10 @@ export default function ConferencesScreen() {
           colors={[colors.primary]}
         />
       }>
+      <ConferenceMediaSection
+        conferenceId={selectedConference}
+        conferenceName={conferenceLabel}
+      />
       {activeView === 'schedule' ? (
         <ConferenceScheduleSection schedule={schedule} />
       ) : (

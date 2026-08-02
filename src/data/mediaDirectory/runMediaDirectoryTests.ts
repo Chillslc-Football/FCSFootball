@@ -7,6 +7,31 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  CONTEXTUAL_MEDIA_INLINE_LIMIT,
+  SUGGEST_MEDIA_A11Y_LABEL,
+  buildConferenceBrowseFilter,
+  buildSuggestMediaHref,
+  buildTeamBrowseFilter,
+  getMediaCreatorInitials,
+  resolveSuggestCoverageFromParams,
+  selectConferenceContextualMedia,
+  selectTeamContextualMedia,
+} from '@/data/mediaDirectory/contextualMedia';
+import {
+  buildDiscoverBrowseFilterFromHandoff,
+  buildDiscoverMediaBrowseSeed,
+  queueDiscoverMediaHandoff,
+  resetDiscoverMediaHandoffForTests,
+  resolveDiscoverMediaHandoffFromParams,
+  takeDiscoverMediaHandoff,
+} from '@/data/mediaDirectory/discoverMediaHandoff';
+import {
+  buildDiscoverConferenceMediaHref,
+  buildDiscoverTeamMediaHref,
+  prepareDiscoverConferenceMediaNavigation,
+  prepareDiscoverTeamMediaNavigation,
+} from '@/data/mediaDirectory/discoverMediaNavigation';
+import {
   buildMediaBrowseTeamOptions,
   createEmptyMediaBrowseFilter,
   filterMediaBrowseTeams,
@@ -200,6 +225,48 @@ test('approved seeds that previously lacked artwork now have https logo_url', ()
       `${name} should resolve https artwork`,
     );
   }
+});
+
+test('restore media source logos migration fills blank logos only', () => {
+  const migration = readFileSync(
+    path.resolve(
+      process.cwd(),
+      'supabase/migrations/20260802140000_restore_media_source_logos.sql',
+    ),
+    'utf8',
+  );
+
+  assert.match(migration, /nullif\(trim\(coalesce\(s\.logo_url, ''\)\), ''\) is null/);
+  assert.match(migration, /logo_url = coalesce\(v_logo, logo_url\)/);
+  assert.match(migration, /Preserve existing artwork when admin leaves the artwork field blank/);
+  assert.match(migration, /Preserve existing source artwork when suggestion has no logo/);
+  assert.match(migration, /trim\(logo_url\) = ''/);
+
+  const approvedWithArtwork = MEDIA_SOURCE_SEEDS.filter(
+    (source) => source.is_approved && resolveMediaArtworkUrl(source),
+  );
+  assert.equal(approvedWithArtwork.length, 15);
+
+  for (const source of approvedWithArtwork) {
+    assert.match(
+      migration,
+      new RegExp(source.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      `migration missing ${source.name}`,
+    );
+    const logo = resolveMediaArtworkUrl(source)!;
+    assert.match(
+      migration,
+      new RegExp(logo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      `migration missing logo for ${source.name}`,
+    );
+  }
+
+  // Unapproved seed without artwork must not be invented in the restore migration.
+  const delivered = MEDIA_SOURCE_SEEDS.find((source) => source.name === 'FCS Delivered');
+  assert.ok(delivered);
+  assert.equal(delivered!.is_approved, false);
+  assert.equal(resolveMediaArtworkUrl(delivered!), null);
+  assert.equal(migration.includes('FCS Delivered'), false);
 });
 
 test('suggestion validation requires name, coverage, and at least one link', () => {
@@ -1319,6 +1386,378 @@ test('browse team and conference option lists are searchable / alphabetical', ()
       a.localeCompare(b, undefined, { sensitivity: 'base' }),
     ),
   );
+});
+
+test('team contextual media orders exact team, conference, then national without duplicates', () => {
+  const teamExact = baseSource({
+    id: 'ctx-team-exact',
+    name: 'Zebra Team Show',
+    teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+    isNational: false,
+    logo_url: 'https://example.com/team.png',
+    spotify_url: 'https://open.spotify.com/show/team',
+    youtube_url: 'https://youtube.com/@team',
+  });
+  const teamAndConf = baseSource({
+    id: 'ctx-team-and-conf',
+    name: 'Alpha Dual Show',
+    teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+    conferenceIds: ['big-sky'],
+    isNational: false,
+  });
+  const conferenceOnly = baseSource({
+    id: 'ctx-conf-only',
+    name: 'Mid Conference Show',
+    conferenceIds: ['big-sky'],
+    isNational: false,
+  });
+  const national = baseSource({
+    id: 'ctx-national',
+    name: 'National Wide Show',
+    isNational: true,
+    scope: 'national',
+  });
+  const otherTeam = baseSource({
+    id: 'ctx-other-team',
+    name: 'Other Team Only',
+    teamIds: [MONTANA_ESPN_TEAM_ID],
+    isNational: false,
+  });
+  const unapproved = baseSource({
+    id: 'ctx-unapproved',
+    name: 'Pending Creator',
+    teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+    is_approved: false,
+  });
+
+  const ordered = selectTeamContextualMedia(
+    [national, conferenceOnly, otherTeam, unapproved, teamExact, teamAndConf],
+    { teamId: MONTANA_STATE_ESPN_TEAM_ID, conferenceId: 'big-sky' },
+  );
+
+  assert.deepEqual(
+    ordered.map((source) => source.id),
+    ['ctx-team-and-conf', 'ctx-team-exact', 'ctx-conf-only', 'ctx-national'],
+  );
+  assert.equal(new Set(ordered.map((source) => source.id)).size, ordered.length);
+  assert.ok(!ordered.some((source) => source.id === 'ctx-other-team'));
+  assert.ok(!ordered.some((source) => source.id === 'ctx-unapproved'));
+
+  // Artwork and repeated links preserved on exact match.
+  assert.equal(ordered.find((source) => source.id === 'ctx-team-exact')?.logo_url, teamExact.logo_url);
+  assert.equal(ordered.find((source) => source.id === 'ctx-team-exact')?.links.length, 2);
+
+  const limited = selectTeamContextualMedia(
+    [national, conferenceOnly, teamExact, teamAndConf],
+    { teamId: MONTANA_STATE_ESPN_TEAM_ID, conferenceId: 'big-sky', limit: 2 },
+  );
+  assert.equal(limited.length, 2);
+  assert.deepEqual(
+    limited.map((source) => source.id),
+    ['ctx-team-and-conf', 'ctx-team-exact'],
+  );
+});
+
+test('team contextual media empty when no relevant creators', () => {
+  const sources = [
+    baseSource({
+      id: 'ctx-empty-other',
+      name: 'Other',
+      teamIds: [MONTANA_ESPN_TEAM_ID],
+      isNational: false,
+    }),
+  ];
+  assert.deepEqual(
+    selectTeamContextualMedia(sources, {
+      teamId: MONTANA_STATE_ESPN_TEAM_ID,
+      conferenceId: 'mvfc',
+    }),
+    [],
+  );
+});
+
+test('conference contextual media includes conference + national, excludes team-only', () => {
+  const conferenceTagged = baseSource({
+    id: 'conf-tagged',
+    name: 'Big Sky Radio',
+    conferenceIds: ['big-sky'],
+    isNational: false,
+  });
+  const teamOnlyInConference = baseSource({
+    id: 'conf-team-only',
+    name: 'Bobcat Only Pod',
+    teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+    isNational: false,
+  });
+  const national = baseSource({
+    id: 'conf-national',
+    name: 'National FCS Hour',
+    isNational: true,
+    scope: 'national',
+  });
+  const otherConference = baseSource({
+    id: 'conf-other',
+    name: 'MVFC Weekly',
+    conferenceIds: ['mvfc'],
+    isNational: false,
+  });
+
+  const ordered = selectConferenceContextualMedia(
+    [national, teamOnlyInConference, otherConference, conferenceTagged],
+    { conferenceId: 'big-sky' },
+  );
+
+  assert.deepEqual(
+    ordered.map((source) => source.id),
+    ['conf-tagged', 'conf-national'],
+  );
+  assert.ok(!ordered.some((source) => source.id === 'conf-team-only'));
+  assert.ok(!ordered.some((source) => source.id === 'conf-other'));
+
+  assert.deepEqual(selectConferenceContextualMedia([], { conferenceId: 'big-sky' }), []);
+  assert.deepEqual(
+    selectConferenceContextualMedia([conferenceTagged], { conferenceId: 'not-a-conference' }),
+    [],
+  );
+});
+
+test('suggest media route helpers validate IDs and preselect coverage without National', () => {
+  const teamHref = buildSuggestMediaHref({
+    teamId: MONTANA_STATE_ESPN_TEAM_ID,
+    teamName: 'Montana State',
+    conferenceId: 'big-sky',
+    conferenceName: 'Big Sky',
+  });
+  assert.deepEqual(teamHref, {
+    pathname: '/suggest-fcs-media',
+    params: {
+      teamId: MONTANA_STATE_ESPN_TEAM_ID,
+      teamName: 'Montana State',
+      conferenceId: 'big-sky',
+      conferenceName: 'Big Sky',
+    },
+  });
+
+  const badHref = buildSuggestMediaHref({
+    teamId: 'not-numeric',
+    conferenceId: 'fake-conf',
+  });
+  assert.equal(badHref, '/suggest-fcs-media');
+
+  const teamCoverage = resolveSuggestCoverageFromParams({
+    teamId: MONTANA_STATE_ESPN_TEAM_ID,
+    teamName: 'Montana State',
+    conferenceId: 'big-sky',
+    conferenceName: 'Big Sky',
+  });
+  assert.equal(teamCoverage.national, false);
+  assert.deepEqual(
+    teamCoverage.teams.map((team) => team.id),
+    [MONTANA_STATE_ESPN_TEAM_ID],
+  );
+  assert.deepEqual(
+    teamCoverage.conferences.map((conference) => conference.id),
+    ['big-sky'],
+  );
+
+  const chips = getMediaBrowseChips(teamCoverage);
+  assert.ok(chips.some((chip) => chip.kind === 'team'));
+  assert.ok(chips.some((chip) => chip.kind === 'conference'));
+  assert.ok(!chips.some((chip) => chip.kind === 'national'));
+
+  const afterRemoveTeam = removeMediaBrowseChip(teamCoverage, chips.find((chip) => chip.kind === 'team')!);
+  assert.equal(afterRemoveTeam.teams.length, 0);
+  assert.equal(afterRemoveTeam.conferences.length, 1);
+
+  const conferenceCoverage = resolveSuggestCoverageFromParams({
+    conferenceId: 'big-sky',
+    conferenceName: 'Big Sky',
+  });
+  assert.equal(conferenceCoverage.national, false);
+  assert.equal(conferenceCoverage.teams.length, 0);
+  assert.deepEqual(
+    conferenceCoverage.conferences.map((conference) => conference.id),
+    ['big-sky'],
+  );
+
+  const ignored = resolveSuggestCoverageFromParams({
+    teamId: 'abc',
+    conferenceId: 'nope',
+  });
+  assert.deepEqual(ignored, createEmptyMediaBrowseFilter());
+});
+
+test('view all media hrefs open Discover with the correct active filter', () => {
+  resetDiscoverMediaHandoffForTests();
+
+  const teamHref = buildDiscoverTeamMediaHref(MONTANA_STATE_ESPN_TEAM_ID, 'Montana State');
+  assert.deepEqual(teamHref, {
+    pathname: '/(tabs)/news',
+    params: {
+      section: 'media',
+      teamId: MONTANA_STATE_ESPN_TEAM_ID,
+      teamName: 'Montana State',
+    },
+  });
+
+  const preparedTeam = prepareDiscoverTeamMediaNavigation(
+    MONTANA_STATE_ESPN_TEAM_ID,
+    'Montana State',
+  );
+  assert.deepEqual(preparedTeam, teamHref);
+  const teamHandoff = takeDiscoverMediaHandoff();
+  assert.ok(teamHandoff);
+  const teamSeed = buildDiscoverMediaBrowseSeed(teamHandoff!);
+  assert.equal(teamSeed.filter.national, false);
+  assert.deepEqual(
+    teamSeed.filter.teams.map((team) => team.id),
+    [MONTANA_STATE_ESPN_TEAM_ID],
+  );
+  assert.equal(teamSeed.filter.conferences.length, 0);
+  assert.ok(getMediaBrowseChips(teamSeed.filter).some((chip) => chip.kind === 'team'));
+
+  const badTeamHref = buildDiscoverTeamMediaHref('slug-team', 'Slug');
+  assert.deepEqual(badTeamHref, {
+    pathname: '/(tabs)/news',
+    params: { section: 'media' },
+  });
+
+  const conferenceHref = buildDiscoverConferenceMediaHref('big-sky', 'Big Sky');
+  assert.deepEqual(conferenceHref, {
+    pathname: '/(tabs)/news',
+    params: {
+      section: 'media',
+      conferenceId: 'big-sky',
+      conferenceName: 'Big Sky',
+    },
+  });
+
+  const preparedConference = prepareDiscoverConferenceMediaNavigation('big-sky', 'Big Sky');
+  assert.deepEqual(preparedConference, conferenceHref);
+  const conferenceHandoff = takeDiscoverMediaHandoff();
+  assert.ok(conferenceHandoff);
+  const conferenceSeed = buildDiscoverMediaBrowseSeed(conferenceHandoff!);
+  assert.equal(conferenceSeed.filter.national, false);
+  assert.deepEqual(
+    conferenceSeed.filter.conferences.map((conference) => conference.id),
+    ['big-sky'],
+  );
+  assert.equal(conferenceSeed.filter.teams.length, 0);
+  assert.ok(getMediaBrowseChips(conferenceSeed.filter).some((chip) => chip.kind === 'conference'));
+
+  const browse = buildConferenceBrowseFilter('big-sky', 'Big Sky');
+  assert.equal(browse.national, false);
+  assert.deepEqual(
+    browse.conferences.map((conference) => conference.id),
+    ['big-sky'],
+  );
+
+  const teamBrowse = buildTeamBrowseFilter(MONTANA_STATE_ESPN_TEAM_ID, 'Montana State');
+  assert.equal(teamBrowse.national, false);
+  assert.deepEqual(
+    teamBrowse.teams.map((team) => team.id),
+    [MONTANA_STATE_ESPN_TEAM_ID],
+  );
+
+  const badConferenceHref = buildDiscoverConferenceMediaHref('not-real', 'Nope');
+  assert.deepEqual(badConferenceHref, {
+    pathname: '/(tabs)/news',
+    params: { section: 'media' },
+  });
+});
+
+test('discover media route filter applies once and ignores invalid IDs', () => {
+  resetDiscoverMediaHandoffForTests();
+
+  const first = queueDiscoverMediaHandoff({
+    teamId: MONTANA_STATE_ESPN_TEAM_ID,
+    teamName: 'Montana State',
+  });
+  const takenOnce = takeDiscoverMediaHandoff();
+  assert.equal(takenOnce?.id, first.id);
+  assert.equal(takeDiscoverMediaHandoff(), null);
+
+  const second = queueDiscoverMediaHandoff({
+    teamId: MONTANA_STATE_ESPN_TEAM_ID,
+    teamName: 'Montana State',
+  });
+  assert.notEqual(second.id, first.id);
+  assert.equal(takeDiscoverMediaHandoff()?.id, second.id);
+  assert.equal(takeDiscoverMediaHandoff(), null);
+
+  assert.equal(
+    resolveDiscoverMediaHandoffFromParams({
+      teamId: 'not-a-team',
+      conferenceId: 'nope',
+    }),
+    null,
+  );
+
+  const valid = resolveDiscoverMediaHandoffFromParams({
+    conferenceId: 'big-sky',
+    conferenceName: 'Big Sky',
+  });
+  assert.deepEqual(valid, {
+    teamId: null,
+    teamName: null,
+    conferenceId: 'big-sky',
+    conferenceName: 'Big Sky',
+  });
+
+  const filter = buildDiscoverBrowseFilterFromHandoff(valid!);
+  assert.equal(filter.national, false);
+  assert.deepEqual(
+    filter.conferences.map((conference) => conference.id),
+    ['big-sky'],
+  );
+});
+
+test('contextual preview limit, artwork initials fallback, and suggest a11y label', () => {
+  assert.equal(CONTEXTUAL_MEDIA_INLINE_LIMIT, 4);
+  assert.equal(SUGGEST_MEDIA_A11Y_LABEL, 'Suggest media');
+  assert.equal(getMediaCreatorInitials('Bobcat Insider Podcast'), 'BI');
+  assert.equal(getMediaCreatorInitials('Mondak'), 'MO');
+  assert.equal(getMediaCreatorInitials(''), '?');
+
+  const sources = [
+    baseSource({ id: 'p1', name: 'A', teamIds: [MONTANA_STATE_ESPN_TEAM_ID] }),
+    baseSource({ id: 'p2', name: 'B', teamIds: [MONTANA_STATE_ESPN_TEAM_ID] }),
+    baseSource({ id: 'p3', name: 'C', teamIds: [MONTANA_STATE_ESPN_TEAM_ID] }),
+    baseSource({ id: 'p4', name: 'D', teamIds: [MONTANA_STATE_ESPN_TEAM_ID] }),
+    baseSource({ id: 'p5', name: 'E', teamIds: [MONTANA_STATE_ESPN_TEAM_ID] }),
+  ];
+  const limited = selectTeamContextualMedia(sources, {
+    teamId: MONTANA_STATE_ESPN_TEAM_ID,
+    limit: CONTEXTUAL_MEDIA_INLINE_LIMIT,
+  });
+  assert.equal(limited.length, CONTEXTUAL_MEDIA_INLINE_LIMIT);
+
+  const teamPage = readFileSync(path.join(process.cwd(), 'src/app/team/[teamId].tsx'), 'utf8');
+  const teamMediaIndex = teamPage.indexOf('<TeamMediaSection');
+  const scheduleIndex = teamPage.indexOf('Season schedule & results');
+  assert.ok(teamMediaIndex > 0);
+  assert.ok(scheduleIndex > 0);
+  assert.ok(teamMediaIndex < scheduleIndex, 'team media should render above schedule');
+
+  const conferencePage = readFileSync(
+    path.join(process.cwd(), 'src/app/(tabs)/schedule.tsx'),
+    'utf8',
+  );
+  const confMediaIndex = conferencePage.indexOf('<ConferenceMediaSection');
+  const confScheduleIndex = conferencePage.indexOf('<ConferenceScheduleSection');
+  assert.ok(confMediaIndex > 0);
+  assert.ok(confScheduleIndex > 0);
+  assert.ok(
+    confMediaIndex < confScheduleIndex,
+    'conference media should render above schedule content',
+  );
+
+  const preview = readFileSync(
+    path.join(process.cwd(), 'src/components/media/ContextualMediaPreview.tsx'),
+    'utf8',
+  );
+  assert.match(preview, /accessibilityLabel=\{SUGGEST_MEDIA_A11Y_LABEL\}/);
+  assert.match(preview, /No media listed for this team yet\.|emptyMessage/);
 });
 
 console.log('\nAll media directory tests passed.');

@@ -287,19 +287,8 @@ export default function TeamDetailScreen() {
     profile?.espnTeamId?.trim() ||
     (routeId && isEspnTeamId(routeId) ? routeId.trim() : '');
 
-  const teamMediaHeading = useMemo(() => {
-    if (!profile) return 'Team Media';
-    const mascot = resolveHeaderMascot(
-      profile,
-      getTeamDetailHeading({
-        displayName: profile.displayName,
-        location: profile.location,
-        mascot: profile.mascot,
-      }).mascot,
-    );
-    if (mascot) return `${mascot} Coverage`;
-    return 'Team Media';
-  }, [profile]);
+  const teamConferenceId = profile ? resolveConferenceId(profile.conference) : undefined;
+  const teamConferenceName = profile ? resolveConferenceLabel(profile) : undefined;
 
   return (
     <>
@@ -337,6 +326,15 @@ export default function TeamDetailScreen() {
           <>
             <TeamHeader profile={profile} routeId={routeId} />
 
+            {espnTeamIdForMedia ? (
+              <TeamMediaSection
+                espnTeamId={espnTeamIdForMedia}
+                teamName={screenTitle}
+                conferenceId={teamConferenceId}
+                conferenceName={teamConferenceName}
+              />
+            ) : null}
+
             <Text style={styles.sourceNote}>{TEAM_SCHEDULE_SOURCE_NOTE}</Text>
 
             <Text style={styles.sectionTitle}>Season schedule & results</Text>
@@ -359,14 +357,6 @@ export default function TeamDetailScreen() {
                 ))}
               </View>
             )}
-
-            {espnTeamIdForMedia ? (
-              <TeamMediaSection
-                espnTeamId={espnTeamIdForMedia}
-                teamName={screenTitle}
-                coverageHeading={teamMediaHeading}
-              />
-            ) : null}
           </>
         ) : null}
 

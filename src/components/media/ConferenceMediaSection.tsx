@@ -5,22 +5,19 @@ import { ContextualMediaPreview } from '@/components/media/ContextualMediaPrevie
 import {
   CONTEXTUAL_MEDIA_INLINE_LIMIT,
   buildSuggestMediaHref,
-  selectTeamContextualMedia,
+  isKnownMediaConferenceId,
+  selectConferenceContextualMedia,
 } from '@/data/mediaDirectory/contextualMedia';
-import { prepareDiscoverTeamMediaNavigation } from '@/data/mediaDirectory/discoverMediaNavigation';
+import { prepareDiscoverConferenceMediaNavigation } from '@/data/mediaDirectory/discoverMediaNavigation';
 import { loadApprovedMediaSources } from '@/data/mediaDirectory/mediaSourcesApi';
 import type { MediaSource } from '@/data/mediaDirectory/types';
 
-export function TeamMediaSection({
-  espnTeamId,
-  teamName,
+export function ConferenceMediaSection({
   conferenceId,
   conferenceName,
 }: {
-  espnTeamId: string;
-  teamName: string;
-  conferenceId?: string | null;
-  conferenceName?: string | null;
+  conferenceId: string;
+  conferenceName: string;
 }) {
   const router = useRouter();
   const [sources, setSources] = useState<MediaSource[]>([]);
@@ -38,22 +35,20 @@ export function TeamMediaSection({
 
   const matching = useMemo(
     () =>
-      selectTeamContextualMedia(sources, {
-        teamId: espnTeamId,
+      selectConferenceContextualMedia(sources, {
         conferenceId,
       }),
-    [conferenceId, espnTeamId, sources],
+    [conferenceId, sources],
   );
 
-  const heading = `Media covering ${teamName.trim() || 'this team'}`;
+  const label = conferenceName.trim() || 'Conference';
+  const heading = `${label} Media`;
   const suggestHref = buildSuggestMediaHref({
-    teamId: espnTeamId,
-    teamName,
     conferenceId,
-    conferenceName,
+    conferenceName: label,
   });
 
-  if (!loaded) {
+  if (!loaded || !isKnownMediaConferenceId(conferenceId)) {
     return null;
   }
 
@@ -61,9 +56,11 @@ export function TeamMediaSection({
     <ContextualMediaPreview
       title={heading}
       sources={matching}
-      emptyMessage="No media listed for this team yet."
+      emptyMessage="No media listed for this conference yet."
       limit={CONTEXTUAL_MEDIA_INLINE_LIMIT}
-      onViewAll={() => router.push(prepareDiscoverTeamMediaNavigation(espnTeamId, teamName))}
+      onViewAll={() =>
+        router.push(prepareDiscoverConferenceMediaNavigation(conferenceId, label))
+      }
       onSuggest={() => router.push(suggestHref)}
     />
   );

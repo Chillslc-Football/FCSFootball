@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -59,6 +60,7 @@ export function MediaBrowseSheet({
   const insets = useSafeAreaInsets();
   const [screen, setScreen] = useState<BrowseScreen>('root');
   const [teamQuery, setTeamQuery] = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isCoverage = mode === 'coverage';
 
   useEffect(() => {
@@ -66,6 +68,23 @@ export function MediaBrowseSheet({
       setScreen('root');
       setTeamQuery('');
     }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardHeight(0);
+      return;
+    }
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
   }, [visible]);
 
   const filteredTeams = useMemo(
@@ -161,9 +180,17 @@ export function MediaBrowseSheet({
           accessibilityRole="button"
           accessibilityLabel={dismissLabel}
           style={dropdownStyles.backdrop}
-          onPress={onClose}
+          onPress={() => {
+            Keyboard.dismiss();
+            onClose();
+          }}
         />
-        <View style={[dropdownStyles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+        <View
+          style={[
+            dropdownStyles.sheet,
+            styles.sheetKeyboardAware,
+            { paddingBottom: Math.max(insets.bottom, spacing.md) },
+          ]}>
           <View style={dropdownStyles.sheetHandle} />
           <View style={dropdownStyles.sheetHeader}>
             {screen !== 'root' ? (
@@ -268,7 +295,11 @@ export function MediaBrowseSheet({
           ) : null}
 
           {screen === 'teams' ? (
-            <View style={styles.teamPickerBody}>
+            <View
+              style={[
+                styles.teamPickerBody,
+                keyboardHeight > 0 && styles.teamPickerBodyKeyboardOpen,
+              ]}>
               <TextInput
                 value={teamQuery}
                 onChangeText={setTeamQuery}
@@ -278,6 +309,8 @@ export function MediaBrowseSheet({
                 autoCapitalize="none"
                 autoCorrect={false}
                 clearButtonMode="while-editing"
+                returnKeyType="search"
+                blurOnSubmit={false}
               />
               {filteredTeams.length === 0 ? (
                 <Text style={styles.emptyText}>No teams match your search.</Text>
@@ -290,7 +323,10 @@ export function MediaBrowseSheet({
                   keyboardDismissMode="on-drag"
                   automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
                   style={styles.teamList}
-                  contentContainerStyle={styles.teamListContent}
+                  contentContainerStyle={[
+                    styles.teamListContent,
+                    keyboardHeight > 0 && { paddingBottom: spacing.xl },
+                  ]}
                 />
               )}
             </View>
@@ -385,6 +421,9 @@ function BrowseOption({
 }
 
 const styles = StyleSheet.create({
+  sheetKeyboardAware: {
+    maxHeight: '85%',
+  },
   headerSide: {
     minWidth: 48,
     alignItems: 'flex-start',
@@ -495,6 +534,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexShrink: 1,
     maxHeight: 420,
+  },
+  teamPickerBodyKeyboardOpen: {
+    maxHeight: 280,
   },
   teamSearch: {
     backgroundColor: colors.surfaceElevated,

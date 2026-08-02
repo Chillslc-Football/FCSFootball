@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Link, type Href } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -12,6 +12,7 @@ import {
 
 import { MediaBrowseFilterChips, MediaBrowseSheet } from '@/components/media/MediaBrowseSheet';
 import { MediaSourceCard } from '@/components/media/MediaSourceCard';
+import type { DiscoverMediaBrowseSeed } from '@/data/mediaDirectory/discoverMediaHandoff';
 import {
   buildMediaBrowseTeamOptions,
   createEmptyMediaBrowseFilter,
@@ -46,17 +47,33 @@ export function useMediaDirectoryController(options?: {
   showIntroSubtitle?: boolean;
   teamFilter?: MediaTeamFilter | null;
   onClearTeamFilter?: () => void;
+  /**
+   * Apply a View All / deep-link browse filter exactly once per seed id.
+   * Manual chip edits afterward are preserved until a new seed arrives.
+   */
+  browseFilterSeed?: DiscoverMediaBrowseSeed | null;
   initialSearch?: string;
 }): MediaDirectoryController {
   const showIntroSubtitle = options?.showIntroSubtitle ?? true;
   const teamFilter = options?.teamFilter ?? null;
   const onClearTeamFilter = options?.onClearTeamFilter;
+  const browseFilterSeed = options?.browseFilterSeed ?? null;
   const [sources, setSources] = useState<MediaSource[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [search, setSearch] = useState(options?.initialSearch ?? '');
-  const [browseFilter, setBrowseFilter] = useState<MediaBrowseFilter>(createEmptyMediaBrowseFilter);
+  const [browseFilter, setBrowseFilter] = useState<MediaBrowseFilter>(() =>
+    browseFilterSeed?.filter ?? createEmptyMediaBrowseFilter(),
+  );
   const [browseOpen, setBrowseOpen] = useState(false);
+
+  const appliedBrowseSeedIdRef = useRef<number | null>(browseFilterSeed?.id ?? null);
+  useEffect(() => {
+    if (!browseFilterSeed) return;
+    if (appliedBrowseSeedIdRef.current === browseFilterSeed.id) return;
+    appliedBrowseSeedIdRef.current = browseFilterSeed.id;
+    setBrowseFilter(browseFilterSeed.filter);
+  }, [browseFilterSeed]);
 
   const load = useCallback(async (forceRefresh = false) => {
     setErrorMessage(null);

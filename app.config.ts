@@ -29,6 +29,8 @@ const config: ExpoConfig = {
       monochromeImage: './assets/adaptive-icon-monochrome.png',
       backgroundColor: '#081B36',
     },
+    // Keep form fields above the soft keyboard (maps to windowSoftInputMode=adjustResize).
+    softwareKeyboardLayoutMode: 'resize',
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
   },

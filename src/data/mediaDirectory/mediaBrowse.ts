@@ -218,6 +218,12 @@ export function getMediaBrowseConferenceOptions(): MediaBrowseConferenceOption[]
   })).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 }
 
+export function isMediaBrowseConferenceId(conferenceId: string | null | undefined): boolean {
+  const id = conferenceId?.trim();
+  if (!id) return false;
+  return (FCS_CONFERENCE_IDS as readonly string[]).includes(id);
+}
+
 /**
  * Team picker options: teams referenced by media sources, plus teams from cached ESPN games.
  * Sorted alphabetically by display name.

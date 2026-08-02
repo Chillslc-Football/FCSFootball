@@ -1,5 +1,5 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -11,13 +11,19 @@ import {
   type ListRenderItem,
 } from 'react-native';
 
-import {
-  useMediaDirectoryController,
-  type MediaTeamFilter,
-} from '@/components/media/MediaDirectoryContent';
+import { useMediaDirectoryController } from '@/components/media/MediaDirectoryContent';
 import { NewsArticleCard } from '@/components/NewsArticleCard';
 import { Screen } from '@/components/Screen';
 import { SegmentedControl } from '@/components/SegmentedControl';
+import {
+  buildDiscoverBrowseFilterFromHandoff,
+  discoverMediaParamConsumptionKey,
+  queueDiscoverMediaHandoff,
+  resolveDiscoverMediaHandoffFromParams,
+  takeDiscoverMediaHandoff,
+  type DiscoverMediaBrowseSeed,
+  type DiscoverMediaHandoffPayload,
+} from '@/data/mediaDirectory/discoverMediaHandoff';
 import { getNewsArticleKey, mergeNewsFeeds } from '@/data/news/newsUtils';
 import { useHeroSportsNews } from '@/data/news/useHeroSportsNews';
 import { useTheAnalystNews } from '@/data/news/useTheAnalystNews';
@@ -39,48 +45,85 @@ function firstParam(value: string | string[] | undefined): string | undefined {
   return value;
 }
 
+function clearDiscoverMediaRouteParams(
+  router: ReturnType<typeof useRouter>,
+  keepSectionMedia: boolean,
+) {
+  router.setParams({
+    teamId: '',
+    teamName: '',
+    conferenceId: '',
+    conferenceName: '',
+    ...(keepSectionMedia ? { section: 'media' } : {}),
+  });
+}
+
 export default function NewsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
     section?: string | string[];
     teamId?: string | string[];
     teamName?: string | string[];
+    conferenceId?: string | string[];
+    conferenceName?: string | string[];
   }>();
 
   const [discoverSection, setDiscoverSection] = useState<DiscoverSection>(discoverSectionSession);
-  const [teamFilter, setTeamFilter] = useState<MediaTeamFilter | null>(null);
+  const [browseFilterSeed, setBrowseFilterSeed] = useState<DiscoverMediaBrowseSeed | null>(null);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const heroNews = useHeroSportsNews();
   const analystNews = useTheAnalystNews();
   const focusInFlightRef = useRef<Promise<void> | null>(null);
+  const consumedParamKeyRef = useRef<string | null>(null);
 
   const selectDiscoverSection = useCallback((section: DiscoverSection) => {
     discoverSectionSession = section;
     setDiscoverSection(section);
   }, []);
 
-  const clearTeamFilter = useCallback(() => {
-    setTeamFilter(null);
-    router.setParams({ teamId: '', teamName: '' });
-  }, [router]);
-
-  // Apply deep-link / View all params: Media + optional team filter.
-  useEffect(() => {
-    const section = firstParam(params.section)?.toLowerCase();
-    const teamIdRaw = firstParam(params.teamId);
-    const teamId = teamIdRaw?.trim();
-    const teamName = firstParam(params.teamName)?.trim();
-
-    if (section === 'media' || teamId) {
+  const applyHandoffPayload = useCallback(
+    (payload: DiscoverMediaHandoffPayload, seedId: number) => {
+      const filter = buildDiscoverBrowseFilterFromHandoff(payload);
+      const hasFilter =
+        filter.teams.length > 0 || filter.conferences.length > 0 || filter.national;
       selectDiscoverSection('media');
-    }
+      if (hasFilter) {
+        setBrowseFilterSeed({ id: seedId, filter });
+      }
+    },
+    [selectDiscoverSection],
+  );
 
-    if (teamId) {
-      setTeamFilter({ teamId, teamName });
-    } else if (teamIdRaw === '') {
-      setTeamFilter(null);
-    }
-  }, [params.section, params.teamId, params.teamName, selectDiscoverSection]);
+  // Consume View All / deep-link filters on focus so tab navigators always receive them.
+  useFocusEffect(
+    useCallback(() => {
+      const section = firstParam(params.section)?.toLowerCase();
+      if (section === 'media') {
+        selectDiscoverSection('media');
+      }
+
+      const queued = takeDiscoverMediaHandoff();
+      if (queued) {
+        applyHandoffPayload(queued.payload, queued.id);
+        consumedParamKeyRef.current = discoverMediaParamConsumptionKey(queued.payload);
+        clearDiscoverMediaRouteParams(router, true);
+        return;
+      }
+
+      const fromParams = resolveDiscoverMediaHandoffFromParams(params);
+      if (!fromParams) return;
+
+      const paramKey = discoverMediaParamConsumptionKey(fromParams);
+      if (consumedParamKeyRef.current === paramKey) return;
+
+      const handoff = queueDiscoverMediaHandoff(fromParams);
+      // Immediately consume so a remount cannot re-queue the same route params.
+      takeDiscoverMediaHandoff();
+      consumedParamKeyRef.current = paramKey;
+      applyHandoffPayload(fromParams, handoff.id);
+      clearDiscoverMediaRouteParams(router, true);
+    }, [applyHandoffPayload, params, router, selectDiscoverSection]),
+  );
 
   const {
     refreshing: mediaRefreshing,
@@ -88,8 +131,7 @@ export default function NewsScreen() {
     content: mediaContent,
   } = useMediaDirectoryController({
     showIntroSubtitle: false,
-    teamFilter,
-    onClearTeamFilter: clearTeamFilter,
+    browseFilterSeed,
   });
 
   const articles = useMemo(
@@ -320,6 +362,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomLeftRadius: 8,
     borderBottomRightRadius: 8,
+    marginBottom: spacing.md,
   },
   listHeader: {
     gap: spacing.sm,
@@ -331,51 +374,40 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   centerBox: {
-    paddingVertical: spacing.xl,
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
+    paddingVertical: spacing.xl,
   },
   centerText: {
-    ...typography.body,
-    color: colors.textSecondary,
+    ...typography.caption,
+    color: colors.textMuted,
   },
   messageBox: {
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.sm,
-    marginBottom: spacing.md,
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
   },
   messageTitle: {
     ...typography.body,
-    fontWeight: '600',
-    color: colors.text,
-    textAlign: 'center',
+    color: colors.textSecondary,
   },
   messageDetail: {
     ...typography.caption,
     color: colors.textMuted,
-    textAlign: 'center',
   },
   staleBanner: {
-    backgroundColor: 'rgba(201, 162, 39, 0.12)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    padding: spacing.sm,
-    marginBottom: spacing.sm,
     gap: spacing.xs,
+    padding: spacing.sm,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   staleText: {
     ...typography.caption,
-    color: colors.primary,
-    textAlign: 'center',
+    color: colors.textSecondary,
   },
   staleDetail: {
     ...typography.caption,
     color: colors.textMuted,
-    textAlign: 'center',
   },
 });

@@ -399,6 +399,18 @@ test('migration and review-site deprecation markers exist', () => {
   assert.match(detailMigration, /p_copy_links/);
   assert.match(detailMigration, /Preserve original submitter notes/);
 
+  const logosMigration = readFileSync(
+    path.resolve(
+      process.cwd(),
+      'supabase/migrations/20260802140000_restore_media_source_logos.sql',
+    ),
+    'utf8',
+  );
+  assert.match(logosMigration, /restore_media_source_logos|Restore verified media_sources\.logo_url/i);
+  assert.match(logosMigration, /logo_url = coalesce\(v_logo, logo_url\)/);
+  assert.match(logosMigration, /FCS Fans Nation Podcast/);
+  assert.match(logosMigration, /Skyline Sports/);
+
   const deprecated = readFileSync(
     path.resolve(process.cwd(), 'review-site/DEPRECATED.md'),
     'utf8',
