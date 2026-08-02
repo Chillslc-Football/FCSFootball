@@ -192,7 +192,9 @@ export async function saveSuggestionDraft(input: {
   isNational: boolean;
   teamIds: string[];
   conferenceIds: string[];
-  notes: string | null;
+  /** Pass null to preserve original submitter notes. */
+  notes?: string | null;
+  adminNotes?: string | null;
   coverageLabels?: Record<string, unknown> | null;
 }): Promise<SuggestionDetail> {
   return normalizeSuggestionDetail(
@@ -206,18 +208,52 @@ export async function saveSuggestionDraft(input: {
       p_is_national: input.isNational,
       p_team_ids: input.teamIds,
       p_conference_ids: input.conferenceIds,
-      p_notes: input.notes,
+      p_notes: input.notes === undefined ? null : input.notes,
+      p_admin_notes: input.adminNotes === undefined ? null : input.adminNotes,
       p_coverage_labels: input.coverageLabels ?? null,
     }),
   );
 }
 
-export async function findSourceMatches(name: string) {
-  const data = await rpc<Array<{ id: string; name: string; isActive: boolean; isApproved: boolean }>>(
-    'admin_find_media_source_matches',
-    { p_name: name },
-  );
-  return Array.isArray(data) ? data : [];
+export type SourceMatchCandidate = {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  isActive: boolean;
+  isApproved: boolean;
+  isNational: boolean;
+  teamIds: string[];
+  conferenceIds: string[];
+  links: LinkRow[];
+  score: number;
+  reasons: string[];
+};
+
+export async function findSourceMatches(input: {
+  name: string;
+  urls?: string[];
+}): Promise<SourceMatchCandidate[]> {
+  const data = await rpc<unknown>('admin_find_media_source_matches', {
+    p_name: input.name,
+    p_urls: input.urls ?? [],
+  });
+  const rows = Array.isArray(data) ? data : [];
+  return rows.map((item) => {
+    const row = asRecord(item);
+    return {
+      id: String(row.id ?? ''),
+      name: String(row.name ?? ''),
+      logoUrl: (row.logoUrl as string | null) ?? null,
+      isActive: row.isActive !== false,
+      isApproved: Boolean(row.isApproved),
+      isNational: Boolean(row.isNational),
+      teamIds: asStringArray(row.teamIds),
+      conferenceIds: asStringArray(row.conferenceIds),
+      links: Array.isArray(row.links) ? (row.links as LinkRow[]) : [],
+      score: typeof row.score === 'number' ? row.score : Number(row.score) || 0,
+      reasons: asStringArray(row.reasons),
+    };
+  });
 }
 
 export async function approveAndPublish(input: {
@@ -246,6 +282,35 @@ export async function rejectSuggestion(id: string, adminNotes?: string | null) {
       p_admin_notes: adminNotes ?? null,
     },
   );
+}
+
+export async function mergeSuggestion(input: {
+  id: string;
+  existingSourceId: string;
+  copyLinks: boolean;
+  copyArtwork: boolean;
+  copyDescription: boolean;
+  copyTeams: boolean;
+  copyConferences: boolean;
+  copyNational: boolean;
+}) {
+  return rpc<{
+    ok: boolean;
+    suggestionId: string;
+    mediaSourceId: string;
+    mode: string;
+    status: string;
+    addedLinks: number;
+  }>('admin_merge_media_suggestion', {
+    p_id: input.id,
+    p_existing_source_id: input.existingSourceId,
+    p_copy_links: input.copyLinks,
+    p_copy_artwork: input.copyArtwork,
+    p_copy_description: input.copyDescription,
+    p_copy_teams: input.copyTeams,
+    p_copy_conferences: input.copyConferences,
+    p_copy_national: input.copyNational,
+  });
 }
 
 export async function notifySuggestionOutcome(input: {

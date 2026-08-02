@@ -4,6 +4,7 @@ type Props = {
   rows: LinkRow[];
   onChange: (rows: LinkRow[]) => void;
   errors?: Record<string, string>;
+  disabled?: boolean;
 };
 
 function isPlatformKey(value: string): value is PlatformKey {
@@ -14,8 +15,9 @@ function rowKey(row: LinkRow, index: number): string {
   return row.id || `link-${index}-${row.platform}-${row.sortOrder}`;
 }
 
-export function LinkRowsEditor({ rows, onChange, errors }: Props) {
+export function LinkRowsEditor({ rows, onChange, errors, disabled = false }: Props) {
   function updateRow(index: number, patch: Partial<LinkRow>) {
+    if (disabled) return;
     onChange(
       rows.map((row, i) => (i === index ? { ...row, ...patch } : row)).map((row, i) => ({
         ...row,
@@ -25,10 +27,12 @@ export function LinkRowsEditor({ rows, onChange, errors }: Props) {
   }
 
   function removeRow(index: number) {
+    if (disabled) return;
     onChange(rows.filter((_, i) => i !== index).map((row, i) => ({ ...row, sortOrder: i })));
   }
 
   function moveRow(index: number, delta: number) {
+    if (disabled) return;
     const target = index + delta;
     if (target < 0 || target >= rows.length) return;
     const next = [...rows];
@@ -38,6 +42,7 @@ export function LinkRowsEditor({ rows, onChange, errors }: Props) {
   }
 
   function addRow() {
+    if (disabled) return;
     onChange([...rows, emptyLinkRow(rows.length)]);
   }
 
@@ -54,6 +59,7 @@ export function LinkRowsEditor({ rows, onChange, errors }: Props) {
               Platform
               <select
                 value={row.platform}
+                disabled={disabled}
                 onChange={(e) => {
                   const value = e.target.value;
                   if (isPlatformKey(value)) updateRow(index, { platform: value });
@@ -70,6 +76,7 @@ export function LinkRowsEditor({ rows, onChange, errors }: Props) {
               Label (optional)
               <input
                 value={row.label}
+                disabled={disabled}
                 onChange={(e) => updateRow(index, { label: e.target.value })}
                 placeholder="Show notes, Main feed…"
               />
@@ -78,6 +85,7 @@ export function LinkRowsEditor({ rows, onChange, errors }: Props) {
               URL
               <input
                 value={row.url}
+                disabled={disabled}
                 onChange={(e) => updateRow(index, { url: e.target.value })}
                 placeholder="https://"
               />
@@ -92,7 +100,7 @@ export function LinkRowsEditor({ rows, onChange, errors }: Props) {
             <button
               type="button"
               className="btn-secondary"
-              disabled={index === 0}
+              disabled={disabled || index === 0}
               onClick={() => moveRow(index, -1)}
             >
               Up
@@ -100,19 +108,24 @@ export function LinkRowsEditor({ rows, onChange, errors }: Props) {
             <button
               type="button"
               className="btn-secondary"
-              disabled={index >= rows.length - 1}
+              disabled={disabled || index >= rows.length - 1}
               onClick={() => moveRow(index, 1)}
             >
               Down
             </button>
-            <button type="button" className="btn-danger" onClick={() => removeRow(index)}>
+            <button
+              type="button"
+              className="btn-danger"
+              disabled={disabled}
+              onClick={() => removeRow(index)}
+            >
               Remove
             </button>
           </div>
         </div>
       ))}
       <div>
-        <button type="button" className="btn-secondary" onClick={addRow}>
+        <button type="button" className="btn-secondary" disabled={disabled} onClick={addRow}>
           + Add Another Link
         </button>
       </div>

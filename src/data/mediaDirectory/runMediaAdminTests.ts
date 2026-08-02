@@ -7,6 +7,12 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  mediaAdminNameSimilarity,
+  normalizeMediaAdminUrlKey,
+  rankMediaAdminDuplicates,
+  summarizeMediaAdminMerge,
+} from '@/data/mediaDirectory/mediaAdminDuplicates';
+import {
   buildMediaAdminAuditSummary,
   decideMediaAdminPublish,
   filterMediaAdminSources,
@@ -380,11 +386,211 @@ test('migration and review-site deprecation markers exist', () => {
   assert.match(linksMigration, /admin_apply_media_correction/);
   assert.match(linksMigration, /p_links/);
 
+  const detailMigration = readFileSync(
+    path.resolve(
+      process.cwd(),
+      'supabase/migrations/20260802120000_media_admin_suggestion_detail.sql',
+    ),
+    'utf8',
+  );
+  assert.match(detailMigration, /p_admin_notes/);
+  assert.match(detailMigration, /admin_find_media_source_matches/);
+  assert.match(detailMigration, /admin_merge_media_suggestion/);
+  assert.match(detailMigration, /p_copy_links/);
+  assert.match(detailMigration, /Preserve original submitter notes/);
+
   const deprecated = readFileSync(
     path.resolve(process.cwd(), 'review-site/DEPRECATED.md'),
     'utf8',
   );
   assert.match(deprecated, /admin\.fcspulse\.com/);
+});
+
+test('Cloudflare Pages SPA fallback _redirects is configured', () => {
+  const redirects = readFileSync(
+    path.resolve(process.cwd(), 'admin-site/public/_redirects'),
+    'utf8',
+  ).trim();
+  assert.match(redirects, /^\/\*+\s+\/index\.html\s+200$/m);
+
+  const viteConfig = readFileSync(
+    path.resolve(process.cwd(), 'admin-site/vite.config.ts'),
+    'utf8',
+  );
+  assert.match(viteConfig, /base:\s*['"]\/['"]/);
+  assert.match(viteConfig, /publicDir:\s*['"]public['"]/);
+
+  const pkg = readFileSync(path.resolve(process.cwd(), 'admin-site/package.json'), 'utf8');
+  assert.match(pkg, /verify-spa-redirects\.mjs/);
+
+  const main = readFileSync(path.resolve(process.cwd(), 'admin-site/src/main.tsx'), 'utf8');
+  assert.match(main, /BrowserRouter/);
+  const app = readFileSync(path.resolve(process.cwd(), 'admin-site/src/App.tsx'), 'utf8');
+  assert.match(app, /path="\/suggestions\/:id"/);
+  assert.match(app, /path="\/sources\/:id"/);
+  assert.match(app, /path="\/reports\/:id"/);
+});
+
+test('pending row route opens suggestion detail workspace', () => {
+  const suggestionsPage = readFileSync(
+    path.resolve(process.cwd(), 'admin-site/src/pages/SuggestionsPage.tsx'),
+    'utf8',
+  );
+  const detailPage = readFileSync(
+    path.resolve(process.cwd(), 'admin-site/src/pages/SuggestionDetailPage.tsx'),
+    'utf8',
+  );
+  const app = readFileSync(path.resolve(process.cwd(), 'admin-site/src/App.tsx'), 'utf8');
+
+  assert.match(app, /path="\/suggestions\/:id"/);
+  assert.match(suggestionsPage, /to=\{`\/suggestions\/\$\{row\.id\}`\}/);
+  assert.match(detailPage, /Back to Pending/);
+  assert.match(detailPage, /Possible Duplicates/);
+  assert.match(detailPage, /Public Preview/);
+  assert.match(detailPage, /Save Draft Changes/);
+  assert.match(detailPage, /Approve and Publish/);
+  assert.match(detailPage, /Confirm Merge/);
+  assert.match(detailPage, /Confirm Reject/);
+  assert.match(detailPage, /Private Admin Notes/);
+  assert.match(detailPage, /notes: null/);
+  assert.match(detailPage, /mergeSuggestion/);
+  assert.match(detailPage, /CreatorCardPreview/);
+  assert.match(detailPage, /modal-backdrop/);
+  assert.match(detailPage, /detail-layout/);
+});
+
+test('duplicate candidates: name, URL overlap, similarity ranking', () => {
+  assert.equal(normalizeMediaAdminUrlKey('https://youtube.com/@x/'), 'https://youtube.com/@x');
+  assert.ok(mediaAdminNameSimilarity('Skyline Sports', 'Skyline Sport') > 0.7);
+
+  const ranked = rankMediaAdminDuplicates({
+    suggestionName: 'Skyline Sports Network',
+    suggestionUrls: ['https://youtube.com/@skyline', 'https://example.com/show'],
+    candidates: [
+      {
+        id: 'exact',
+        name: 'Skyline Sports Network',
+        urls: ['https://other.example'],
+        isNational: true,
+        teamIds: [],
+        conferenceIds: [],
+      },
+      {
+        id: 'url',
+        name: 'Different Show',
+        urls: ['https://youtube.com/@skyline/'],
+        isNational: false,
+        teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+        conferenceIds: ['big-sky'],
+      },
+      {
+        id: 'similar',
+        name: 'Skyline Sport',
+        urls: [],
+        isNational: false,
+        teamIds: [],
+        conferenceIds: [],
+      },
+      {
+        id: 'noise',
+        name: 'Totally Unrelated',
+        urls: ['https://unrelated.example'],
+      },
+    ],
+    limit: 5,
+  });
+
+  assert.equal(ranked.length, 3);
+  assert.equal(ranked[0]?.id, 'exact');
+  assert.ok(ranked.some((item) => item.id === 'url' && item.reasons.includes('url_overlap')));
+  assert.ok(ranked.every((item) => item.matchLabel));
+  assert.equal(
+    ranked.find((item) => item.id === 'noise'),
+    undefined,
+  );
+});
+
+test('merge preview copies only selected fields and skips duplicate URLs', () => {
+  const summary = summarizeMediaAdminMerge({
+    selection: {
+      copyLinks: true,
+      copyArtwork: true,
+      copyDescription: false,
+      copyTeams: true,
+      copyConferences: false,
+      copyNational: true,
+    },
+    existing: {
+      name: 'Existing Show',
+      description: 'Keep me',
+      logoUrl: null,
+      isNational: false,
+      teamIds: ['147'],
+      conferenceIds: ['big-sky'],
+      urls: ['https://youtube.com/@same'],
+    },
+    suggestion: {
+      description: 'New description ignored',
+      logoUrl: 'https://example.com/art.png',
+      isNational: true,
+      teamIds: ['149'],
+      conferenceIds: ['mvfc'],
+      urls: ['https://youtube.com/@same/', 'https://open.spotify.com/show/new'],
+    },
+  });
+
+  assert.equal(summary.newLinkCount, 1);
+  assert.equal(summary.willReplaceArtwork, true);
+  assert.equal(summary.willReplaceDescription, false);
+  assert.ok(summary.lines.some((line) => /Add 1 new link/i.test(line)));
+  assert.ok(summary.lines.some((line) => /artwork/i.test(line)));
+  assert.ok(summary.lines.some((line) => /team coverage/i.test(line)));
+  assert.equal(
+    summary.lines.some((line) => /description/i.test(line)),
+    false,
+  );
+});
+
+test('draft save preserves submitter notes and tracks admin notes in audit', () => {
+  const detailPage = readFileSync(
+    path.resolve(process.cwd(), 'admin-site/src/pages/SuggestionDetailPage.tsx'),
+    'utf8',
+  );
+  assert.match(detailPage, /notes: null/);
+  assert.match(detailPage, /adminNotes:/);
+
+  const audit = buildMediaAdminAuditSummary({
+    action: 'suggestion_draft_saved',
+    entityType: 'suggestion',
+    entityId: 'sug-1',
+    adminEmail: 'admin@example.com',
+    changedFields: {
+      name: 'Skyline Sports',
+      linkCount: 2,
+      adminNotesUpdated: true,
+      teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+      conferenceIds: ['big-sky'],
+    },
+  });
+  assert.match(audit.summary, /adminNotesUpdated/);
+  assert.equal(audit.changedFields.adminNotesUpdated, true);
+});
+
+test('unauthorized access blocked for media admin', () => {
+  const result = resolveMediaAdminAuthAccess({
+    configured: true,
+    hasSession: true,
+    isAllowlistedAdmin: false,
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.reason, 'unauthorized');
+
+  const detailPage = readFileSync(
+    path.resolve(process.cwd(), 'admin-site/src/pages/SuggestionDetailPage.tsx'),
+    'utf8',
+  );
+  assert.match(detailPage, /Unauthorized/);
+  assert.match(detailPage, /not_authorized|not authorized/i);
 });
 
 console.log('\nAll media admin tests passed.');

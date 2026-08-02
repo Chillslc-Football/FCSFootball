@@ -39,7 +39,13 @@ Environment variables (Pages → Settings → Environment variables):
 
 Custom domain: `admin.fcspulse.com`
 
-SPA routing uses `public/_redirects` (`/* /index.html 200`).
+SPA deep links require `public/_redirects` with:
+
+```
+/* /index.html 200
+```
+
+Vite copies that file into `dist/_redirects` on build (verified by `scripts/verify-spa-redirects.mjs`). Redeploy Cloudflare Pages after changing it so `/suggestions/:id` and other client routes serve `index.html` on direct open/refresh.
 
 ## Supabase setup
 

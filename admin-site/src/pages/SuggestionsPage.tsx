@@ -70,20 +70,44 @@ export function SuggestionsPage() {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id}>
+                <tr key={row.id} className="clickable-row">
                   <td>
-                    <Link to={`/suggestions/${row.id}`}>{row.name}</Link>
+                    <Link to={`/suggestions/${row.id}`} className="row-link">
+                      {row.name}
+                    </Link>
                   </td>
-                  <td>{row.submitterEmail || '—'}</td>
-                  <td>{new Date(row.submittedAt).toLocaleString()}</td>
-                  <td>{row.status}</td>
                   <td>
-                    {row.isNational ? 'National' : ''}
-                    {row.teams?.length ? ` · ${row.teams.join(', ')}` : ''}
-                    {row.conferences?.length ? ` · ${row.conferences.join(', ')}` : ''}
+                    <Link to={`/suggestions/${row.id}`} className="row-link muted-link">
+                      {row.submitterEmail || '—'}
+                    </Link>
                   </td>
-                  <td>{row.platformCount}</td>
-                  <td>{row.notesPreview || '—'}</td>
+                  <td>
+                    <Link to={`/suggestions/${row.id}`} className="row-link muted-link">
+                      {new Date(row.submittedAt).toLocaleString()}
+                    </Link>
+                  </td>
+                  <td>
+                    <Link to={`/suggestions/${row.id}`} className="row-link muted-link">
+                      {row.status}
+                    </Link>
+                  </td>
+                  <td>
+                    <Link to={`/suggestions/${row.id}`} className="row-link muted-link">
+                      {row.isNational ? 'National' : ''}
+                      {row.teams?.length ? ` · ${row.teams.join(', ')}` : ''}
+                      {row.conferences?.length ? ` · ${row.conferences.join(', ')}` : ''}
+                    </Link>
+                  </td>
+                  <td>
+                    <Link to={`/suggestions/${row.id}`} className="row-link muted-link">
+                      {row.platformCount}
+                    </Link>
+                  </td>
+                  <td>
+                    <Link to={`/suggestions/${row.id}`} className="row-link muted-link">
+                      {row.notesPreview || '—'}
+                    </Link>
+                  </td>
                 </tr>
               ))}
               {rows.length === 0 ? (
