@@ -23,7 +23,13 @@ import {
   enrichFavoriteTeam,
   findNextTeamGame,
 } from '@/data/favorites/findNextTeamGame';
-import { getNewsArticleKey, mergeNewsFeeds } from '@/data/news/newsUtils';
+import { isValidHeroSportsArticleUrl } from '@/data/news/heroSportsNewsProvider';
+import {
+  formatNewsPublishedDate,
+  getNewsArticleKey,
+  mergeNewsFeeds,
+} from '@/data/news/newsUtils';
+import { isValidTheAnalystArticleUrl } from '@/data/news/theAnalystNewsProvider';
 import { useHeroSportsNews } from '@/data/news/useHeroSportsNews';
 import { useTheAnalystNews } from '@/data/news/useTheAnalystNews';
 import { logEspnRefreshDev } from '@/data/providers/espnRefreshLog';
@@ -293,11 +299,20 @@ export default function FavoritesScreen() {
   );
 }
 
+function isValidHomeNewsUrl(article: NewsArticle): boolean {
+  if (article.source === 'HERO Sports') {
+    return isValidHeroSportsArticleUrl(article.url);
+  }
+  return isValidTheAnalystArticleUrl(article.url);
+}
+
 function HomeNewsRow({ article, isLast }: { article: NewsArticle; isLast: boolean }) {
   const [opening, setOpening] = useState(false);
+  const dateLabel = formatNewsPublishedDate(article.publishedAt);
+  const meta = [article.source, dateLabel].filter(Boolean).join(' · ');
 
   async function handlePress() {
-    if (opening) return;
+    if (opening || !isValidHomeNewsUrl(article)) return;
     setOpening(true);
     try {
       const canOpen = await Linking.canOpenURL(article.url);
@@ -314,16 +329,23 @@ function HomeNewsRow({ article, isLast }: { article: NewsArticle; isLast: boolea
   return (
     <Pressable
       accessibilityRole="link"
-      accessibilityLabel={article.title}
+      accessibilityLabel={`Open ${article.title} on ${article.source}`}
       onPress={() => void handlePress()}
       style={({ pressed }) => [
         styles.newsRow,
         !isLast && styles.newsRowBorder,
         pressed && styles.pressed,
       ]}>
-      <Text style={styles.newsHeadline} numberOfLines={2}>
-        {article.title}
-      </Text>
+      <View style={styles.newsText}>
+        <Text style={styles.newsHeadline} numberOfLines={2}>
+          {article.title}
+        </Text>
+        {meta ? (
+          <Text style={styles.newsMeta} numberOfLines={1}>
+            {meta}
+          </Text>
+        ) : null}
+      </View>
       {opening ? <ActivityIndicator color={colors.primary} size="small" /> : null}
     </Pressable>
   );
@@ -428,17 +450,25 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 2,
-    minHeight: 48,
+    minHeight: 52,
   },
   newsRowBorder: {
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  newsText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
   newsHeadline: {
     ...typography.body,
     color: colors.text,
-    flex: 1,
     fontWeight: '500',
+  },
+  newsMeta: {
+    ...typography.caption,
+    color: colors.textMuted,
   },
   viewAllButton: {
     alignSelf: 'flex-start',
