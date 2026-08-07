@@ -1,61 +1,121 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Link, type Href } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Constants from 'expo-constants';
 
 import { colors, spacing, typography } from '@/theme';
 
-export default function DeveloperScreen() {
+type AdminLink = {
+  href: Href;
+  title: string;
+  subtitle: string;
+};
+
+const DEVELOPER_TOOLS: AdminLink[] = [
+  {
+    href: '/developer/espn-test' as Href,
+    title: 'ESPN Data Test',
+    subtitle: 'Scores & schedule via espnScoresProvider',
+  },
+  {
+    href: '/developer/notification-test' as Href,
+    title: 'Notification Test',
+    subtitle: 'Local notification simulations (development only)',
+  },
+  {
+    href: '/developer/ncaa-rankings-test' as Href,
+    title: 'NCAA Rankings Test',
+    subtitle: 'Stats Perform FCS Top 25 — not connected yet',
+  },
+  {
+    href: '/developer/data-test' as Href,
+    title: 'Data Test',
+    subtitle: 'Experiment with provider fetch responses',
+  },
+];
+
+const MEDIA_ADMIN_TOOLS: AdminLink[] = [
+  {
+    href: '/admin' as Href,
+    title: 'Media Admin',
+    subtitle: 'Review pending community media submissions (admin sign-in required)',
+  },
+  {
+    href: '/developer/media-suggestions' as Href,
+    title: 'Media Suggestions',
+    subtitle: 'Review pending Spotify / YouTube / X suggestions (admin sign-in required)',
+  },
+];
+
+function AdminRow({ item }: { item: AdminLink }) {
   return (
-    <View style={styles.container}>
+    <Link href={item.href} asChild>
+      <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+        <View style={styles.rowText}>
+          <Text style={styles.rowTitle}>{item.title}</Text>
+          <Text style={styles.rowSubtitle}>{item.subtitle}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      </Pressable>
+    </Link>
+  );
+}
+
+export default function AdminHubScreen() {
+  const appVersion = Constants.expoConfig?.version ?? 'unknown';
+  const appName = Constants.expoConfig?.name ?? 'FCS Pulse';
+
+  return (
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}>
       <Text style={styles.warning}>
-        Developer tools only — not part of the production app.
+        Internal tools only — not part of the normal user experience.
       </Text>
 
-      <Link href={'/developer/data-test' as Href} asChild>
-        <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-          <Text style={styles.rowTitle}>Data Test</Text>
-          <Text style={styles.rowSubtitle}>Experiment with provider fetch responses</Text>
-        </Pressable>
-      </Link>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Developer Tools</Text>
+        {DEVELOPER_TOOLS.map((item) => (
+          <AdminRow key={String(item.href)} item={item} />
+        ))}
+      </View>
 
-      <Link href={'/developer/espn-test' as Href} asChild>
-        <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-          <Text style={styles.rowTitle}>ESPN Data Test</Text>
-          <Text style={styles.rowSubtitle}>Scores & schedule via espnScoresProvider</Text>
-        </Pressable>
-      </Link>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Media Administration</Text>
+        {MEDIA_ADMIN_TOOLS.map((item) => (
+          <AdminRow key={String(item.href)} item={item} />
+        ))}
+      </View>
 
-      <Link href={'/developer/ncaa-rankings-test' as Href} asChild>
-        <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-          <Text style={styles.rowTitle}>NCAA Rankings Test</Text>
-          <Text style={styles.rowSubtitle}>Stats Perform FCS Top 25 — not connected yet</Text>
-        </Pressable>
-      </Link>
-
-      <Link href={'/developer/notification-test' as Href} asChild>
-        <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-          <Text style={styles.rowTitle}>Notification Test</Text>
-          <Text style={styles.rowSubtitle}>Local notification simulations (development only)</Text>
-        </Pressable>
-      </Link>
-
-      <Link href={'/developer/media-suggestions' as Href} asChild>
-        <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-          <Text style={styles.rowTitle}>Media Suggestions</Text>
-          <Text style={styles.rowSubtitle}>
-            Review pending Spotify / YouTube / X suggestions (admin sign-in required)
-          </Text>
-        </Pressable>
-      </Link>
-    </View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Diagnostics</Text>
+        <View style={styles.diagCard}>
+          <Text style={styles.diagLabel}>App</Text>
+          <Text style={styles.diagValue}>{appName}</Text>
+          <Text style={styles.diagLabel}>Version</Text>
+          <Text style={styles.diagValue}>{appVersion}</Text>
+          <Text style={styles.diagLabel}>Build mode</Text>
+          <Text style={styles.diagValue}>{__DEV__ ? 'Development' : 'Production'}</Text>
+        </View>
+        <Text style={styles.diagNote}>
+          Watch Link Diagnostics and other per-card diagnostics remain available on game cards in
+          development builds. They are not separate Settings destinations.
+        </Text>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  scroll: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  container: {
     padding: spacing.lg,
     gap: spacing.md,
+    paddingBottom: spacing.xxl,
   },
   warning: {
     ...typography.caption,
@@ -66,15 +126,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  section: {
+    gap: spacing.sm,
+  },
+  sectionTitle: {
+    ...typography.label,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+  },
   row: {
     backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   rowPressed: {
     opacity: 0.85,
+  },
+  rowText: {
+    flex: 1,
+    minWidth: 0,
   },
   rowTitle: {
     ...typography.body,
@@ -85,5 +160,28 @@ const styles = StyleSheet.create({
   rowSubtitle: {
     ...typography.caption,
     color: colors.textSecondary,
+  },
+  diagCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  diagLabel: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+  },
+  diagValue: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  diagNote: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
 });

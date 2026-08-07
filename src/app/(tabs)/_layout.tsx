@@ -60,6 +60,8 @@ export default function TabLayout() {
         name="news"
         options={{
           title: 'Media',
+          tabBarLabel: 'Media',
+          headerTitle: 'Media',
           tabBarIcon: ({ color }) => <TabIcon name="newspaper" color={color} />,
         }}
       />
