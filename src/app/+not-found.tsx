@@ -10,7 +10,7 @@ export default function NotFoundScreen() {
       <View style={styles.container}>
         <Text style={styles.title}>Page not found</Text>
         <Link href={'/today' as import('expo-router').Href} style={styles.link}>
-          Go to Favorites
+          Go to Home
         </Link>
       </View>
     </>

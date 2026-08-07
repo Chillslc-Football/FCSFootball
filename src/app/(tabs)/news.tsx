@@ -100,6 +100,8 @@ export default function NewsScreen() {
       const section = firstParam(params.section)?.toLowerCase();
       if (section === 'media') {
         selectDiscoverSection('media');
+      } else if (section === 'news') {
+        selectDiscoverSection('news');
       }
 
       const queued = takeDiscoverMediaHandoff();
@@ -211,7 +213,7 @@ export default function NewsScreen() {
       options={DISCOVER_SECTION_OPTIONS}
       selected={discoverSection}
       onSelect={selectDiscoverSection}
-      accessibilityLabel="Discover section"
+      accessibilityLabel="Media section"
       variant="accent"
       style={styles.primarySelector}
     />
