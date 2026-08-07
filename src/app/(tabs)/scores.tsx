@@ -1,3 +1,4 @@
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -18,6 +19,10 @@ import {
   prioritizeFavoriteGamesWithinOrder,
 } from '@/data/scores/prioritizeFavoriteScoreGames';
 import {
+  isKnownScoresFilterId,
+  takeScoresFilterHandoff,
+} from '@/data/scores/scoresFilterHandoff';
+import {
   useScoresLiveRefresh,
   type ScoresSilentRefreshOptions,
 } from '@/data/scores/useScoresLiveRefresh';
@@ -35,6 +40,11 @@ import { colors, spacing, typography } from '@/theme';
 import { extractLocalGameDateIso, formatGameDateLabel } from '@/utils/formatGameTime';
 import { sortEspnNormalizedGames } from '@/utils/sortGames';
 import type { EspnNormalizedGame, ScheduleWeekId } from '@/types';
+
+function firstParam(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
 
 type LoadState = 'loading' | 'success' | 'error';
 
@@ -70,6 +80,8 @@ function groupScoresByDate(games: EspnNormalizedGame[]): ScoresDateGroup[] {
 }
 
 export default function ScoresScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ filter?: string | string[] }>();
   const { favorites, loaded: favoritesLoaded } = useFavoriteTeams();
   const [weekId, setWeekId] = useState<ScheduleWeekId>(DEFAULT_SCORES_WEEK);
   const [filterId, setFilterId] = useState<ScoresFilterId>(DEFAULT_SCORES_FILTER);
@@ -79,7 +91,29 @@ export default function ScoresScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sourceLabel, setSourceLabel] = useState('');
   const gamesCountRef = useRef(0);
+  const consumedFilterParamRef = useRef<string | null>(null);
   gamesCountRef.current = games.length;
+
+  // Consume Home Quick Link / deep-link filter once on focus.
+  useFocusEffect(
+    useCallback(() => {
+      const queued = takeScoresFilterHandoff();
+      if (queued) {
+        setFilterId(queued.filterId);
+        consumedFilterParamRef.current = queued.filterId;
+        router.setParams({ filter: '' });
+        return;
+      }
+
+      const fromParams = firstParam(params.filter)?.trim();
+      if (!fromParams || !isKnownScoresFilterId(fromParams)) return;
+      if (consumedFilterParamRef.current === fromParams) return;
+
+      consumedFilterParamRef.current = fromParams;
+      setFilterId(fromParams);
+      router.setParams({ filter: '' });
+    }, [params.filter, router]),
+  );
 
   const loadGames = useCallback(async (options?: ScoresSilentRefreshOptions & { pullRefresh?: boolean }) => {
     const silent = options?.silent ?? false;

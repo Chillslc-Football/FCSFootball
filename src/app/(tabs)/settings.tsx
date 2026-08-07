@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Link, type Href } from 'expo-router';
 import {
   ActivityIndicator,
@@ -9,7 +10,6 @@ import {
 } from 'react-native';
 
 import { Screen } from '@/components/Screen';
-import { useAdminAuth } from '@/data/media/useAdminAuth';
 import { useNotificationPreferences } from '@/hooks/useNotificationPreferences';
 import { colors, spacing, typography } from '@/theme';
 
@@ -33,7 +33,6 @@ export default function SettingsScreen() {
     updatePreference,
     openSystemSettings,
   } = useNotificationPreferences();
-  const adminAuth = useAdminAuth();
 
   return (
     <Screen title="Settings" subtitle="App preferences and configuration.">
@@ -110,46 +109,19 @@ export default function SettingsScreen() {
         )}
       </View>
 
-      {adminAuth.isAdmin || __DEV__ ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Administration</Text>
-          <Link href={'/admin' as Href} asChild>
-            <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-              <Text style={styles.rowTitle}>Media submissions</Text>
-              <Text style={styles.rowSubtitle}>
-                {adminAuth.isAdmin
-                  ? 'Review pending community media suggestions'
-                  : 'Development shortcut — requires allowlisted admin sign-in'}
-              </Text>
-            </Pressable>
-          </Link>
-        </View>
-      ) : null}
-
+      {/*
+        Admin hub is always linked here to preserve the previous Developer section visibility
+        (those tools were not gated). Media Admin screens still require allowlisted sign-in.
+      */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Developer</Text>
+        <Text style={styles.sectionTitle}>Admin</Text>
         <Link href={'/developer' as Href} asChild>
-          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-            <Text style={styles.rowTitle}>Developer</Text>
-            <Text style={styles.rowSubtitle}>Internal tools and data testing</Text>
-          </Pressable>
-        </Link>
-        <Link href={'/developer/espn-test' as Href} asChild>
-          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-            <Text style={styles.rowTitle}>ESPN Data Test</Text>
-            <Text style={styles.rowSubtitle}>Scores & schedule via espnScoresProvider</Text>
-          </Pressable>
-        </Link>
-        <Link href={'/developer/notification-test' as Href} asChild>
-          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-            <Text style={styles.rowTitle}>Notification Test</Text>
-            <Text style={styles.rowSubtitle}>Local notification simulations (development only)</Text>
-          </Pressable>
-        </Link>
-        <Link href={'/developer/ncaa-rankings-test' as Href} asChild>
-          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-            <Text style={styles.rowTitle}>NCAA Rankings Test</Text>
-            <Text style={styles.rowSubtitle}>Stats Perform FCS Top 25 — not connected yet</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Admin"
+            style={({ pressed }) => [styles.adminRow, pressed && styles.rowPressed]}>
+            <Text style={styles.adminRowTitle}>Admin</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </Pressable>
         </Link>
       </View>
@@ -247,24 +219,24 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: spacing.sm,
   },
-  row: {
+  adminRow: {
     backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 52,
   },
-  rowPressed: {
-    opacity: 0.85,
-  },
-  rowTitle: {
+  adminRowTitle: {
     ...typography.body,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: spacing.xs,
   },
-  rowSubtitle: {
-    ...typography.caption,
-    color: colors.textSecondary,
+  rowPressed: {
+    opacity: 0.85,
   },
 });

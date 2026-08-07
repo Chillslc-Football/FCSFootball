@@ -29,8 +29,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="today"
         options={{
-          title: 'Favorites',
-          tabBarIcon: ({ color }) => <TabIcon name="star" color={color} />,
+          title: 'Home',
+          tabBarIcon: ({ color }) => <TabIcon name="home" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -59,7 +59,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="news"
         options={{
-          title: 'Discover',
+          title: 'Media',
+          tabBarLabel: 'Media',
+          headerTitle: 'Media',
           tabBarIcon: ({ color }) => <TabIcon name="newspaper" color={color} />,
         }}
       />

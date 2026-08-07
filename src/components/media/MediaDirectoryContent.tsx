@@ -156,48 +156,53 @@ export function useMediaDirectoryController(options?: {
         <Text style={styles.subtitle}>Podcasts, videos, and creators from around the FCS</Text>
       ) : null}
 
-      <View style={styles.searchRow}>
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Search creators and shows"
-          placeholderTextColor={colors.textMuted}
-          style={styles.search}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
+      <TextInput
+        value={search}
+        onChangeText={setSearch}
+        placeholder="Search creators and shows"
+        placeholderTextColor={colors.textMuted}
+        style={styles.search}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+
+      <View style={styles.actionsRow}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={
             browseActive
-              ? `Browse media, ${browseChips.length} filters active`
-              : 'Browse media'
+              ? `Filter media, ${browseChips.length} filters active`
+              : 'Filter media'
           }
           hitSlop={8}
           onPress={() => setBrowseOpen(true)}
           style={({ pressed }) => [
-            styles.filterButton,
-            browseActive && styles.filterButtonActive,
+            styles.actionButton,
+            browseActive && styles.actionButtonActive,
             pressed && styles.pressed,
           ]}>
           <Ionicons
-            name="options-outline"
-            size={22}
+            name="filter-outline"
+            size={18}
             color={browseActive ? colors.primary : colors.textSecondary}
           />
-          {badgeLetter ? (
-            <View style={styles.filterBadge}>
-              <Text style={styles.filterBadgeText}>{badgeLetter}</Text>
-            </View>
-          ) : null}
+          <Text
+            style={[styles.actionButtonLabel, browseActive && styles.actionButtonLabelActive]}
+            numberOfLines={1}>
+            {badgeLetter ? `Filter · ${badgeLetter}` : 'Filter'}
+          </Text>
         </Pressable>
+
         <Link href={'/suggest-fcs-media' as Href} asChild>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Suggest a podcast"
+            accessibilityLabel="Add Creator"
             hitSlop={8}
-            style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}>
-            <Ionicons name="add" size={22} color={colors.textSecondary} />
+            style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}>
+            <Ionicons name="add" size={18} color={colors.primary} />
+            <Text style={styles.addCreatorLabel} numberOfLines={1}>
+              Add Creator
+            </Text>
           </Pressable>
         </Link>
       </View>
@@ -296,14 +301,8 @@ export function MediaDirectoryContent({
 const styles = StyleSheet.create({
   root: { gap: spacing.md },
   subtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.xs },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
   search: {
-    flex: 1,
-    minWidth: 0,
+    width: '100%',
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -313,38 +312,40 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     ...typography.body,
   },
-  filterButton: {
-    width: 44,
-    height: 44,
-    flexShrink: 0,
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  actionButton: {
+    flex: 1,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
   },
-  filterButtonActive: {
+  actionButtonActive: {
     borderColor: colors.primary,
     backgroundColor: 'rgba(201, 162, 39, 0.12)',
   },
-  filterBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    paddingHorizontal: 3,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+  actionButtonLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
-  filterBadgeText: {
-    fontSize: 10,
+  actionButtonLabelActive: {
+    color: colors.primary,
+  },
+  addCreatorLabel: {
+    ...typography.caption,
+    color: colors.primary,
     fontWeight: '700',
-    color: colors.background,
-    lineHeight: 12,
   },
   teamFilterRow: {
     flexDirection: 'row',
