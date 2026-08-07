@@ -211,7 +211,7 @@ export default function NewsScreen() {
       options={DISCOVER_SECTION_OPTIONS}
       selected={discoverSection}
       onSelect={selectDiscoverSection}
-      accessibilityLabel="Discover section"
+      accessibilityLabel="Media section"
       variant="accent"
       style={styles.primarySelector}
     />
