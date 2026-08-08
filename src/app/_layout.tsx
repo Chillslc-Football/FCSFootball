@@ -29,14 +29,25 @@ export default function RootLayout() {
           <SelectedConferenceProvider>
             <NotificationBootstrap />
             <StatusBar style="light" />
-          <Stack>
+          <Stack
+            screenOptions={{
+              headerStyle: { backgroundColor: colors.surface },
+              headerTintColor: colors.text,
+              headerTitleStyle: { fontWeight: '600' },
+              headerBackTitle: 'Back',
+              contentStyle: { backgroundColor: colors.background },
+            }}>
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="developer" options={{ headerShown: false }} />
             <Stack.Screen name="admin" options={{ headerShown: false }} />
             <Stack.Screen name="media" options={{ title: 'FCS Media' }} />
+            <Stack.Screen name="creator/[id]" options={{ title: 'Creator' }} />
+            <Stack.Screen name="update-creator/[id]" options={{ title: 'Update Creator' }} />
             <Stack.Screen name="suggest-fcs-media" options={{ title: 'Suggest FCS Media' }} />
             <Stack.Screen name="suggest-media" options={{ title: 'Suggest media' }} />
+            <Stack.Screen name="feedback" options={{ title: 'Send Feedback' }} />
+            <Stack.Screen name="about" options={{ title: 'About FCS Pulse' }} />
             <Stack.Screen name="team/[teamId]" options={{ title: 'Team' }} />
           </Stack>
         </SelectedConferenceProvider>

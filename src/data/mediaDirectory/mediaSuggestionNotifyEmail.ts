@@ -34,15 +34,22 @@ export function buildMediaSuggestionNotifyPayload(
   return payload;
 }
 
+/**
+ * Practical submitter-email check (not full RFC).
+ * Trims whitespace first. Aligns with submit_media_creator_update SQL:
+ *   ^[^@\s]+@[^@\s]+\.[^@\s]+$
+ */
 export function isValidSubmitterEmail(raw: string): boolean {
-  const email = raw.trim().toLowerCase();
+  const email = normalizeSubmitterEmail(raw);
   if (!email || email.length > 254) return false;
-  // Reasonable practical check (not full RFC).
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+/** Trim leading/trailing whitespace and lowercase for storage/submit. */
 export function normalizeSubmitterEmail(raw: string): string {
-  return raw.trim().toLowerCase();
+  return String(raw ?? '')
+    .replace(/^\s+|\s+$/g, '')
+    .toLowerCase();
 }
 
 export type MediaSuggestionEmailDetails = {

@@ -1,4 +1,4 @@
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 
 import type { EspnLinkCandidate, EspnNormalizedGame } from '@/types';
 
@@ -167,7 +167,11 @@ export async function openWatchOnEspn(game: EspnNormalizedGame): Promise<EspnWat
   }
 
   try {
-    if (resolution.appDeepLink) {
+    // ESPN's sportscenter showGame scheme launches the iOS ESPN app but does not
+    // route to the intended game (Home instead). iOS uses the ESPN HTTPS
+    // Universal Link / Gamecast URL so the installed app can open the game.
+    // Android keeps preferring sportscenter:// which deep-links correctly.
+    if (Platform.OS !== 'ios' && resolution.appDeepLink) {
       const canOpenApp = await Linking.canOpenURL(resolution.appDeepLink);
       if (canOpenApp) {
         await Linking.openURL(resolution.appDeepLink);

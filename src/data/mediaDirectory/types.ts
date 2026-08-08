@@ -87,8 +87,11 @@ export type MediaSuggestionInput = {
   isNational: boolean;
   conferenceIds: string[];
   teamIds: string[];
-  /** Required submitter contact email (owner clarification only; not public). */
+  /** Optional submitter contact email (owner clarification only; not public). Blank when omitted. */
   submitterEmail: string;
+  /** Public-facing creator blurb; maps to media_suggestions.description. */
+  description?: string | null;
+  /** Private review note for FCS Pulse; maps to media_suggestions.notes. */
   notes?: string | null;
   /** Optional display labels for owner notification email. */
   coverageLabel?: string | null;

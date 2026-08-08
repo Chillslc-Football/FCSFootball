@@ -72,7 +72,11 @@ export function ReportsPage() {
                   <td>
                     <Link to={`/reports/${row.id}`}>{row.creatorName || 'Unknown creator'}</Link>
                   </td>
-                  <td>{row.correctionType}</td>
+                  <td>
+                    {row.correctionType === 'creator_update'
+                      ? 'Creator update'
+                      : row.correctionType}
+                  </td>
                   <td>{row.submitterEmail || '—'}</td>
                   <td>{row.createdAt ? new Date(row.createdAt).toLocaleString() : '—'}</td>
                   <td>{row.status}</td>

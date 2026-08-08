@@ -96,6 +96,17 @@ export function resolveMediaScopeBadges(
   };
 }
 
+/** One-line coverage summary for directory rows and detail headers. */
+export function formatMediaCoverageSummary(
+  source: MediaSource,
+  options?: { maxBadges?: number },
+): string | null {
+  const { labels, overflowCount } = resolveMediaScopeBadges(source, options);
+  if (labels.length === 0) return null;
+  const base = labels.join(' · ');
+  return overflowCount > 0 ? `${base} · +${overflowCount} more` : base;
+}
+
 /** @deprecated Prefer resolveMediaScopeBadges for multi-coverage. */
 export function resolveMediaScopeBadge(source: MediaSource): string {
   const { labels } = resolveMediaScopeBadges(source, { maxBadges: 1 });

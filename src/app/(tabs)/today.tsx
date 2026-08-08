@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter, type Href } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,6 +12,7 @@ import {
 
 import { AddFavoriteTeamPicker } from '@/components/AddFavoriteTeamPicker';
 import { FavoriteTeamRow } from '@/components/FavoriteTeamRow';
+import { NewsArticleCard } from '@/components/NewsArticleCard';
 import { Screen } from '@/components/Screen';
 import {
   buildPickableTeamsFromGames,
@@ -21,8 +23,13 @@ import {
   enrichFavoriteTeam,
   findNextTeamGame,
 } from '@/data/favorites/findNextTeamGame';
+import { getNewsArticleKey, mergeNewsFeeds } from '@/data/news/newsUtils';
+import { useHeroSportsNews } from '@/data/news/useHeroSportsNews';
+import { useTheAnalystNews } from '@/data/news/useTheAnalystNews';
 import { logEspnRefreshDev } from '@/data/providers/espnRefreshLog';
 import { mergeStaticRankingsOntoGames } from '@/data/providers/rankingMerge';
+import { queueScoresFilterHandoff } from '@/data/scores/scoresFilterHandoff';
+import type { ScoresFilterId } from '@/data/scores/scoresFilters';
 import {
   useScoresLiveRefresh,
   type ScoresSilentRefreshOptions,
@@ -35,11 +42,16 @@ import type { EspnNormalizedGame } from '@/types';
 
 type LoadState = 'loading' | 'success';
 
+const HOME_NEWS_PREVIEW_COUNT = 3;
+
 export default function FavoritesScreen() {
+  const router = useRouter();
   const { favorites, loaded: favoritesLoaded, addFavorite } = useFavoriteTeams();
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [games, setGames] = useState<EspnNormalizedGame[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const heroNews = useHeroSportsNews();
+  const analystNews = useTheAnalystNews();
 
   const loadScheduleData = useCallback(async (options?: ScoresSilentRefreshOptions & {
     pullRefresh?: boolean;
@@ -119,14 +131,31 @@ export default function FavoritesScreen() {
 
   const pickableTeams = useMemo(() => buildPickableTeamsFromGames(games), [games]);
 
+  const previewArticles = useMemo(
+    () => mergeNewsFeeds([heroNews.articles, analystNews.articles]).slice(0, HOME_NEWS_PREVIEW_COUNT),
+    [analystNews.articles, heroNews.articles],
+  );
+
+  const newsLoading =
+    heroNews.loadState === 'loading' &&
+    analystNews.loadState === 'loading' &&
+    previewArticles.length === 0;
+
+  const heroRefresh = heroNews.refresh;
+  const analystRefresh = analystNews.refresh;
+
   const { refreshing, onPullToRefresh } = usePullToRefresh(
     useCallback(async () => {
-      await loadScheduleData({
-        pullRefresh: true,
-        forceRefresh: true,
-        trigger: 'favorites-ptr',
-      });
-    }, [loadScheduleData]),
+      await Promise.allSettled([
+        loadScheduleData({
+          pullRefresh: true,
+          forceRefresh: true,
+          trigger: 'favorites-ptr',
+        }),
+        heroRefresh({ force: true, background: true }),
+        analystRefresh({ force: true, background: true }),
+      ]);
+    }, [analystRefresh, heroRefresh, loadScheduleData]),
   );
 
   const isLoading = !favoritesLoaded || loadState === 'loading';
@@ -135,6 +164,15 @@ export default function FavoritesScreen() {
   async function handleSelectTeam(team: ReturnType<typeof buildPickableTeamsFromGames>[number]) {
     await addFavorite(pickableTeamToFavorite(team));
     setPickerOpen(false);
+  }
+
+  function openScoresWithFilter(filterId: ScoresFilterId) {
+    queueScoresFilterHandoff(filterId);
+    router.push('/(tabs)/scores' as Href);
+  }
+
+  function openAllNews() {
+    router.push({ pathname: '/(tabs)/news', params: { section: 'news' } } as Href);
   }
 
   return (
@@ -148,44 +186,105 @@ export default function FavoritesScreen() {
           colors={[colors.primary]}
         />
       }>
-      {!isLoading ? (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>My Teams</Text>
+
+        {!isLoading ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Add favorite team"
+            onPress={() => setPickerOpen(true)}
+            style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}>
+            <Ionicons name="add-circle-outline" size={20} color={colors.primary} />
+            <Text style={styles.addButtonText}>Add Favorite</Text>
+          </Pressable>
+        ) : null}
+
+        {isLoading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator color={colors.primary} size="large" />
+            <Text style={styles.loadingText}>Loading your teams…</Text>
+          </View>
+        ) : null}
+
+        {!isLoading && showEmptyFavorites ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyText}>
+              Home starts with your favorite teams. Tap Add Favorite or the star on a team page.
+            </Text>
+          </View>
+        ) : null}
+
+        {!isLoading && favorites.length > 0 ? (
+          <View style={styles.list}>
+            {favorites.map((favorite, index) => (
+              <FavoriteTeamRow
+                key={favorite.key || `${favorite.name}-${index}`}
+                favorite={favorite}
+                allGames={games}
+                isLast={index === favorites.length - 1}
+              />
+            ))}
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Quick Links</Text>
+        <View style={styles.quickLinksRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open FCS Top 25 scores"
+            onPress={() => openScoresWithFilter('fcs-top-25')}
+            style={({ pressed }) => [styles.quickLink, pressed && styles.quickLinkPressed]}>
+            <Text style={styles.quickLinkText}>FCS Top 25</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open FCS vs FBS scores"
+            onPress={() => openScoresWithFilter('fcs-vs-fbs')}
+            style={({ pressed }) => [styles.quickLink, pressed && styles.quickLinkPressed]}>
+            <Text style={styles.quickLinkText}>FCS vs FBS</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Latest FCS News</Text>
+
+        {newsLoading ? (
+          <View style={styles.newsLoadingBox}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        ) : null}
+
+        {!newsLoading && previewArticles.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyText}>No headlines available right now.</Text>
+          </View>
+        ) : null}
+
+        {previewArticles.length > 0 ? (
+          <View style={styles.newsList}>
+            {previewArticles.map((article, index) => (
+              <NewsArticleCard
+                key={getNewsArticleKey(article)}
+                article={article}
+                isLast={index === previewArticles.length - 1}
+              />
+            ))}
+          </View>
+        ) : null}
+
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Add favorite team"
-          onPress={() => setPickerOpen(true)}
-          style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}>
-          <Ionicons name="add-circle-outline" size={20} color={colors.primary} />
-          <Text style={styles.addButtonText}>Add Favorite</Text>
+          accessibilityLabel="View all FCS news"
+          onPress={openAllNews}
+          style={({ pressed }) => [styles.viewAllButton, pressed && styles.viewAllPressed]}>
+          <Text style={styles.viewAllText}>View All</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.primary} />
         </Pressable>
-      ) : null}
-
-      {isLoading ? (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator color={colors.primary} size="large" />
-          <Text style={styles.loadingText}>Loading favorites…</Text>
-        </View>
-      ) : null}
-
-      {!isLoading && showEmptyFavorites ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyText}>
-            No favorite teams yet. Tap Add Favorite or the star on a team page.
-          </Text>
-        </View>
-      ) : null}
-
-      {!isLoading && favorites.length > 0 ? (
-        <View style={styles.list}>
-          {favorites.map((favorite, index) => (
-            <FavoriteTeamRow
-              key={favorite.key || `${favorite.name}-${index}`}
-              favorite={favorite}
-              allGames={games}
-              isLast={index === favorites.length - 1}
-            />
-          ))}
-        </View>
-      ) : null}
+      </View>
 
       <AddFavoriteTeamPicker
         visible={pickerOpen}
@@ -199,6 +298,14 @@ export default function FavoritesScreen() {
 }
 
 const styles = StyleSheet.create({
+  section: {
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  sectionTitle: {
+    ...typography.label,
+    color: colors.textMuted,
+  },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -210,7 +317,6 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
-    marginBottom: spacing.sm,
   },
   addButtonPressed: {
     opacity: 0.75,
@@ -255,5 +361,57 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
+  },
+  quickLinksRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  quickLink: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  quickLinkPressed: {
+    opacity: 0.85,
+    backgroundColor: colors.surfaceElevated,
+  },
+  quickLinkText: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  newsLoadingBox: {
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
+  },
+  newsList: {
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+  },
+  viewAllPressed: {
+    opacity: 0.75,
+  },
+  viewAllText: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.primary,
   },
 });

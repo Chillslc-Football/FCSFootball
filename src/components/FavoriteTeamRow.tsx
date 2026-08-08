@@ -9,7 +9,10 @@ import {
   findNextTeamGame,
 } from '@/data/favorites/findNextTeamGame';
 import { colors, spacing, typography } from '@/theme';
-import { formatGameKickoffDate, formatGameKickoffTime } from '@/utils/formatGameTime';
+import {
+  formatFavoriteUpcomingKickoff,
+  formatGameKickoffDate,
+} from '@/utils/formatGameTime';
 import { buildTeamHref } from '@/utils/teamId';
 import type { EspnNormalizedGame } from '@/types';
 import type { FavoriteTeam } from '@/types/favorites';
@@ -83,16 +86,20 @@ export function FavoriteTeamRow({ favorite, allGames, isLast = false }: Favorite
               {nextGameInfo.opponent}
             </Text>
             <View style={styles.nextMetaRow}>
-              <Text style={styles.nextMetaText}>
-                {formatGameKickoffDate(nextGameInfo.game)}
-              </Text>
-              <Text style={[styles.nextMetaText, isLive && styles.nextMetaLive]}>
-                {isLive
-                  ? nextGameInfo.game.status
-                  : nextGameInfo.game.normalizedStatus === 'final'
-                    ? 'Final'
-                    : formatGameKickoffTime(nextGameInfo.game)}
-              </Text>
+              {isLive || nextGameInfo.game.normalizedStatus === 'final' ? (
+                <>
+                  <Text style={styles.nextMetaText}>
+                    {formatGameKickoffDate(nextGameInfo.game)}
+                  </Text>
+                  <Text style={[styles.nextMetaText, isLive && styles.nextMetaLive]}>
+                    {isLive ? nextGameInfo.game.status : 'Final'}
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.nextMetaText}>
+                  {formatFavoriteUpcomingKickoff(nextGameInfo.game)}
+                </Text>
+              )}
             </View>
             <CompactWatchLabel game={nextGameInfo.game} stopPropagation />
           </View>

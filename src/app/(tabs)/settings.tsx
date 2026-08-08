@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 
 import { Screen } from '@/components/Screen';
-import { useAdminAuth } from '@/data/media/useAdminAuth';
 import { useNotificationPreferences } from '@/hooks/useNotificationPreferences';
 import { colors, spacing, typography } from '@/theme';
 
@@ -33,7 +32,6 @@ export default function SettingsScreen() {
     updatePreference,
     openSystemSettings,
   } = useNotificationPreferences();
-  const adminAuth = useAdminAuth();
 
   return (
     <Screen title="Settings" subtitle="App preferences and configuration.">
@@ -110,46 +108,28 @@ export default function SettingsScreen() {
         )}
       </View>
 
-      {adminAuth.isAdmin || __DEV__ ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Administration</Text>
-          <Link href={'/admin' as Href} asChild>
-            <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-              <Text style={styles.rowTitle}>Media submissions</Text>
-              <Text style={styles.rowSubtitle}>
-                {adminAuth.isAdmin
-                  ? 'Review pending community media suggestions'
-                  : 'Development shortcut — requires allowlisted admin sign-in'}
-              </Text>
-            </Pressable>
-          </Link>
-        </View>
-      ) : null}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Support</Text>
+        <Link href={'/feedback' as Href} asChild>
+          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+            <Text style={styles.rowTitle}>Send Feedback</Text>
+            <Text style={styles.rowSubtitle}>Bugs, ideas, or anything that would help</Text>
+          </Pressable>
+        </Link>
+        <Link href={'/about' as Href} asChild>
+          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+            <Text style={styles.rowTitle}>About FCS Pulse</Text>
+            <Text style={styles.rowSubtitle}>Why this app exists</Text>
+          </Pressable>
+        </Link>
+      </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Developer</Text>
-        <Link href={'/developer' as Href} asChild>
+        <Text style={styles.sectionTitle}>Admin</Text>
+        <Link href={'/admin' as Href} asChild>
           <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-            <Text style={styles.rowTitle}>Developer</Text>
-            <Text style={styles.rowSubtitle}>Internal tools and data testing</Text>
-          </Pressable>
-        </Link>
-        <Link href={'/developer/espn-test' as Href} asChild>
-          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-            <Text style={styles.rowTitle}>ESPN Data Test</Text>
-            <Text style={styles.rowSubtitle}>Scores & schedule via espnScoresProvider</Text>
-          </Pressable>
-        </Link>
-        <Link href={'/developer/notification-test' as Href} asChild>
-          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-            <Text style={styles.rowTitle}>Notification Test</Text>
-            <Text style={styles.rowSubtitle}>Local notification simulations (development only)</Text>
-          </Pressable>
-        </Link>
-        <Link href={'/developer/ncaa-rankings-test' as Href} asChild>
-          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-            <Text style={styles.rowTitle}>NCAA Rankings Test</Text>
-            <Text style={styles.rowSubtitle}>Stats Perform FCS Top 25 — not connected yet</Text>
+            <Text style={styles.rowTitle}>Admin</Text>
+            <Text style={styles.rowSubtitle}>Internal tools, media review, and diagnostics</Text>
           </Pressable>
         </Link>
       </View>

@@ -165,7 +165,7 @@ export default function DeveloperMediaSuggestionsScreen() {
 
       {!auth.isAdmin ? (
         <Text style={styles.help}>
-          Open /admin to sign in with an allowlisted account, then return here.
+          Open Admin → Media submissions to sign in with an allowlisted account, then return here.
         </Text>
       ) : null}
 

@@ -1,34 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import {
-  formatMediaLinkActionLabel,
-  platformLinksToMediaLinkRows,
-  type MediaLinkRow,
-} from '@/data/mediaDirectory/mediaLinkRows';
-import { resolveMediaScopeBadges } from '@/data/mediaDirectory/mediaScopeBadge';
-import { hasMediaUrl, openMediaUrl } from '@/data/mediaDirectory/openMediaUrl';
-import { resolveMediaArtworkUrl } from '@/data/mediaDirectory/resolveMediaArtworkUrl';
+import { MediaArtwork } from '@/components/media/MediaArtwork';
+import { formatMediaLinkActionLabel } from '@/data/mediaDirectory/mediaLinkRows';
+import { getMediaSourceActionLinks } from '@/data/mediaDirectory/mediaSourceLinks';
+import { formatMediaCoverageSummary } from '@/data/mediaDirectory/mediaScopeBadge';
+import { openMediaUrl } from '@/data/mediaDirectory/openMediaUrl';
 import type { MediaSource } from '@/data/mediaDirectory/types';
 import { colors, spacing, typography } from '@/theme';
 
 const LOGO_SIZE = 48;
 const COMPACT_LOGO_SIZE = 40;
-
-function initialsForName(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
-}
-
-function resolveScopeMeta(source: MediaSource): string | null {
-  const { labels, overflowCount } = resolveMediaScopeBadges(source);
-  if (labels.length === 0) return null;
-  const base = labels.join(' · ');
-  return overflowCount > 0 ? `${base} · +${overflowCount} more` : base;
-}
 
 function resolveShortDescription(source: MediaSource): string | null {
   const subtitle = source.subtitle?.trim();
@@ -60,60 +43,6 @@ function iconForPlatform(platform: string): keyof typeof Ionicons.glyphMap {
   }
 }
 
-function resolveActionLinks(source: MediaSource): MediaLinkRow[] {
-  if (source.links?.length) {
-    return source.links.filter((link) => hasMediaUrl(link.url));
-  }
-  return platformLinksToMediaLinkRows({
-    spotify: source.spotify_url ?? undefined,
-    youtube: source.youtube_url ?? undefined,
-    x: source.x_url ?? undefined,
-    apple: source.apple_podcast_url ?? undefined,
-  }).filter((link) => hasMediaUrl(link.url));
-}
-
-function MediaArtwork({
-  name,
-  source,
-  size,
-}: {
-  name: string;
-  source: MediaSource;
-  size: number;
-}) {
-  const artworkUrl = resolveMediaArtworkUrl(source);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    setFailed(false);
-  }, [artworkUrl]);
-
-  const showImage = Boolean(artworkUrl) && !failed;
-  const frameStyle = [styles.artworkFrame, { width: size, height: size, borderRadius: 8 }];
-
-  if (!showImage || !artworkUrl) {
-    return (
-      <View style={frameStyle} accessibilityElementsHidden>
-        <Text style={[styles.logoInitials, size <= 40 && styles.logoInitialsCompact]}>
-          {initialsForName(name)}
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={frameStyle}>
-      <Image
-        accessibilityIgnoresInvertColors
-        source={{ uri: artworkUrl }}
-        style={{ width: size, height: size, borderRadius: 8 }}
-        resizeMode="cover"
-        onError={() => setFailed(true)}
-      />
-    </View>
-  );
-}
-
 export function MediaSourceCard({
   source,
   variant = 'default',
@@ -123,9 +52,9 @@ export function MediaSourceCard({
   variant?: 'default' | 'compact';
 }) {
   const compact = variant === 'compact';
-  const actionLinks = useMemo(() => resolveActionLinks(source), [source]);
+  const actionLinks = useMemo(() => getMediaSourceActionLinks(source), [source]);
   const hasAnyProvider = actionLinks.length > 0;
-  const scopeMeta = resolveScopeMeta(source);
+  const scopeMeta = formatMediaCoverageSummary(source);
   const shortDescription = resolveShortDescription(source);
   const logoSize = compact ? COMPACT_LOGO_SIZE : LOGO_SIZE;
 
@@ -220,24 +149,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
-  },
-  artworkFrame: {
-    backgroundColor: colors.surfaceElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-    flexShrink: 0,
-  },
-  logoInitials: {
-    ...typography.caption,
-    fontWeight: '700',
-    color: colors.primary,
-    fontSize: 14,
-  },
-  logoInitialsCompact: {
-    fontSize: 12,
   },
   textBlock: {
     flex: 1,

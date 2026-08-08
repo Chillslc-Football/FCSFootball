@@ -273,6 +273,48 @@ export function formatGameKickoffDateTime(
   return `${datePart} • ${timePart}`;
 }
 
+const MONTH_LONG_TO_SHORT: Record<string, string> = {
+  January: 'Jan',
+  February: 'Feb',
+  March: 'Mar',
+  April: 'Apr',
+  May: 'May',
+  June: 'Jun',
+  July: 'Jul',
+  August: 'Aug',
+  September: 'Sep',
+  October: 'Oct',
+  November: 'Nov',
+  December: 'Dec',
+};
+
+/** Favorites upcoming kickoff only — compact display; does not change shared formatters. */
+export function formatFavoriteUpcomingKickoff(
+  source: EspnKickoffDisplaySource | string | undefined,
+): string {
+  const dateRaw = formatGameKickoffDate(source);
+  const timeRaw = formatGameKickoffTime(source);
+
+  if (dateRaw === 'TBD' && timeRaw === 'TBD') return 'TBD';
+
+  const datePart =
+    dateRaw === 'TBD'
+      ? dateRaw
+      : dateRaw
+          .replace(/\b(\d{1,2})(st|nd|rd|th)\b/gi, '$1')
+          .replace(
+            /\b(January|February|March|April|May|June|July|August|September|October|November|December)\b/g,
+            (month) => MONTH_LONG_TO_SHORT[month] ?? month,
+          );
+
+  const timePart =
+    timeRaw === 'TBD' ? timeRaw : timeRaw.replace(/\b(EDT|EST)\b/gi, 'ET');
+
+  if (datePart === 'TBD') return timePart;
+  if (timePart === 'TBD') return datePart;
+  return `${datePart} • ${timePart}`;
+}
+
 /** Detailed kickoff label — same as formatGameKickoffDateTime. */
 export function formatGameKickoffDateTimeDetailed(
   source: EspnKickoffDisplaySource | string | undefined,

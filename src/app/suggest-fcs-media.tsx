@@ -12,34 +12,40 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { MediaBrowseFilterChips, MediaBrowseSheet } from '@/components/media/MediaBrowseSheet';
+import { DROPDOWN_CHEVRON_SIZE, dropdownStyles } from '@/components/dropdownStyles';
+import { MediaBrowseSheet } from '@/components/media/MediaBrowseSheet';
+import { MediaPlatformPicker } from '@/components/media/MediaPlatformPicker';
 import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
 import { resolveSuggestCoverageFromParams } from '@/data/mediaDirectory/contextualMedia';
 import {
   buildMediaBrowseTeamOptions,
+  cloneMediaBrowseFilter,
   createEmptyMediaBrowseFilter,
+  formatCompactMediaBrowseCoverageSummary,
   formatMediaBrowseCoverageLabel,
-  getMediaBrowseChips,
   getMediaBrowseConferenceOptions,
   mediaBrowseFilterToCoverage,
-  removeMediaBrowseChip,
+  unionMediaBrowseFilters,
   type MediaBrowseFilter,
   type MediaBrowseTeamOption,
 } from '@/data/mediaDirectory/mediaBrowse';
 import {
+  detectMediaPlatformFromUrl,
+  getSuggestLinkUrlHostKey,
+  normalizeSuggestLinkUrl,
+} from '@/data/mediaDirectory/mediaLinkUrlDetection';
+import {
   createEmptyMediaLinkRow,
+  getMediaLinkRowBrowseFilter,
+  isMediaPlatformLinkKey,
   type MediaLinkRowInput,
 } from '@/data/mediaDirectory/mediaLinkRows';
-import {
-  MEDIA_PLATFORM_LINK_KEYS,
-  MEDIA_PLATFORM_LINK_LABELS,
-  MEDIA_PLATFORM_LINK_PLACEHOLDERS,
-  type MediaPlatformLinkKey,
-} from '@/data/mediaDirectory/mediaPlatformLinks';
+import { type MediaPlatformLinkKey } from '@/data/mediaDirectory/mediaPlatformLinks';
 import { buildMediaSuggestionCoverageLabels } from '@/data/mediaDirectory/mediaSuggestionCoverageLabels';
 import { submitMediaSuggestion } from '@/data/mediaDirectory/mediaSuggestionsApi';
 import type { MediaSuggestionFieldErrors } from '@/data/mediaDirectory/mediaSourceValidation';
@@ -53,8 +59,14 @@ import { debugLogSupabaseConfig } from '@/data/notifications/supabaseClient';
 import { getAllCachedEspnGames } from '@/data/teams/teamGamesStore';
 import { colors, spacing, typography } from '@/theme';
 
-/** Extra space above the keyboard so the field + validation stay visible. */
-const FOCUS_SCROLL_EXTRA = 140;
+function resolveLinkPlatform(platform: string | null | undefined): MediaPlatformLinkKey {
+  const key = String(platform ?? '').trim().toLowerCase();
+  return isMediaPlatformLinkKey(key) ? key : 'website';
+}
+
+const STICKY_SUBMIT_HEIGHT = 64;
+const FOCUS_EDGE_PAD = 12;
+const URL_PLACEHOLDER = 'youtube.com/@example';
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
@@ -78,29 +90,87 @@ function useKeyboardHeight() {
   return height;
 }
 
-function scrollFocusedInputIntoView(
+function measureWindow(
+  node: Parameters<typeof findNodeHandle>[0] | null | undefined,
+): Promise<{ x: number; y: number; width: number; height: number } | null> {
+  if (node == null) return Promise.resolve(null);
+  const handle = findNodeHandle(node);
+  if (handle == null) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    UIManager.measureInWindow(handle, (x, y, width, height) => {
+      if (
+        typeof x !== 'number' ||
+        typeof y !== 'number' ||
+        typeof width !== 'number' ||
+        typeof height !== 'number'
+      ) {
+        resolve(null);
+        return;
+      }
+      resolve({ x, y, width, height });
+    });
+  });
+}
+
+/**
+ * Keep the focused field inside the ScrollView viewport (above sticky submit,
+ * below the top edge) without the aggressive keyboard-native scroll that can
+ * push multiline fields offscreen.
+ */
+async function ensureFocusedInputVisible(
   scrollRef: React.RefObject<ScrollView | null>,
   target: Parameters<typeof findNodeHandle>[0] | null | undefined,
+  scrollY: number,
 ) {
   if (!target || !scrollRef.current) return;
-  const nodeHandle = findNodeHandle(target);
-  if (nodeHandle == null) return;
+  const [scrollBox, inputBox] = await Promise.all([
+    measureWindow(scrollRef.current),
+    measureWindow(target),
+  ]);
+  if (!scrollBox || !inputBox) return;
 
-  const delay = Platform.OS === 'ios' ? 60 : 160;
-  setTimeout(() => {
-    const scrollView = scrollRef.current as unknown as {
-      getScrollResponder?: () => {
-        scrollResponderScrollNativeHandleToKeyboard?: (
-          nodeHandle: number,
-          additionalOffset: number,
-          preventNegativeScrollOffset: boolean,
-        ) => void;
-      };
-    } | null;
-    scrollView
-      ?.getScrollResponder?.()
-      ?.scrollResponderScrollNativeHandleToKeyboard?.(nodeHandle, FOCUS_SCROLL_EXTRA, true);
-  }, delay);
+  const visibleTop = scrollBox.y + FOCUS_EDGE_PAD;
+  const visibleBottom = scrollBox.y + scrollBox.height - FOCUS_EDGE_PAD;
+  const inputTop = inputBox.y;
+  const inputBottom = inputBox.y + inputBox.height;
+
+  let delta = 0;
+  if (inputBottom > visibleBottom) {
+    delta = inputBottom - visibleBottom;
+  } else if (inputTop < visibleTop) {
+    delta = inputTop - visibleTop;
+  }
+  if (delta === 0) return;
+
+  scrollRef.current.scrollTo({
+    y: Math.max(0, scrollY + delta),
+    animated: true,
+  });
+}
+
+/** Normalize URL + apply auto platform unless a manual override is still sticky. */
+function prepareLinkRowsForSubmit(rows: MediaLinkRowInput[]): MediaLinkRowInput[] {
+  return rows.map((row) => {
+    const url = normalizeSuggestLinkUrl(String(row.url ?? ''));
+    const detected = detectMediaPlatformFromUrl(url);
+    const host = getSuggestLinkUrlHostKey(url);
+    const manualSticky =
+      Boolean(row.platformManual) &&
+      Boolean(row.platformManualHostKey) &&
+      row.platformManualHostKey === host;
+
+    let platform = resolveLinkPlatform(row.platform);
+    if (detected && !manualSticky) {
+      platform = detected;
+    }
+    return {
+      ...row,
+      url,
+      platform,
+      platformManual: manualSticky,
+      platformManualHostKey: manualSticky ? host : null,
+    };
+  });
 }
 
 export default function SuggestFcsMediaScreen() {
@@ -115,30 +185,47 @@ export default function SuggestFcsMediaScreen() {
   const { favorites } = useFavoriteTeams();
   const keyboardHeight = useKeyboardHeight();
   const scrollRef = useRef<ScrollView>(null);
+  const scrollYRef = useRef(0);
+  const focusedInputRef = useRef<Parameters<typeof findNodeHandle>[0] | null>(null);
   const nameRef = useRef<TextInput>(null);
+  const descriptionRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
   const notesRef = useRef<TextInput>(null);
   const linkLabelRefs = useRef<Array<TextInput | null>>([]);
   const linkUrlRefs = useRef<Array<TextInput | null>>([]);
 
-  const [name, setName] = useState('');
-  const [submitterEmail, setSubmitterEmail] = useState('');
-  const [linkRows, setLinkRows] = useState<MediaLinkRowInput[]>([createEmptyMediaLinkRow(0)]);
-  // Seed coverage once from validated route params; user can edit/remove chips freely.
-  const [coverage, setCoverage] = useState<MediaBrowseFilter>(() =>
-    resolveSuggestCoverageFromParams({
-      teamId: firstParam(params.teamId),
-      teamName: firstParam(params.teamName),
-      conferenceId: firstParam(params.conferenceId),
-      conferenceName: firstParam(params.conferenceName),
-    }),
+  const initialCoverage = useMemo(
+    () =>
+      resolveSuggestCoverageFromParams({
+        teamId: firstParam(params.teamId),
+        teamName: firstParam(params.teamName),
+        conferenceId: firstParam(params.conferenceId),
+        conferenceName: firstParam(params.conferenceName),
+      }),
+    [params.teamId, params.teamName, params.conferenceId, params.conferenceName],
   );
-  const [coverageOpen, setCoverageOpen] = useState(false);
+
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [submitterEmail, setSubmitterEmail] = useState('');
+  const [linkRows, setLinkRows] = useState<MediaLinkRowInput[]>(() => [
+    createEmptyMediaLinkRow(0, initialCoverage),
+  ]);
+  const [coverageEditorIndex, setCoverageEditorIndex] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [labelOpenByIndex, setLabelOpenByIndex] = useState<Record<number, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<MediaSuggestionFieldErrors>({});
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const showNotesField = notesOpen || Boolean(notes.trim());
+  const coverageSheetOpen = coverageEditorIndex != null;
+  const activeLinkCoverage =
+    coverageEditorIndex != null && linkRows[coverageEditorIndex]
+      ? getMediaLinkRowBrowseFilter(linkRows[coverageEditorIndex]!)
+      : createEmptyMediaBrowseFilter();
 
   useEffect(() => {
     debugLogSupabaseConfig('SuggestFcsMediaScreen.mount');
@@ -161,18 +248,35 @@ export default function SuggestFcsMediaScreen() {
     return [...byId.entries()]
       .map(([id, teamName]) => ({ id, name: teamName }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  }, [favorites, coverageOpen]);
+  }, [favorites, coverageSheetOpen]);
 
-  const coverageChips = useMemo(() => getMediaBrowseChips(coverage), [coverage]);
+  const stickyBottomPad = Math.max(insets.bottom, spacing.sm);
+  const scrollBottomPad =
+    STICKY_SUBMIT_HEIGHT +
+    stickyBottomPad +
+    spacing.md +
+    (keyboardHeight > 0 ? spacing.lg : spacing.sm);
 
-  const bottomPadding =
-    Math.max(insets.bottom, spacing.xxl) +
-    spacing.xl +
-    (keyboardHeight > 0 ? Math.max(keyboardHeight * 0.35, spacing.xxl) : spacing.xxl);
+  useEffect(() => {
+    if (keyboardHeight <= 0 || !focusedInputRef.current) return;
+    const delay = Platform.OS === 'ios' ? 80 : 120;
+    const timer = setTimeout(() => {
+      void ensureFocusedInputVisible(scrollRef, focusedInputRef.current, scrollYRef.current);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [keyboardHeight]);
 
   function onInputFocus(event: { target?: unknown }) {
     const target = event.target as Parameters<typeof findNodeHandle>[0] | null | undefined;
-    scrollFocusedInputIntoView(scrollRef, target);
+    focusedInputRef.current = target ?? null;
+    const delay = Platform.OS === 'ios' ? 100 : 160;
+    setTimeout(() => {
+      void ensureFocusedInputVisible(scrollRef, target, scrollYRef.current);
+    }, delay);
+  }
+
+  function onInputBlur() {
+    focusedInputRef.current = null;
   }
 
   function updateLinkRow(index: number, patch: Partial<MediaLinkRowInput>) {
@@ -184,12 +288,75 @@ export default function SuggestFcsMediaScreen() {
       delete next.links;
       delete next[`links.${index}.url`];
       delete next[`links.${index}.platform`];
+      delete next[`links.${index}.coverage`];
       return next;
     });
   }
 
+  function finalizeLinkUrl(index: number) {
+    setLinkRows((current) =>
+      current.map((row, rowIndex) => {
+        if (rowIndex !== index) return row;
+        const url = normalizeSuggestLinkUrl(String(row.url ?? ''));
+        const detected = detectMediaPlatformFromUrl(url);
+        const host = getSuggestLinkUrlHostKey(url);
+        const manualSticky =
+          Boolean(row.platformManual) &&
+          Boolean(row.platformManualHostKey) &&
+          row.platformManualHostKey === host;
+        if (!detected || manualSticky) {
+          return { ...row, url };
+        }
+        return {
+          ...row,
+          url,
+          platform: detected,
+          platformManual: false,
+          platformManualHostKey: null,
+        };
+      }),
+    );
+    setFieldErrors((current) => {
+      const next = { ...current };
+      delete next.links;
+      delete next[`links.${index}.url`];
+      delete next[`links.${index}.platform`];
+      return next;
+    });
+  }
+
+  function setLinkPlatformManual(index: number, platform: MediaPlatformLinkKey) {
+    setLinkRows((current) =>
+      current.map((row, rowIndex) => {
+        if (rowIndex !== index) return row;
+        return {
+          ...row,
+          platform,
+          platformManual: true,
+          platformManualHostKey: getSuggestLinkUrlHostKey(String(row.url ?? '')),
+        };
+      }),
+    );
+    setFieldErrors((current) => {
+      const next = { ...current };
+      delete next.links;
+      delete next[`links.${index}.platform`];
+      return next;
+    });
+  }
+
+  function setLinkCoverage(index: number, filter: MediaBrowseFilter) {
+    updateLinkRow(index, { coverage: cloneMediaBrowseFilter(filter) });
+  }
+
   function addLinkRow() {
-    setLinkRows((current) => [...current, createEmptyMediaLinkRow(current.length)]);
+    setLinkRows((current) => {
+      const previous = current[current.length - 1];
+      const inherit = previous
+        ? getMediaLinkRowBrowseFilter(previous)
+        : createEmptyMediaBrowseFilter();
+      return [...current, createEmptyMediaLinkRow(current.length, inherit)];
+    });
     requestAnimationFrame(() => {
       setTimeout(() => {
         scrollRef.current?.scrollToEnd({ animated: true });
@@ -208,6 +375,21 @@ export default function SuggestFcsMediaScreen() {
         .filter((_, rowIndex) => rowIndex !== index)
         .map((row, sortOrder) => ({ ...row, sortOrder }));
     });
+    setLabelOpenByIndex((current) => {
+      const next: Record<number, boolean> = {};
+      for (const [key, open] of Object.entries(current)) {
+        const fromIndex = Number(key);
+        if (Number.isNaN(fromIndex) || fromIndex === index) continue;
+        const toIndex = fromIndex > index ? fromIndex - 1 : fromIndex;
+        next[toIndex] = open;
+      }
+      return next;
+    });
+    setCoverageEditorIndex((current) => {
+      if (current == null) return null;
+      if (current === index) return null;
+      return current > index ? current - 1 : current;
+    });
     setFieldErrors((current) => {
       const next = { ...current };
       delete next.links;
@@ -217,10 +399,13 @@ export default function SuggestFcsMediaScreen() {
 
   function resetForm() {
     setName('');
+    setDescription('');
     setSubmitterEmail('');
     setLinkRows([createEmptyMediaLinkRow(0)]);
-    setCoverage(createEmptyMediaBrowseFilter());
+    setCoverageEditorIndex(null);
     setNotes('');
+    setNotesOpen(false);
+    setLabelOpenByIndex({});
     setFieldErrors({});
   }
 
@@ -232,17 +417,23 @@ export default function SuggestFcsMediaScreen() {
     setSuccessMessage(null);
     setFieldErrors({});
     try {
-      const mapped = mediaBrowseFilterToCoverage(coverage);
+      const preparedLinks = prepareLinkRowsForSubmit(linkRows);
+      setLinkRows(preparedLinks);
+      const unionFilter = unionMediaBrowseFilters(
+        preparedLinks.map((row) => getMediaLinkRowBrowseFilter(row)),
+      );
+      const mapped = mediaBrowseFilterToCoverage(unionFilter);
       const result = await submitMediaSuggestion({
         name,
+        description: description.trim() || null,
         submitterEmail,
-        linkRows,
+        linkRows: preparedLinks,
         isNational: mapped.isNational,
         conferenceIds: mapped.conferenceIds,
         teamIds: mapped.teamIds,
         notes: notes.trim() || null,
-        coverageLabel: formatMediaBrowseCoverageLabel(coverage) || undefined,
-        coverageLabels: buildMediaSuggestionCoverageLabels(coverage),
+        coverageLabel: formatMediaBrowseCoverageLabel(unionFilter) || undefined,
+        coverageLabels: buildMediaSuggestionCoverageLabels(unionFilter),
       });
       if (!result.ok) {
         if (result.fieldErrors && Object.keys(result.fieldErrors).length > 0) {
@@ -271,177 +462,249 @@ export default function SuggestFcsMediaScreen() {
       <SafeAreaView style={styles.flex} edges={['bottom', 'left', 'right']}>
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}>
           <ScrollView
             ref={scrollRef}
             style={styles.container}
-            contentContainerStyle={[styles.content, { paddingBottom: bottomPadding }]}
+            contentContainerStyle={[styles.content, { paddingBottom: scrollBottomPad }]}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+            onScroll={(event) => {
+              scrollYRef.current = event.nativeEvent.contentOffset.y;
+            }}
+            scrollEventThrottle={16}
             showsVerticalScrollIndicator>
-            <Text style={styles.heading}>Suggest FCS Media</Text>
+            <View style={styles.fieldBlock}>
+              <Text style={styles.label}>Creator or Podcast Name</Text>
+              <TextInput
+                ref={nameRef}
+                value={name}
+                onFocus={onInputFocus}
+                onBlur={onInputBlur}
+                onChangeText={(value) => {
+                  setName(value);
+                  setFieldErrors((current) => {
+                    if (!current.name) return current;
+                    const next = { ...current };
+                    delete next.name;
+                    return next;
+                  });
+                }}
+                placeholder="e.g. Bobcat Insider Podcast"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="words"
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => descriptionRef.current?.focus()}
+                style={styles.input}
+              />
+              {fieldErrors.name ? <Text style={styles.fieldError}>{fieldErrors.name}</Text> : null}
+            </View>
 
-            <Text style={styles.label}>Creator or Podcast Name</Text>
-            <TextInput
-              ref={nameRef}
-              value={name}
-              onFocus={onInputFocus}
-              onChangeText={(value) => {
-                setName(value);
-                setFieldErrors((current) => {
-                  if (!current.name) return current;
-                  const next = { ...current };
-                  delete next.name;
-                  return next;
-                });
-              }}
-              placeholder="e.g. Bobcat Insider Podcast"
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="words"
-              returnKeyType="next"
-              blurOnSubmit={false}
-              onSubmitEditing={() => emailRef.current?.focus()}
-              style={styles.input}
-            />
-            {fieldErrors.name ? <Text style={styles.fieldError}>{fieldErrors.name}</Text> : null}
+            <View style={styles.fieldBlock}>
+              <Text style={styles.label}>Creator Description</Text>
+              <Text style={styles.hint}>
+                Tell fans what your show, channel, or site is about.
+              </Text>
+              <TextInput
+                ref={descriptionRef}
+                value={description}
+                onFocus={onInputFocus}
+                onBlur={onInputBlur}
+                onChangeText={setDescription}
+                placeholder="Optional public description"
+                placeholderTextColor={colors.textMuted}
+                multiline
+                textAlignVertical="top"
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => emailRef.current?.focus()}
+                style={[styles.input, styles.descriptionInput]}
+              />
+            </View>
 
-            <Text style={styles.label}>Your Email</Text>
-            <Text style={styles.hint}>
-              Used only if we need clarification about your suggestion.
+            <View style={styles.fieldBlock}>
+              <Text style={styles.labelSecondary}>Email (optional)</Text>
+              <Text style={styles.hint}>Only used if we need clarification.</Text>
+              <TextInput
+                ref={emailRef}
+                value={submitterEmail}
+                onFocus={onInputFocus}
+                onBlur={onInputBlur}
+                onChangeText={(value) => {
+                  setSubmitterEmail(value);
+                  setFieldErrors((current) => {
+                    if (!current.submitterEmail) return current;
+                    const next = { ...current };
+                    delete next.submitterEmail;
+                    return next;
+                  });
+                }}
+                placeholder="you@example.com"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                textContentType="emailAddress"
+                autoComplete="email"
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => {
+                  linkUrlRefs.current[0]?.focus();
+                }}
+                style={[styles.input, styles.emailInput]}
+              />
+              {fieldErrors.submitterEmail ? (
+                <Text style={styles.fieldError}>{fieldErrors.submitterEmail}</Text>
+              ) : null}
+            </View>
+
+            <Text style={styles.sectionHeading}>Links</Text>
+            <Text style={styles.linksHelper}>
+              Supports Website, YouTube, Spotify, Apple Podcasts, X, Facebook, Instagram, RSS, and
+              other links.
             </Text>
-            <TextInput
-              ref={emailRef}
-              value={submitterEmail}
-              onFocus={onInputFocus}
-              onChangeText={(value) => {
-                setSubmitterEmail(value);
-                setFieldErrors((current) => {
-                  if (!current.submitterEmail) return current;
-                  const next = { ...current };
-                  delete next.submitterEmail;
-                  return next;
-                });
-              }}
-              placeholder="you@example.com"
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              textContentType="emailAddress"
-              autoComplete="email"
-              returnKeyType="next"
-              blurOnSubmit={false}
-              onSubmitEditing={() => {
-                const label = linkLabelRefs.current[0];
-                if (label) label.focus();
-                else linkUrlRefs.current[0]?.focus();
-              }}
-              style={styles.input}
-            />
-            {fieldErrors.submitterEmail ? (
-              <Text style={styles.fieldError}>{fieldErrors.submitterEmail}</Text>
-            ) : null}
 
-            <Text style={styles.label}>Platform Links</Text>
-            <Text style={styles.hint}>
-              Add at least one link. You can add multiple YouTube, Spotify, or other links.
-            </Text>
+            {linkRows.map((row, index) => {
+              const platform = resolveLinkPlatform(row.platform);
+              const showLabelField =
+                Boolean(labelOpenByIndex[index]) || Boolean(row.label?.trim());
+              const linkCoverage = getMediaLinkRowBrowseFilter(row);
+              const coverageSummary = formatCompactMediaBrowseCoverageSummary(linkCoverage, 2);
+              return (
+                <View key={`link-${index}`} style={styles.linkCard}>
+                  <View style={styles.linkCardHeader}>
+                    <Text style={styles.linkTitle}>Link {index + 1}</Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove link ${index + 1}`}
+                      onPress={() => removeLinkRow(index)}
+                      hitSlop={10}
+                      style={({ pressed }) => [styles.removeLink, pressed && styles.pressed]}>
+                      <Text style={styles.removeLinkText}>Remove</Text>
+                    </Pressable>
+                  </View>
 
-            {linkRows.map((row, index) => (
-              <View key={`link-${index}`} style={styles.linkCard}>
-                <View style={styles.linkCardHeader}>
-                  <Text style={styles.linkLabel}>Link {index + 1}</Text>
+                  <Text style={styles.coverageLabel}>URL</Text>
+                  <TextInput
+                    ref={(node) => {
+                      linkUrlRefs.current[index] = node;
+                    }}
+                    value={row.url ?? ''}
+                    onFocus={onInputFocus}
+                    onBlur={() => {
+                      onInputBlur();
+                      finalizeLinkUrl(index);
+                    }}
+                    onChangeText={(value) => updateLinkRow(index, { url: value })}
+                    placeholder={URL_PLACEHOLDER}
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    returnKeyType="next"
+                    blurOnSubmit={false}
+                    onSubmitEditing={() => {
+                      finalizeLinkUrl(index);
+                      if (showLabelField) {
+                        linkLabelRefs.current[index]?.focus();
+                        return;
+                      }
+                      if (index < linkRows.length - 1) {
+                        linkUrlRefs.current[index + 1]?.focus();
+                        return;
+                      }
+                      if (showNotesField) notesRef.current?.focus();
+                    }}
+                    style={styles.linkInput}
+                  />
+                  {fieldErrors[`links.${index}.url`] ? (
+                    <Text style={styles.fieldError}>{fieldErrors[`links.${index}.url`]}</Text>
+                  ) : null}
+
+                  <Text style={styles.coverageLabel}>Platform</Text>
+                  <MediaPlatformPicker
+                    value={platform}
+                    onChange={(next) => setLinkPlatformManual(index, next)}
+                  />
+                  {fieldErrors[`links.${index}.platform`] ? (
+                    <Text style={styles.fieldError}>{fieldErrors[`links.${index}.platform`]}</Text>
+                  ) : null}
+
+                  <Text style={styles.coverageLabel}>Coverage</Text>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={`Remove link ${index + 1}`}
-                    onPress={() => removeLinkRow(index)}
-                    hitSlop={8}
-                    style={({ pressed }) => [styles.removeLink, pressed && styles.pressed]}>
-                    <Text style={styles.removeLinkText}>Remove</Text>
+                    accessibilityLabel={`Select coverage for link ${index + 1}`}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setCoverageEditorIndex(index);
+                    }}
+                    style={({ pressed }) => [
+                      dropdownStyles.trigger,
+                      styles.coverageTrigger,
+                      pressed && dropdownStyles.triggerPressed,
+                    ]}>
+                    <Text
+                      style={[
+                        dropdownStyles.triggerLabel,
+                        !coverageSummary && styles.coveragePlaceholder,
+                      ]}
+                      numberOfLines={1}>
+                      {coverageSummary || 'Select coverage'}
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={DROPDOWN_CHEVRON_SIZE}
+                      color={colors.primary}
+                    />
                   </Pressable>
+                  {fieldErrors[`links.${index}.coverage`] ? (
+                    <Text style={styles.fieldError}>
+                      {fieldErrors[`links.${index}.coverage`]}
+                    </Text>
+                  ) : null}
+
+                  {showLabelField ? (
+                    <TextInput
+                      ref={(node) => {
+                        linkLabelRefs.current[index] = node;
+                      }}
+                      value={row.label ?? ''}
+                      onFocus={onInputFocus}
+                      onBlur={onInputBlur}
+                      onChangeText={(value) => updateLinkRow(index, { label: value })}
+                      placeholder="Label (optional)"
+                      placeholderTextColor={colors.textMuted}
+                      returnKeyType="next"
+                      blurOnSubmit={false}
+                      onSubmitEditing={() => {
+                        if (index < linkRows.length - 1) {
+                          linkUrlRefs.current[index + 1]?.focus();
+                          return;
+                        }
+                        if (showNotesField) notesRef.current?.focus();
+                      }}
+                      style={[styles.linkInput, styles.secondaryInput]}
+                    />
+                  ) : (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add label for link ${index + 1}`}
+                      onPress={() => {
+                        setLabelOpenByIndex((current) => ({ ...current, [index]: true }));
+                        requestAnimationFrame(() => {
+                          setTimeout(() => linkLabelRefs.current[index]?.focus(), 40);
+                        });
+                      }}
+                      style={({ pressed }) => [styles.inlineAction, pressed && styles.pressed]}>
+                      <Ionicons name="add" size={16} color={colors.primary} />
+                      <Text style={styles.inlineActionText}>Add label</Text>
+                    </Pressable>
+                  )}
                 </View>
-
-                <Text style={styles.linkLabel}>Platform</Text>
-                <View style={styles.platformChips}>
-                  {MEDIA_PLATFORM_LINK_KEYS.map((key) => {
-                    const selected = (row.platform || 'website') === key;
-                    return (
-                      <Pressable
-                        key={key}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected }}
-                        onPress={() => updateLinkRow(index, { platform: key })}
-                        style={({ pressed }) => [
-                          styles.platformChip,
-                          selected && styles.platformChipOn,
-                          pressed && styles.pressed,
-                        ]}>
-                        <Text
-                          style={[
-                            styles.platformChipText,
-                            selected && styles.platformChipTextOn,
-                          ]}>
-                          {MEDIA_PLATFORM_LINK_LABELS[key]}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                {fieldErrors[`links.${index}.platform`] ? (
-                  <Text style={styles.fieldError}>{fieldErrors[`links.${index}.platform`]}</Text>
-                ) : null}
-
-                <Text style={styles.linkLabel}>Label (optional)</Text>
-                <TextInput
-                  ref={(node) => {
-                    linkLabelRefs.current[index] = node;
-                  }}
-                  value={row.label ?? ''}
-                  onFocus={onInputFocus}
-                  onChangeText={(value) => updateLinkRow(index, { label: value })}
-                  placeholder="e.g. Main Channel"
-                  placeholderTextColor={colors.textMuted}
-                  returnKeyType="next"
-                  blurOnSubmit={false}
-                  onSubmitEditing={() => linkUrlRefs.current[index]?.focus()}
-                  style={styles.input}
-                />
-
-                <Text style={styles.linkLabel}>URL</Text>
-                <TextInput
-                  ref={(node) => {
-                    linkUrlRefs.current[index] = node;
-                  }}
-                  value={row.url ?? ''}
-                  onFocus={onInputFocus}
-                  onChangeText={(value) => updateLinkRow(index, { url: value })}
-                  placeholder={
-                    MEDIA_PLATFORM_LINK_PLACEHOLDERS[
-                      ((row.platform || 'website') as MediaPlatformLinkKey)
-                    ]
-                  }
-                  placeholderTextColor={colors.textMuted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="url"
-                  returnKeyType={index === linkRows.length - 1 ? 'next' : 'next'}
-                  blurOnSubmit={false}
-                  onSubmitEditing={() => {
-                    if (index < linkRows.length - 1) {
-                      linkLabelRefs.current[index + 1]?.focus();
-                      return;
-                    }
-                    notesRef.current?.focus();
-                  }}
-                  style={styles.input}
-                />
-                {fieldErrors[`links.${index}.url`] ? (
-                  <Text style={styles.fieldError}>{fieldErrors[`links.${index}.url`]}</Text>
-                ) : null}
-              </View>
-            ))}
+              );
+            })}
 
             <Pressable
               accessibilityRole="button"
@@ -453,56 +716,57 @@ export default function SuggestFcsMediaScreen() {
             </Pressable>
             {fieldErrors.links ? <Text style={styles.fieldError}>{fieldErrors.links}</Text> : null}
 
-            <Text style={styles.label}>Coverage Tags</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Select coverage tags"
-              onPress={() => {
-                Keyboard.dismiss();
-                setCoverageOpen(true);
-              }}
-              style={({ pressed }) => [styles.coverageTrigger, pressed && styles.pressed]}>
-              <Text style={styles.coverageTriggerText}>Select coverage</Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </Pressable>
-
-            {coverageChips.length > 0 ? (
-              <MediaBrowseFilterChips
-                chips={coverageChips}
-                onRemove={(chip) => {
-                  setCoverage((current) => removeMediaBrowseChip(current, chip));
-                  setFieldErrors((current) => {
-                    if (!current.coverage) return current;
-                    const next = { ...current };
-                    delete next.coverage;
-                    return next;
+            {showNotesField ? (
+              <View style={styles.fieldBlock}>
+                <Text style={styles.labelSecondary}>Note for FCS Pulse</Text>
+                <Text style={styles.hint}>
+                  Private note for the FCS Pulse review team. This will not appear publicly.
+                </Text>
+                <TextInput
+                  ref={notesRef}
+                  value={notes}
+                  onFocus={onInputFocus}
+                  onBlur={onInputBlur}
+                  onChangeText={setNotes}
+                  placeholder="Optional"
+                  placeholderTextColor={colors.textMuted}
+                  multiline
+                  textAlignVertical="top"
+                  returnKeyType="default"
+                  blurOnSubmit={false}
+                  style={[styles.input, styles.notesInput]}
+                />
+              </View>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Add note for FCS Pulse"
+                onPress={() => {
+                  setNotesOpen(true);
+                  requestAnimationFrame(() => {
+                    setTimeout(() => notesRef.current?.focus(), 40);
                   });
                 }}
-              />
-            ) : (
-              <Text style={styles.hint}>Choose at least one coverage tag</Text>
+                style={({ pressed }) => [styles.inlineAction, pressed && styles.pressed]}>
+                <Ionicons name="add" size={16} color={colors.primary} />
+                <Text style={styles.inlineActionText}>Add note for FCS Pulse</Text>
+              </Pressable>
             )}
-            {fieldErrors.coverage ? (
-              <Text style={styles.fieldError}>{fieldErrors.coverage}</Text>
-            ) : null}
-
-            <Text style={styles.label}>Notes</Text>
-            <TextInput
-              ref={notesRef}
-              value={notes}
-              onFocus={onInputFocus}
-              onChangeText={setNotes}
-              placeholder="Optional"
-              placeholderTextColor={colors.textMuted}
-              multiline
-              returnKeyType="default"
-              blurOnSubmit={false}
-              style={[styles.input, styles.inputMultiline]}
-            />
 
             {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
             {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
+          </ScrollView>
 
+          <View style={[styles.submitBar, { paddingBottom: stickyBottomPad }]}>
+            {keyboardHeight > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss keyboard"
+                onPress={Keyboard.dismiss}
+                style={({ pressed }) => [styles.dismissKeyboard, pressed && styles.pressed]}>
+                <Text style={styles.dismissKeyboardText}>Done</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               disabled={submitting}
               onPress={() => void handleSubmit()}
@@ -516,28 +780,21 @@ export default function SuggestFcsMediaScreen() {
                 <Text style={styles.submitText}>Submit for Review</Text>
               )}
             </Pressable>
-
-            {keyboardHeight > 0 ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Dismiss keyboard"
-                onPress={Keyboard.dismiss}
-                style={({ pressed }) => [styles.dismissKeyboard, pressed && styles.pressed]}>
-                <Text style={styles.dismissKeyboardText}>Done</Text>
-              </Pressable>
-            ) : null}
-          </ScrollView>
+          </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
 
       <MediaBrowseSheet
-        visible={coverageOpen}
+        visible={coverageSheetOpen}
         mode="coverage"
-        activeFilter={coverage}
+        activeFilter={activeLinkCoverage}
         teams={teams}
         conferences={conferences}
-        onClose={() => setCoverageOpen(false)}
-        onChangeFilter={setCoverage}
+        onClose={() => setCoverageEditorIndex(null)}
+        onChangeFilter={(filter) => {
+          if (coverageEditorIndex == null) return;
+          setLinkCoverage(coverageEditorIndex, filter);
+        }}
       />
     </>
   );
@@ -546,47 +803,112 @@ export default function SuggestFcsMediaScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, gap: spacing.sm },
-  heading: { ...typography.heading, color: colors.text, marginBottom: spacing.xs },
-  label: { ...typography.caption, color: colors.textMuted, fontWeight: '600', marginTop: spacing.xs },
-  hint: { ...typography.caption, color: colors.textMuted },
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  fieldBlock: {
+    gap: 3,
+  },
+  sectionHeading: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    marginTop: spacing.xs,
+  },
+  linksHelper: {
+    ...typography.caption,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.textMuted,
+    marginTop: -2,
+  },
+  label: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontWeight: '600',
+  },
+  labelSecondary: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontWeight: '500',
+  },
+  hint: {
+    ...typography.caption,
+    fontSize: 12,
+    lineHeight: 15,
+    color: colors.textMuted,
+  },
   linkCard: {
     gap: 6,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 10,
-    padding: spacing.sm + 2,
-    marginTop: spacing.xs,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm,
   },
   linkCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: spacing.sm,
+    minHeight: 28,
   },
-  linkLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
-  removeLink: { paddingVertical: 4, paddingHorizontal: 4 },
-  removeLinkText: { ...typography.caption, color: colors.error, fontWeight: '600' },
-  platformChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  platformChip: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: colors.surfaceElevated,
+  linkTitle: {
+    ...typography.caption,
+    color: colors.text,
+    fontWeight: '700',
   },
-  platformChipOn: { borderColor: colors.primary },
-  platformChipText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
-  platformChipTextOn: { color: colors.primary },
+  removeLink: {
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    minHeight: 32,
+    minWidth: 44,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  removeLinkText: {
+    ...typography.caption,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.error,
+    fontWeight: '500',
+    opacity: 0.85,
+  },
+  coverageLabel: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontWeight: '600',
+  },
+  coverageTrigger: {
+    minHeight: 40,
+  },
+  coveragePlaceholder: {
+    color: colors.textMuted,
+  },
+  inlineAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    minHeight: 34,
+    paddingVertical: 2,
+  },
+  inlineActionText: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.primary,
+  },
   addLinkButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    minHeight: 40,
-    marginTop: spacing.xs,
+    minHeight: 34,
   },
-  addLinkText: { ...typography.body, fontWeight: '600', color: colors.primary },
+  addLinkText: { ...typography.caption, fontWeight: '700', color: colors.primary },
   input: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -595,28 +917,47 @@ const styles = StyleSheet.create({
     color: colors.text,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+    minHeight: 44,
     ...typography.body,
   },
-  inputMultiline: { minHeight: 88, textAlignVertical: 'top' },
-  coverageTrigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surface,
+  descriptionInput: {
+    minHeight: 68,
+    maxHeight: 96,
+    paddingTop: spacing.sm,
+  },
+  emailInput: {
+    minHeight: 42,
+    paddingVertical: spacing.xs + 2,
+  },
+  notesInput: {
+    minHeight: 56,
+    maxHeight: 88,
+    paddingTop: spacing.sm,
+  },
+  linkInput: {
+    backgroundColor: colors.background,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
-    minHeight: 44,
+    color: colors.text,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-  },
-  coverageTriggerText: {
+    minHeight: 42,
     ...typography.body,
-    fontWeight: '600',
-    color: colors.text,
+  },
+  secondaryInput: {
+    minHeight: 40,
+    paddingVertical: spacing.xs + 2,
+  },
+  submitBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    gap: spacing.xs,
   },
   submitButton: {
-    marginTop: spacing.sm,
     backgroundColor: colors.primary,
     borderRadius: 8,
     minHeight: 48,
@@ -626,12 +967,11 @@ const styles = StyleSheet.create({
   submitText: { ...typography.body, color: colors.background, fontWeight: '700' },
   dismissKeyboard: {
     alignSelf: 'flex-end',
-    marginTop: spacing.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingVertical: 2,
+    paddingHorizontal: spacing.xs,
   },
   dismissKeyboardText: {
-    ...typography.body,
+    ...typography.caption,
     fontWeight: '700',
     color: colors.primary,
   },

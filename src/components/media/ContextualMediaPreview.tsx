@@ -57,6 +57,7 @@ export function ContextualMediaPreview({
   emptyMessage,
   onViewAll,
   onSuggest,
+  onPressSource,
   limit = CONTEXTUAL_MEDIA_INLINE_LIMIT,
 }: {
   title: string;
@@ -64,6 +65,8 @@ export function ContextualMediaPreview({
   emptyMessage: string;
   onViewAll: () => void;
   onSuggest: () => void;
+  /** When set, each creator tile is tappable (e.g. open Creator Detail). */
+  onPressSource?: (source: MediaSource) => void;
   limit?: number;
 }) {
   const inline = sources.slice(0, limit);
@@ -102,18 +105,37 @@ export function ContextualMediaPreview({
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.row}
           accessibilityRole="list">
-          {inline.map((source) => (
-            <View
-              key={source.id}
-              style={styles.tile}
-              accessibilityRole="text"
-              accessibilityLabel={source.name}>
-              <PreviewArtwork source={source} />
-              <Text style={styles.tileName} numberOfLines={2}>
-                {source.name}
-              </Text>
-            </View>
-          ))}
+          {inline.map((source) => {
+            const content = (
+              <>
+                <PreviewArtwork source={source} />
+                <Text style={styles.tileName} numberOfLines={2}>
+                  {source.name}
+                </Text>
+              </>
+            );
+            if (onPressSource) {
+              return (
+                <Pressable
+                  key={source.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${source.name}. Open creator details`}
+                  onPress={() => onPressSource(source)}
+                  style={({ pressed }) => [styles.tile, pressed && styles.pressed]}>
+                  {content}
+                </Pressable>
+              );
+            }
+            return (
+              <View
+                key={source.id}
+                style={styles.tile}
+                accessibilityRole="text"
+                accessibilityLabel={source.name}>
+                {content}
+              </View>
+            );
+          })}
         </ScrollView>
       )}
     </View>

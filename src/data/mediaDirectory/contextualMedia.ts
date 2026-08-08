@@ -91,8 +91,9 @@ export function selectTeamContextualMedia(
 }
 
 /**
- * Conference page media: conference-tagged → national.
- * Excludes team-only creators that are not conference-tagged.
+ * Conference page media: creators whose derived coverage includes this conference.
+ * Does not include national-only or team-only creators unless they also list the conference.
+ * No team→conference inference.
  */
 export function selectConferenceContextualMedia(
   sources: MediaSource[],
@@ -104,30 +105,14 @@ export function selectConferenceContextualMedia(
   const conferenceId = input.conferenceId.trim();
   if (!conferenceId || !isKnownMediaConferenceId(conferenceId)) return [];
 
-  const approved = approvedOnly(sources);
-  const seen = new Set<string>();
-  const ordered: MediaSource[] = [];
-
-  function pushTier(tier: MediaSource[]) {
-    for (const source of tier.slice().sort(compareMediaSourcesByName)) {
-      if (seen.has(source.id)) continue;
-      seen.add(source.id);
-      ordered.push(source);
-    }
-  }
-
-  pushTier(approved.filter((source) => sourceMatchesConference(source, conferenceId)));
-
-  pushTier(
-    approved.filter(
-      (source) =>
-        isMediaSourceNational(source) && !sourceMatchesConference(source, conferenceId),
-    ),
-  );
+  const matching = approvedOnly(sources)
+    .filter((source) => sourceMatchesConference(source, conferenceId))
+    .slice()
+    .sort(compareMediaSourcesByName);
 
   const limit = input.limit;
-  if (typeof limit === 'number' && limit >= 0) return ordered.slice(0, limit);
-  return ordered;
+  if (typeof limit === 'number' && limit >= 0) return matching.slice(0, limit);
+  return matching;
 }
 
 export type SuggestMediaRouteParams = {

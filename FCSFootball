@@ -1,0 +1,39 @@
+warning: in the working copy of 'src/app/(tabs)/_layout.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/(tabs)/news.tsx', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/src/app/(tabs)/_layout.tsx b/src/app/(tabs)/_layout.tsx[m
+[1mindex 8ed13b9..8234344 100644[m
+[1m--- a/src/app/(tabs)/_layout.tsx[m
+[1m+++ b/src/app/(tabs)/_layout.tsx[m
+[36m@@ -29,8 +29,8 @@[m [mexport default function TabLayout() {[m
+       <Tabs.Screen[m
+         name="today"[m
+         options={{[m
+[31m-          title: 'Favorites',[m
+[31m-          tabBarIcon: ({ color }) => <TabIcon name="star" color={color} />,[m
+[32m+[m[32m          title: 'Home',[m
+[32m+[m[32m          tabBarIcon: ({ color }) => <TabIcon name="home" color={color} />,[m
+         }}[m
+       />[m
+       <Tabs.Screen[m
+[36m@@ -59,7 +59,7 @@[m [mexport default function TabLayout() {[m
+       <Tabs.Screen[m
+         name="news"[m
+         options={{[m
+[31m-          title: 'Discover',[m
+[32m+[m[32m          title: 'FCS Hub',[m
+           tabBarIcon: ({ color }) => <TabIcon name="newspaper" color={color} />,[m
+         }}[m
+       />[m
+[1mdiff --git a/src/app/(tabs)/news.tsx b/src/app/(tabs)/news.tsx[m
+[1mindex 8341f68..8ceb304 100644[m
+[1m--- a/src/app/(tabs)/news.tsx[m
+[1m+++ b/src/app/(tabs)/news.tsx[m
+[36m@@ -211,7 +211,7 @@[m [mexport default function NewsScreen() {[m
+       options={DISCOVER_SECTION_OPTIONS}[m
+       selected={discoverSection}[m
+       onSelect={selectDiscoverSection}[m
+[31m-      accessibilityLabel="Discover section"[m
+[32m+[m[32m      accessibilityLabel="FCS Hub section"[m
+       variant="accent"[m
+       style={styles.primarySelector}[m
+     />[m

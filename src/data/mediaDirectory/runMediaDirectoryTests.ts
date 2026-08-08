@@ -33,9 +33,11 @@ import {
 } from '@/data/mediaDirectory/discoverMediaNavigation';
 import {
   buildMediaBrowseTeamOptions,
+  cloneMediaBrowseFilter,
   createEmptyMediaBrowseFilter,
   filterMediaBrowseTeams,
   filterMediaSourcesByBrowse,
+  formatCompactMediaBrowseCoverageSummary,
   formatMediaBrowseCoverageLabel,
   getMediaBrowseBadgeLetter,
   getMediaBrowseChips,
@@ -45,6 +47,7 @@ import {
   toggleMediaBrowseConference,
   toggleMediaBrowseNational,
   toggleMediaBrowseTeam,
+  unionMediaBrowseFilters,
 } from '@/data/mediaDirectory/mediaBrowse';
 import { normalizeMediaSourceCoverage } from '@/data/mediaDirectory/mediaCoverage';
 import {
@@ -53,7 +56,19 @@ import {
   normalizeMediaPlatformLinks,
 } from '@/data/mediaDirectory/mediaPlatformLinks';
 import {
+  buildSubmitMediaCreatorUpdateRpcPayload,
+  mediaSourceToUpdateLinkRows,
+  validateMediaCreatorUpdateInput,
+} from '@/data/mediaDirectory/mediaCreatorUpdate';
+import {
+  detectMediaPlatformFromUrl,
+  getMediaPlatformUrlMismatchError,
+  normalizeSuggestLinkUrl,
+} from '@/data/mediaDirectory/mediaLinkUrlDetection';
+import {
+  createEmptyMediaLinkRow,
   formatMediaLinkActionLabel,
+  getMediaLinkRowBrowseFilter,
   validateMediaLinkRows,
 } from '@/data/mediaDirectory/mediaLinkRows';
 import {
@@ -277,7 +292,14 @@ test('suggestion validation requires name, coverage, and at least one link', () 
   });
   assert.equal(missingCoverage.ok, false);
   if (!missingCoverage.ok) {
-    assert.ok(missingCoverage.errors.some((error) => /coverage tag/i.test(error)));
+    assert.ok(
+      missingCoverage.errors.some((error) => /coverage/i.test(error)) ||
+        Boolean(missingCoverage.fieldErrors['links.0.coverage']),
+    );
+    assert.match(
+      String(missingCoverage.fieldErrors['links.0.coverage'] ?? ''),
+      /Select coverage for Link 1/i,
+    );
   }
 
   const missingName = validateMediaSuggestionInput({
@@ -347,6 +369,7 @@ test('submit_media_suggestion RPC payload matches live multi-link signature', ()
     'p_conference_ids',
     'p_team_ids',
     'p_notes',
+    'p_description',
     'p_submitter_email',
     'p_coverage_labels',
   ] as const;
@@ -367,6 +390,7 @@ test('submit_media_suggestion RPC payload matches live multi-link signature', ()
     assert.deepEqual(payload.p_conference_ids, validated.value.conferenceIds);
     assert.deepEqual(payload.p_team_ids, validated.value.teamIds);
     assert.equal(payload.p_notes, validated.value.notes ?? null);
+    assert.equal(payload.p_description, validated.value.description ?? null);
     assert.equal(payload.p_submitter_email, validated.value.submitterEmail);
     return payload;
   }
@@ -384,6 +408,7 @@ test('submit_media_suggestion RPC payload matches live multi-link signature', ()
     youtube: 'https://www.youtube.com/@fcs',
   });
   assert.equal(national?.p_notes, null);
+  assert.equal(national?.p_description, null);
   assert.equal(national?.p_submitter_email, 'fan@example.com');
 
   // One team
@@ -422,12 +447,13 @@ test('submit_media_suggestion RPC payload matches live multi-link signature', ()
   });
   assert.deepEqual(multiConf?.p_conference_ids, ['big-sky', 'mvfc']);
 
-  // Mixed national + teams + conferences + multiple links + notes
+  // Mixed national + teams + conferences + multiple links + notes + description
   const mixed = assertRpc({
     name: 'Mixed Coverage Show',
     isNational: true,
     teamIds: [MONTANA_STATE_ESPN_TEAM_ID, MONTANA_ESPN_TEAM_ID],
     conferenceIds: ['big-sky', 'mvfc'],
+    description: '  Public show blurb  ',
     notes: '  Optional note  ',
     platformLinks: {
       website: 'https://example.com',
@@ -451,6 +477,7 @@ test('submit_media_suggestion RPC payload matches live multi-link signature', ()
     MONTANA_ESPN_TEAM_ID,
   ]);
   assert.deepEqual(mixed?.p_conference_ids, ['big-sky', 'mvfc']);
+  assert.equal(mixed?.p_description, 'Public show blurb');
   assert.equal(mixed?.p_notes, 'Optional note');
   assert.deepEqual(mixed?.p_platform_links, {
     website: 'https://example.com',
@@ -655,6 +682,18 @@ test('suggestion platform links: field-specific errors, trim, and email format',
 test('submitter email validation and storage normalization', () => {
   assert.equal(isValidSubmitterEmail('  Fan@Example.COM '), true);
   assert.equal(normalizeSubmitterEmail('  Fan@Example.COM '), 'fan@example.com');
+  assert.equal(isValidSubmitterEmail('name@gmail.com'), true);
+  assert.equal(isValidSubmitterEmail('creator@fcspulse.com'), true);
+  assert.equal(isValidSubmitterEmail('bob.smith@example.com'), true);
+  assert.equal(isValidSubmitterEmail('bob+podcast@example.com'), true);
+  assert.equal(isValidSubmitterEmail('bob_smith@example.com'), true);
+  assert.equal(isValidSubmitterEmail('bob.smith+podcast@example.com'), true);
+  assert.equal(isValidSubmitterEmail(' name@gmail.com '), true);
+  assert.equal(normalizeSubmitterEmail(' name@gmail.com '), 'name@gmail.com');
+  assert.equal(isValidSubmitterEmail('bob'), false);
+  assert.equal(isValidSubmitterEmail('bob@'), false);
+  assert.equal(isValidSubmitterEmail('@gmail.com'), false);
+  assert.equal(isValidSubmitterEmail('bob gmail.com'), false);
   assert.equal(isValidSubmitterEmail('not-an-email'), false);
 
   const missing = validateMediaSuggestionInput({
@@ -662,9 +701,20 @@ test('submitter email validation and storage normalization', () => {
     isNational: true,
     platformLinks: { website: 'https://example.com' },
   });
-  assert.equal(missing.ok, false);
-  if (!missing.ok) {
-    assert.ok(missing.fieldErrors.submitterEmail);
+  assert.equal(missing.ok, true);
+  if (missing.ok) {
+    assert.equal(missing.value.submitterEmail, '');
+  }
+
+  const blank = validateMediaSuggestionInput({
+    name: 'FCS Show',
+    isNational: true,
+    submitterEmail: '   ',
+    platformLinks: { website: 'https://example.com' },
+  });
+  assert.equal(blank.ok, true);
+  if (blank.ok) {
+    assert.equal(blank.value.submitterEmail, '');
   }
 
   const invalid = validateMediaSuggestionInput({
@@ -692,9 +742,24 @@ test('submitter email validation and storage normalization', () => {
 
 test('repeatable links validation and public action labels', () => {
   const repeated = validateMediaLinkRows([
-    { platform: 'youtube', label: 'Main', url: 'https://youtube.com/@main' },
-    { platform: 'youtube', label: 'Podcast', url: 'https://youtube.com/@podcast' },
-    { platform: 'spotify', label: 'Weekly Show', url: 'https://open.spotify.com/show/1' },
+    {
+      platform: 'youtube',
+      label: 'Main',
+      url: 'https://youtube.com/@main',
+      isNational: true,
+    },
+    {
+      platform: 'youtube',
+      label: 'Podcast',
+      url: 'https://youtube.com/@podcast',
+      isNational: true,
+    },
+    {
+      platform: 'spotify',
+      label: 'Weekly Show',
+      url: 'https://open.spotify.com/show/1',
+      isNational: true,
+    },
   ]);
   assert.equal(repeated.ok, true);
   if (repeated.ok) {
@@ -719,6 +784,9 @@ test('repeatable links validation and public action labels', () => {
     const payload = buildSubmitMediaSuggestionRpcPayload(validated.value);
     assert.equal(payload.p_links.length, 2);
     assert.equal(payload.p_links[0]?.label, 'Main');
+    assert.equal(payload.p_links[0]?.is_national, true);
+    assert.deepEqual(payload.p_links[0]?.team_ids, []);
+    assert.deepEqual(payload.p_links[0]?.conference_ids, []);
   }
 
   const email = formatMediaSuggestionOwnerEmail({
@@ -730,12 +798,18 @@ test('repeatable links validation and public action labels', () => {
         label: 'Main Channel',
         url: 'https://youtube.com/@main',
         sortOrder: 0,
+        isNational: true,
+        teamIds: [],
+        conferenceIds: [],
       },
       {
         platform: 'youtube',
         label: 'Podcast',
         url: 'https://youtube.com/@podcast',
         sortOrder: 1,
+        isNational: true,
+        teamIds: [],
+        conferenceIds: [],
       },
     ],
     platformLinks: {},
@@ -751,6 +825,271 @@ test('repeatable links validation and public action labels', () => {
   assert.match(email.text, /YouTube · Main Channel/);
   assert.match(email.text, /YouTube · Podcast/);
   assert.match(email.html, /YouTube · Main Channel/);
+});
+
+test('per-link coverage: independent state, compact summary, union payload', () => {
+  const shared = {
+    national: false,
+    teams: [{ id: MONTANA_STATE_ESPN_TEAM_ID, label: 'Montana State' }],
+    conferences: [{ id: 'big-sky', label: 'Big Sky' }],
+  };
+  const link1 = createEmptyMediaLinkRow(0, shared);
+  const link2 = createEmptyMediaLinkRow(1, shared);
+  link2.coverage = cloneMediaBrowseFilter(shared);
+  link2.coverage!.teams = [
+    ...link2.coverage!.teams,
+    { id: MONTANA_ESPN_TEAM_ID, label: 'Montana' },
+  ];
+  assert.equal(getMediaLinkRowBrowseFilter(link1).teams.length, 1);
+  assert.equal(getMediaLinkRowBrowseFilter(link2).teams.length, 2);
+
+  const compact = formatCompactMediaBrowseCoverageSummary(
+    {
+      national: true,
+      teams: [
+        { id: MONTANA_STATE_ESPN_TEAM_ID, label: 'Montana State' },
+        { id: '70', label: 'Idaho' },
+      ],
+      conferences: [
+        { id: 'big-sky', label: 'Big Sky' },
+        { id: 'mvfc', label: 'MVFC' },
+      ],
+    },
+    2,
+  );
+  assert.equal(compact, 'National, Montana State +3');
+
+  const missingLinkCoverage = validateMediaLinkRows([
+    {
+      platform: 'youtube',
+      url: 'https://youtube.com/@a',
+      coverage: createEmptyMediaBrowseFilter(),
+    },
+  ]);
+  assert.equal(missingLinkCoverage.ok, false);
+  if (!missingLinkCoverage.ok) {
+    assert.match(String(missingLinkCoverage.fieldErrors['links.0.coverage']), /Link 1/);
+  }
+
+  const distinct = validateMediaSuggestionInput({
+    name: 'Bobcat Insider',
+    submitterEmail: 'fan@example.com',
+    linkRows: [
+      {
+        platform: 'youtube',
+        url: 'https://youtube.com/@a',
+        coverage: {
+          national: true,
+          teams: [{ id: MONTANA_STATE_ESPN_TEAM_ID, label: 'Montana State' }],
+          conferences: [{ id: 'big-sky', label: 'Big Sky' }],
+        },
+      },
+      {
+        platform: 'spotify',
+        url: 'https://open.spotify.com/show/b',
+        coverage: {
+          national: false,
+          teams: [{ id: '70', label: 'Idaho' }],
+          conferences: [{ id: 'big-sky', label: 'Big Sky' }],
+        },
+      },
+    ],
+  });
+  assert.equal(distinct.ok, true);
+  if (distinct.ok) {
+    assert.equal(distinct.value.links[0]?.isNational, true);
+    assert.deepEqual(distinct.value.links[0]?.teamIds, [MONTANA_STATE_ESPN_TEAM_ID]);
+    assert.deepEqual(distinct.value.links[1]?.teamIds, ['70']);
+    assert.equal(distinct.value.isNational, true);
+    assert.ok(distinct.value.teamIds.includes(MONTANA_STATE_ESPN_TEAM_ID));
+    assert.ok(distinct.value.teamIds.includes('70'));
+    assert.deepEqual(distinct.value.conferenceIds, ['big-sky']);
+    const payload = buildSubmitMediaSuggestionRpcPayload(distinct.value);
+    assert.equal(payload.p_links[0]?.is_national, true);
+    assert.deepEqual(payload.p_links[0]?.team_ids, [MONTANA_STATE_ESPN_TEAM_ID]);
+    assert.deepEqual(payload.p_links[1]?.team_ids, ['70']);
+    assert.equal(payload.p_is_national, true);
+    assert.ok(payload.p_team_ids.includes('70'));
+    const union = unionMediaBrowseFilters([
+      getMediaLinkRowBrowseFilter(link1),
+      getMediaLinkRowBrowseFilter(link2),
+    ]);
+    assert.equal(union.teams.length, 2);
+  }
+});
+
+test('creator update validation requires email, representation, and links', () => {
+  const missing = validateMediaCreatorUpdateInput({
+    mediaSourceId: 'source-1',
+    creatorName: 'FCS Nation',
+    linkRows: [
+      {
+        platform: 'youtube',
+        url: 'https://youtube.com/@fcs',
+        isNational: true,
+      },
+    ],
+    representsCreator: false,
+  });
+  assert.equal(missing.ok, false);
+  if (!missing.ok) {
+    assert.equal(missing.fieldErrors.submitterEmail, 'Email is required.');
+    assert.match(String(missing.fieldErrors.representsCreator), /represent/i);
+  }
+
+  const spacedEmail = validateMediaCreatorUpdateInput({
+    mediaSourceId: 'source-1',
+    creatorName: 'FCS Nation',
+    submitterEmail: ' name@gmail.com ',
+    representsCreator: true,
+    linkRows: [
+      {
+        platform: 'youtube',
+        url: 'https://youtube.com/@fcs',
+        isNational: true,
+      },
+    ],
+  });
+  assert.equal(spacedEmail.ok, true);
+  if (spacedEmail.ok) {
+    assert.equal(spacedEmail.value.submitterEmail, 'name@gmail.com');
+  }
+
+  const ok = validateMediaCreatorUpdateInput({
+    mediaSourceId: 'source-1',
+    creatorName: 'FCS Nation',
+    description: 'Updated blurb',
+    submitterEmail: 'Creator@Example.com',
+    representsCreator: true,
+    linkRows: [
+      {
+        platform: 'youtube',
+        url: 'youtube.com/@fcs',
+        coverage: {
+          national: false,
+          teams: [{ id: MONTANA_STATE_ESPN_TEAM_ID, label: 'Montana State' }],
+          conferences: [{ id: 'big-sky', label: 'Big Sky' }],
+        },
+      },
+      {
+        platform: 'spotify',
+        url: 'https://open.spotify.com/show/1',
+        isNational: true,
+      },
+    ],
+  });
+  assert.equal(ok.ok, true);
+  if (ok.ok) {
+    assert.equal(ok.value.submitterEmail, 'creator@example.com');
+    assert.equal(ok.value.links.length, 2);
+    assert.equal(ok.value.links[0]?.url, 'https://youtube.com/@fcs');
+    assert.equal(ok.value.isNational, true);
+    assert.ok(ok.value.teamIds.includes(MONTANA_STATE_ESPN_TEAM_ID));
+    assert.deepEqual(ok.value.conferenceIds, ['big-sky']);
+    const payload = buildSubmitMediaCreatorUpdateRpcPayload(ok.value);
+    assert.equal(payload.p_media_source_id, 'source-1');
+    assert.equal(payload.p_represents_creator, true);
+    assert.equal(payload.p_description, 'Updated blurb');
+    assert.equal(payload.p_links[0]?.is_national, false);
+    assert.deepEqual(payload.p_links[0]?.team_ids, [MONTANA_STATE_ESPN_TEAM_ID]);
+    assert.equal(payload.p_links[1]?.is_national, true);
+  }
+
+  const prefilled = mediaSourceToUpdateLinkRows(
+    baseSource({
+      id: 'source-1',
+      name: 'FCS Nation',
+      description: 'About',
+      isNational: true,
+      teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+      conferenceIds: ['big-sky'],
+      links: [
+        {
+          platform: 'youtube',
+          label: 'Main',
+          url: 'https://youtube.com/@fcs',
+          sortOrder: 0,
+          isNational: false,
+          teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+          conferenceIds: [],
+        },
+      ],
+    }),
+  );
+  assert.equal(prefilled.length, 1);
+  assert.equal(prefilled[0]?.url, 'https://youtube.com/@fcs');
+  assert.equal(prefilled[0]?.label, 'Main');
+  assert.equal(prefilled[0]?.coverage?.teams[0]?.id, MONTANA_STATE_ESPN_TEAM_ID);
+});
+
+test('suggest link URL normalization and platform detection', () => {
+  const cases: Array<{ input: string; platform: string; normalizedPrefix?: string }> = [
+    { input: 'youtube.com/@example', platform: 'youtube', normalizedPrefix: 'https://youtube.com/' },
+    { input: 'youtu.be/abc123', platform: 'youtube' },
+    { input: 'open.spotify.com/show/abc', platform: 'spotify' },
+    { input: 'podcasts.apple.com/us/podcast/example/id123', platform: 'apple' },
+    { input: 'x.com/example', platform: 'x' },
+    { input: 'twitter.com/example', platform: 'x' },
+    { input: 'instagram.com/example', platform: 'instagram' },
+    { input: 'fcspulse.com', platform: 'website' },
+    { input: 'unknowncreatorwebsite.com', platform: 'website' },
+  ];
+
+  for (const item of cases) {
+    const normalized = normalizeSuggestLinkUrl(item.input);
+    assert.match(normalized, /^https:\/\//i);
+    if (item.normalizedPrefix) {
+      assert.ok(normalized.startsWith(item.normalizedPrefix));
+    }
+    assert.equal(detectMediaPlatformFromUrl(item.input), item.platform);
+    assert.equal(detectMediaPlatformFromUrl(normalized), item.platform);
+  }
+
+  assert.equal(detectMediaPlatformFromUrl('https://example.com/feed.xml'), 'rss');
+  assert.equal(detectMediaPlatformFromUrl('facebook.com/page'), 'facebook');
+  assert.equal(detectMediaPlatformFromUrl('fb.com/page'), 'facebook');
+
+  // Manual override remains possible: Website/Other vs specific host is allowed.
+  assert.equal(
+    getMediaPlatformUrlMismatchError('other', 'https://youtube.com/@example'),
+    null,
+  );
+  assert.equal(
+    getMediaPlatformUrlMismatchError('website', 'https://youtube.com/@example'),
+    null,
+  );
+  assert.match(
+    String(getMediaPlatformUrlMismatchError('youtube', 'https://open.spotify.com/show/1')),
+    /Spotify/,
+  );
+
+  // Bare domains submit after normalization (with coverage).
+  const bare = validateMediaLinkRows([
+    {
+      platform: 'youtube',
+      url: 'youtube.com/@example',
+      isNational: true,
+    },
+  ]);
+  assert.equal(bare.ok, true);
+  if (bare.ok) {
+    assert.equal(bare.value[0]?.url, 'https://youtube.com/@example');
+    assert.equal(bare.value[0]?.platform, 'youtube');
+  }
+
+  // Unknown domain defaults to Website, not Other.
+  const site = validateMediaLinkRows([
+    {
+      platform: 'website',
+      url: 'unknowncreatorwebsite.com',
+      isNational: true,
+    },
+  ]);
+  assert.equal(site.ok, true);
+  if (site.ok) {
+    assert.equal(site.value[0]?.url, 'https://unknowncreatorwebsite.com');
+    assert.equal(site.value[0]?.platform, 'website');
+  }
 });
 
 test('owner notification email resolves names, HTML links, reply-to, and Media Admin link', () => {
@@ -1476,12 +1815,18 @@ test('team contextual media empty when no relevant creators', () => {
   );
 });
 
-test('conference contextual media includes conference + national, excludes team-only', () => {
+test('conference contextual media requires explicit conference coverage', () => {
   const conferenceTagged = baseSource({
     id: 'conf-tagged',
     name: 'Big Sky Radio',
     conferenceIds: ['big-sky'],
     isNational: false,
+  });
+  const conferenceAndNational = baseSource({
+    id: 'conf-and-national',
+    name: 'Big Sky + National',
+    conferenceIds: ['big-sky'],
+    isNational: true,
   });
   const teamOnlyInConference = baseSource({
     id: 'conf-team-only',
@@ -1503,14 +1848,15 @@ test('conference contextual media includes conference + national, excludes team-
   });
 
   const ordered = selectConferenceContextualMedia(
-    [national, teamOnlyInConference, otherConference, conferenceTagged],
+    [national, teamOnlyInConference, otherConference, conferenceAndNational, conferenceTagged],
     { conferenceId: 'big-sky' },
   );
 
   assert.deepEqual(
     ordered.map((source) => source.id),
-    ['conf-tagged', 'conf-national'],
+    ['conf-and-national', 'conf-tagged'],
   );
+  assert.ok(!ordered.some((source) => source.id === 'conf-national'));
   assert.ok(!ordered.some((source) => source.id === 'conf-team-only'));
   assert.ok(!ordered.some((source) => source.id === 'conf-other'));
 

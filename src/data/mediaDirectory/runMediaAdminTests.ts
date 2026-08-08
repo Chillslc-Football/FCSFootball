@@ -321,10 +321,30 @@ test('owner notification links to admin suggestion page', () => {
 
 test('repeatable links: duplicates blocked, reorder, approval copy semantics', () => {
   const twoYoutube = validateMediaLinkRows([
-    { platform: 'youtube', label: 'Main Channel', url: 'https://youtube.com/@main' },
-    { platform: 'youtube', label: 'Podcast', url: 'https://youtube.com/@podcast' },
-    { platform: 'spotify', label: 'Weekly Show', url: 'https://open.spotify.com/show/1' },
-    { platform: 'spotify', label: '', url: 'https://open.spotify.com/show/2' },
+    {
+      platform: 'youtube',
+      label: 'Main Channel',
+      url: 'https://youtube.com/@main',
+      isNational: true,
+    },
+    {
+      platform: 'youtube',
+      label: 'Podcast',
+      url: 'https://youtube.com/@podcast',
+      isNational: true,
+    },
+    {
+      platform: 'spotify',
+      label: 'Weekly Show',
+      url: 'https://open.spotify.com/show/1',
+      isNational: true,
+    },
+    {
+      platform: 'spotify',
+      label: '',
+      url: 'https://open.spotify.com/show/2',
+      isNational: true,
+    },
     { platform: 'website', label: '', url: '' },
   ]);
   assert.equal(twoYoutube.ok, true);
@@ -335,14 +355,19 @@ test('repeatable links: duplicates blocked, reorder, approval copy semantics', (
   }
 
   const dup = validateMediaLinkRows([
-    { platform: 'youtube', label: 'A', url: 'https://youtube.com/@same/' },
-    { platform: 'youtube', label: 'B', url: 'https://youtube.com/@same' },
+    { platform: 'youtube', label: 'A', url: 'https://youtube.com/@same/', isNational: true },
+    { platform: 'youtube', label: 'B', url: 'https://youtube.com/@same', isNational: true },
   ]);
   assert.equal(dup.ok, false);
 
   const one = validateMediaLinkRows([
     { platform: 'website', label: '', url: '' },
-    { platform: 'spotify', label: 'Show', url: 'https://open.spotify.com/show/abc' },
+    {
+      platform: 'spotify',
+      label: 'Show',
+      url: 'https://open.spotify.com/show/abc',
+      isNational: true,
+    },
   ]);
   assert.equal(one.ok, true);
   if (one.ok) assert.equal(one.value.length, 1);

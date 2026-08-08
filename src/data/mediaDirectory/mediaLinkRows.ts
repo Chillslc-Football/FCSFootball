@@ -1,7 +1,20 @@
 /**
  * Repeatable media links (multiple URLs per platform, optional labels).
+ * Phase 3: each link carries its own multi-select coverage.
  */
 
+import {
+  cloneMediaBrowseFilter,
+  coverageToMediaBrowseFilter,
+  createEmptyMediaBrowseFilter,
+  isMediaBrowseFilterActive,
+  mediaBrowseFilterToCoverage,
+  type MediaBrowseFilter,
+} from '@/data/mediaDirectory/mediaBrowse';
+import {
+  getMediaPlatformUrlMismatchError,
+  normalizeSuggestLinkUrl,
+} from '@/data/mediaDirectory/mediaLinkUrlDetection';
 import {
   MEDIA_PLATFORM_LINK_KEYS,
   MEDIA_PLATFORM_LINK_LABELS,
@@ -15,6 +28,10 @@ export type MediaLinkRow = {
   label: string | null;
   url: string;
   sortOrder: number;
+  /** Present on suggestion submit / Phase 2+ API rows; optional on older listings. */
+  isNational?: boolean;
+  teamIds?: string[];
+  conferenceIds?: string[];
 };
 
 export type MediaLinkRowInput = {
@@ -23,6 +40,20 @@ export type MediaLinkRowInput = {
   label?: string | null;
   url?: string | null;
   sortOrder?: number | null;
+  /**
+   * When true, Suggest UI keeps the user's manual platform choice until the
+   * URL host changes substantially.
+   */
+  platformManual?: boolean | null;
+  /** Host key captured when the user last manually chose a platform. */
+  platformManualHostKey?: string | null;
+  /** Preferred form/editor coverage state (independent per link). */
+  coverage?: MediaBrowseFilter | null;
+  isNational?: boolean | null;
+  teamIds?: string[] | null;
+  conferenceIds?: string[] | null;
+  teamLabels?: Record<string, string> | null;
+  conferenceLabels?: Record<string, string> | null;
 };
 
 export function isMediaPlatformLinkKey(value: string): value is MediaPlatformLinkKey {
@@ -35,15 +66,43 @@ export function normalizeMediaLinkUrl(raw: string): string {
 
 /** Compare URLs for exact-duplicate detection within one creator/suggestion. */
 export function mediaLinkUrlKey(raw: string): string {
-  return normalizeMediaLinkUrl(raw).toLowerCase().replace(/\/+$/, '');
+  return normalizeSuggestLinkUrl(normalizeMediaLinkUrl(raw))
+    .toLowerCase()
+    .replace(/\/+$/, '');
 }
 
-export function createEmptyMediaLinkRow(sortOrder = 0): MediaLinkRowInput {
+/** Resolve browse filter for a draft link (coverage object or flat ids). */
+export function getMediaLinkRowBrowseFilter(row: MediaLinkRowInput): MediaBrowseFilter {
+  if (row.coverage) {
+    return cloneMediaBrowseFilter(row.coverage);
+  }
+  return coverageToMediaBrowseFilter({
+    isNational: Boolean(row.isNational),
+    teamIds: row.teamIds ?? [],
+    conferenceIds: row.conferenceIds ?? [],
+    teamLabels: row.teamLabels,
+    conferenceLabels: row.conferenceLabels,
+  });
+}
+
+export function mediaLinkRowHasCoverage(row: MediaLinkRowInput): boolean {
+  return isMediaBrowseFilterActive(getMediaLinkRowBrowseFilter(row));
+}
+
+export function createEmptyMediaLinkRow(
+  sortOrder = 0,
+  inheritCoverageFrom?: MediaBrowseFilter | null,
+): MediaLinkRowInput {
   return {
     platform: 'website',
     label: '',
     url: '',
     sortOrder,
+    platformManual: false,
+    platformManualHostKey: null,
+    coverage: inheritCoverageFrom
+      ? cloneMediaBrowseFilter(inheritCoverageFrom)
+      : createEmptyMediaBrowseFilter(),
   };
 }
 
@@ -71,7 +130,7 @@ export function validateMediaLinkRows(
     if (isMediaLinkRowBlank(row)) continue;
 
     const platformRaw = String(row.platform ?? '').trim().toLowerCase();
-    const url = normalizeMediaLinkUrl(String(row.url ?? ''));
+    const url = normalizeSuggestLinkUrl(normalizeMediaLinkUrl(String(row.url ?? '')));
     const label = row.label?.trim() || null;
 
     if (!url && !platformRaw) continue;
@@ -99,6 +158,12 @@ export function validateMediaLinkRows(
       continue;
     }
 
+    const mismatch = getMediaPlatformUrlMismatchError(platformRaw, url);
+    if (mismatch) {
+      fieldErrors[`links.${index}.platform`] = mismatch;
+      continue;
+    }
+
     const key = mediaLinkUrlKey(url);
     if (seen.has(key)) {
       fieldErrors[`links.${index}.url`] = 'Duplicate URL.';
@@ -107,12 +172,27 @@ export function validateMediaLinkRows(
     }
     seen.add(key);
 
+    const coverage = mediaBrowseFilterToCoverage(getMediaLinkRowBrowseFilter(row));
+    if (
+      !coverage.isNational &&
+      coverage.teamIds.length === 0 &&
+      coverage.conferenceIds.length === 0
+    ) {
+      const message = `Select coverage for Link ${index + 1}.`;
+      fieldErrors[`links.${index}.coverage`] = message;
+      if (!fieldErrors.links) fieldErrors.links = message;
+      continue;
+    }
+
     cleaned.push({
       id: row.id ?? null,
       platform: platformRaw,
       label,
       url,
       sortOrder: cleaned.length,
+      isNational: coverage.isNational,
+      teamIds: coverage.teamIds,
+      conferenceIds: coverage.conferenceIds,
     });
   }
 
@@ -155,6 +235,9 @@ export function platformLinksToMediaLinkRows(
       label: null,
       url,
       sortOrder: rows.length,
+      isNational: false,
+      teamIds: [],
+      conferenceIds: [],
     });
   }
   return rows;
@@ -196,13 +279,48 @@ export function mediaLinkRowsToRpcJson(rows: MediaLinkRow[]): Array<{
   label: string | null;
   url: string;
   sort_order: number;
+  is_national: boolean;
+  team_ids: string[];
+  conference_ids: string[];
 }> {
   return rows.map((row, index) => ({
     platform: row.platform,
     label: row.label,
     url: row.url,
     sort_order: index,
+    is_national: Boolean(row.isNational),
+    team_ids: [...(row.teamIds ?? [])],
+    conference_ids: [...(row.conferenceIds ?? [])],
   }));
+}
+
+/** Union coverage across validated links (compat top-level payload). */
+export function unionMediaLinkRowCoverage(rows: MediaLinkRow[]): {
+  isNational: boolean;
+  teamIds: string[];
+  conferenceIds: string[];
+} {
+  const teamIds: string[] = [];
+  const conferenceIds: string[] = [];
+  const seenTeams = new Set<string>();
+  const seenConferences = new Set<string>();
+  let isNational = false;
+  for (const row of rows) {
+    if (row.isNational) isNational = true;
+    for (const teamId of row.teamIds ?? []) {
+      const id = teamId.trim();
+      if (!id || seenTeams.has(id)) continue;
+      seenTeams.add(id);
+      teamIds.push(id);
+    }
+    for (const conferenceId of row.conferenceIds ?? []) {
+      const id = conferenceId.trim();
+      if (!id || seenConferences.has(id)) continue;
+      seenConferences.add(id);
+      conferenceIds.push(id);
+    }
+  }
+  return { isNational, teamIds, conferenceIds };
 }
 
 export function parseMediaLinkRowsFromApi(raw: unknown): MediaLinkRow[] {
@@ -214,6 +332,14 @@ export function parseMediaLinkRowsFromApi(raw: unknown): MediaLinkRow[] {
     const platform = String(record.platform ?? '').trim().toLowerCase();
     const url = String(record.url ?? '').trim();
     if (!isMediaPlatformLinkKey(platform) || !url) continue;
+    const teamIdsRaw = record.teamIds ?? record.team_ids;
+    const conferenceIdsRaw = record.conferenceIds ?? record.conference_ids;
+    const teamIds = Array.isArray(teamIdsRaw)
+      ? teamIdsRaw.map((id) => String(id).trim()).filter(Boolean)
+      : [];
+    const conferenceIds = Array.isArray(conferenceIdsRaw)
+      ? conferenceIdsRaw.map((id) => String(id).trim()).filter(Boolean)
+      : [];
     rows.push({
       id: typeof record.id === 'string' ? record.id : null,
       platform,
@@ -228,6 +354,9 @@ export function parseMediaLinkRowsFromApi(raw: unknown): MediaLinkRow[] {
           : typeof record.sort_order === 'number'
             ? record.sort_order
             : rows.length,
+      isNational: Boolean(record.isNational ?? record.is_national),
+      teamIds,
+      conferenceIds,
     });
   }
   return rows

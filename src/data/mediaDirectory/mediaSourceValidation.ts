@@ -4,9 +4,16 @@ import {
   sourceMatchesTeam,
 } from '@/data/mediaDirectory/mediaCoverage';
 import {
+  cloneMediaBrowseFilter,
+  coverageToMediaBrowseFilter,
+  isMediaBrowseFilterActive,
+} from '@/data/mediaDirectory/mediaBrowse';
+import {
+  mediaLinkRowHasCoverage,
   mediaLinkRowsToPlatformLinks,
   mediaLinkRowsToRpcJson,
   platformLinksToMediaLinkRows,
+  unionMediaLinkRowCoverage,
   validateMediaLinkRows,
   type MediaLinkRow,
   type MediaLinkRowInput,
@@ -68,11 +75,15 @@ export type SubmitMediaSuggestionRpcPayload = {
     label: string | null;
     url: string;
     sort_order: number;
+    is_national: boolean;
+    team_ids: string[];
+    conference_ids: string[];
   }>;
   p_is_national: boolean;
   p_conference_ids: string[];
   p_team_ids: string[];
   p_notes: string | null;
+  p_description: string | null;
   p_submitter_email: string;
   p_coverage_labels: {
     teams?: Record<string, string>;
@@ -94,6 +105,7 @@ export function buildSubmitMediaSuggestionRpcPayload(
     p_coverage_labels: value.coverageLabels ?? { teams: {}, conferences: {} },
     p_submitter_email: value.submitterEmail,
     p_notes: value.notes ?? null,
+    p_description: value.description ?? null,
     p_platform_links: value.platformLinks,
   };
 }
@@ -150,6 +162,7 @@ export function validateMediaSuggestionInput(
   const errors: string[] = [];
   const fieldErrors: MediaSuggestionFieldErrors = {};
   const name = input.name?.trim() ?? '';
+  const description = input.description?.trim() || null;
   const notes = input.notes?.trim() || null;
   const submitterEmailRaw = input.submitterEmail ?? '';
   const submitterEmail = normalizeSubmitterEmail(submitterEmailRaw);
@@ -173,10 +186,9 @@ export function validateMediaSuggestionInput(
     }
   }
 
-  let linkRowsInput: MediaLinkRowInput[] =
-    input.linkRows ??
-    input.links ??
-    [];
+  let linkRowsInput: MediaLinkRowInput[] = [
+    ...(input.linkRows ?? input.links ?? []),
+  ];
 
   if (linkRowsInput.length === 0 && input.platformLinks) {
     linkRowsInput = platformLinksToMediaLinkRows(input.platformLinks);
@@ -200,6 +212,22 @@ export function validateMediaSuggestionInput(
     }
   }
 
+  // Compat: older callers that only send top-level coverage fan it onto every link.
+  const topLevelCoverageFilter = coverageToMediaBrowseFilter({
+    isNational,
+    teamIds,
+    conferenceIds,
+    teamLabels: input.coverageLabels?.teams,
+    conferenceLabels: input.coverageLabels?.conferences,
+  });
+  const anyLinkHasCoverage = linkRowsInput.some((row) => mediaLinkRowHasCoverage(row));
+  if (!anyLinkHasCoverage && isMediaBrowseFilterActive(topLevelCoverageFilter)) {
+    linkRowsInput = linkRowsInput.map((row) => ({
+      ...row,
+      coverage: cloneMediaBrowseFilter(topLevelCoverageFilter),
+    }));
+  }
+
   const linksResult = validateMediaLinkRows(linkRowsInput);
   let links: MediaLinkRow[] = [];
   let platformLinks: MediaPlatformLinks = {};
@@ -210,6 +238,11 @@ export function validateMediaSuggestionInput(
   } else {
     links = linksResult.value;
     platformLinks = mediaLinkRowsToPlatformLinks(links);
+    // Authoritative suggestion-level coverage = union of link coverage.
+    const union = unionMediaLinkRowCoverage(links);
+    isNational = union.isNational;
+    teamIds = union.teamIds;
+    conferenceIds = union.conferenceIds;
   }
 
   if (!name) {
@@ -218,17 +251,19 @@ export function validateMediaSuggestionInput(
     errors.push(message);
   }
 
-  if (!submitterEmail) {
-    const message = 'Your email is required.';
-    fieldErrors.submitterEmail = message;
-    errors.push(message);
-  } else if (!isValidSubmitterEmail(submitterEmail)) {
+  // Email is optional; when provided it must be a valid address.
+  if (submitterEmail && !isValidSubmitterEmail(submitterEmail)) {
     const message = 'Enter a valid email address.';
     fieldErrors.submitterEmail = message;
     errors.push(message);
   }
 
-  if (!isNational && conferenceIds.length === 0 && teamIds.length === 0) {
+  if (
+    linksResult.ok &&
+    !isNational &&
+    conferenceIds.length === 0 &&
+    teamIds.length === 0
+  ) {
     const message = 'Choose at least one coverage tag.';
     fieldErrors.coverage = message;
     errors.push(message);
@@ -248,6 +283,7 @@ export function validateMediaSuggestionInput(
       conferenceIds,
       teamIds,
       submitterEmail,
+      description,
       notes,
       coverageLabel: input.coverageLabel?.trim() || null,
       coverageLabels: input.coverageLabels ?? { teams: {}, conferences: {} },

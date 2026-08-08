@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ContextualMediaPreview } from '@/components/media/ContextualMediaPreview';
@@ -62,6 +62,9 @@ export function ConferenceMediaSection({
         router.push(prepareDiscoverConferenceMediaNavigation(conferenceId, label))
       }
       onSuggest={() => router.push(suggestHref)}
+      onPressSource={(source) =>
+        router.push(`/creator/${encodeURIComponent(source.id)}` as Href)
+      }
     />
   );
 }

@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 
+import { StackHeaderBackButton } from '@/components/navigation/StackHeaderBackButton';
 import { colors } from '@/theme';
 
 export default function DeveloperLayout() {
@@ -9,7 +10,9 @@ export default function DeveloperLayout() {
         headerStyle: { backgroundColor: colors.surface },
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: '600' },
+        headerBackTitle: 'Back',
         contentStyle: { backgroundColor: colors.background },
+        headerLeft: (props) => <StackHeaderBackButton {...props} />,
       }}>
       <Stack.Screen name="index" options={{ title: 'Developer' }} />
       <Stack.Screen name="data-test" options={{ title: 'Data Test' }} />

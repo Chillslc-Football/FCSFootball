@@ -62,6 +62,16 @@ type LoadApprovedMediaSourcesResult = {
 /** Session cache so team pages and Discover share one load. */
 let approvedMediaSourcesCache: LoadApprovedMediaSourcesResult | null = null;
 
+/** Resolve one approved source from the shared cache/load (no extra network path). */
+export async function getApprovedMediaSourceById(
+  id: string | null | undefined,
+): Promise<MediaSource | null> {
+  const needle = id?.trim();
+  if (!needle) return null;
+  const result = await loadApprovedMediaSources();
+  return result.sources.find((source) => source.id === needle) ?? null;
+}
+
 /**
  * Load approved media sources from Supabase.
  * Falls back to local seed when unconfigured, empty, or on error.

@@ -4,6 +4,12 @@
  */
 
 import {
+  cloneMediaBrowseFilter,
+  coverageToMediaBrowseFilter,
+  isMediaBrowseFilterActive,
+} from '@/data/mediaDirectory/mediaBrowse';
+import {
+  mediaLinkRowHasCoverage,
   mediaLinkRowsToPlatformLinks,
   platformLinksToMediaLinkRows,
   reorderMediaLinkRows,
@@ -66,10 +72,31 @@ export function validateMediaAdminSuggestionDraft(
   const name = input.name?.trim() ?? '';
   if (!name) fieldErrors.name = 'Creator or podcast name is required.';
 
-  const linkInput =
-    input.linkRows ??
-    input.links ??
-    platformLinksToMediaLinkRows(input.platformLinks ?? {});
+  const isNational = Boolean(input.isNational);
+  const teamIds = [...new Set((input.teamIds ?? []).map((id) => id.trim()).filter(Boolean))];
+  const conferenceIds = [
+    ...new Set((input.conferenceIds ?? []).map((id) => id.trim()).filter(Boolean)),
+  ];
+
+  let linkInput: MediaLinkRowInput[] = [
+    ...(input.linkRows ?? input.links ?? platformLinksToMediaLinkRows(input.platformLinks ?? {})),
+  ];
+  // Admin UI still edits suggestion-level coverage; fan out until per-link admin lands.
+  const topLevelCoverage = coverageToMediaBrowseFilter({
+    isNational,
+    teamIds,
+    conferenceIds,
+  });
+  if (
+    !linkInput.some((row) => mediaLinkRowHasCoverage(row)) &&
+    isMediaBrowseFilterActive(topLevelCoverage)
+  ) {
+    linkInput = linkInput.map((row) => ({
+      ...row,
+      coverage: cloneMediaBrowseFilter(topLevelCoverage),
+    }));
+  }
+
   const linksResult = validateMediaLinkRows(linkInput);
   let links: MediaLinkRow[] = [];
   let platformLinks: MediaPlatformLinks = {};
@@ -85,11 +112,6 @@ export function validateMediaAdminSuggestionDraft(
     fieldErrors.logoUrl = 'Enter a valid artwork URL.';
   }
 
-  const isNational = Boolean(input.isNational);
-  const teamIds = [...new Set((input.teamIds ?? []).map((id) => id.trim()).filter(Boolean))];
-  const conferenceIds = [
-    ...new Set((input.conferenceIds ?? []).map((id) => id.trim()).filter(Boolean)),
-  ];
   if (!isNational && teamIds.length === 0 && conferenceIds.length === 0) {
     fieldErrors.coverage = 'Choose National, at least one team, or a conference.';
   }

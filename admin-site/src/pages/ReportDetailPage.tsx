@@ -182,9 +182,17 @@ export function ReportDetailPage() {
       <Link to="/reports">← Back to reports</Link>
 
       <div className="card stack">
-        <h1 style={{ margin: 0 }}>Correction report</h1>
+        <h1 style={{ margin: 0 }}>
+          {detail?.correctionType === 'creator_update'
+            ? 'Creator update request'
+            : 'Correction report'}
+        </h1>
         <div className="muted">
-          Status: {detail?.status} · {detail?.correctionType} · Submitted{' '}
+          Status: {detail?.status} ·{' '}
+          {detail?.correctionType === 'creator_update'
+            ? 'Creator update'
+            : detail?.correctionType}{' '}
+          · Submitted{' '}
           {detail?.createdAt ? new Date(detail.createdAt).toLocaleString() : '—'}
         </div>
         {error ? <div className="error">{error}</div> : null}

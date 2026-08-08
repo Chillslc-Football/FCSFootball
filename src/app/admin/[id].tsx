@@ -74,7 +74,7 @@ export default function AdminSubmissionDetailScreen() {
     return (
       <View style={styles.center}>
         <Text style={styles.message}>Administrator sign-in required.</Text>
-        <Pressable onPress={() => router.replace('/admin' as Href)}>
+        <Pressable onPress={() => router.replace('/admin/media-submissions' as Href)}>
           <Text style={styles.link}>Go to admin sign-in</Text>
         </Pressable>
       </View>

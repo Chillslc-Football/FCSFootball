@@ -77,6 +77,18 @@ export function createEmptyMediaBrowseFilter(): MediaBrowseFilter {
   return { national: false, teams: [], conferences: [] };
 }
 
+/** Deep-enough clone so link coverage state stays independent. */
+export function cloneMediaBrowseFilter(filter: MediaBrowseFilter): MediaBrowseFilter {
+  return {
+    national: filter.national,
+    teams: filter.teams.map((team) => ({ id: team.id, label: team.label })),
+    conferences: filter.conferences.map((conference) => ({
+      id: conference.id,
+      label: conference.label,
+    })),
+  };
+}
+
 export function isMediaBrowseFilterActive(filter: MediaBrowseFilter): boolean {
   return filter.national || filter.teams.length > 0 || filter.conferences.length > 0;
 }
@@ -86,6 +98,26 @@ export function formatMediaBrowseCoverageLabel(filter: MediaBrowseFilter): strin
   return getMediaBrowseChips(filter)
     .map((chip) => chip.label)
     .join(', ');
+}
+
+/**
+ * Compact one-line coverage for Suggest link cards.
+ * Examples: "National", "Montana State, Big Sky", "Montana State, Big Sky +2"
+ */
+export function formatCompactMediaBrowseCoverageSummary(
+  filter: MediaBrowseFilter,
+  maxVisible = 2,
+): string {
+  const chips = getMediaBrowseChips(filter);
+  if (chips.length === 0) return '';
+  if (chips.length <= maxVisible) {
+    return chips.map((chip) => chip.label).join(', ');
+  }
+  const visible = chips
+    .slice(0, maxVisible)
+    .map((chip) => chip.label)
+    .join(', ');
+  return `${visible} +${chips.length - maxVisible}`;
 }
 
 /** Map browse selection into suggestion / API coverage fields. */
@@ -99,6 +131,66 @@ export function mediaBrowseFilterToCoverage(filter: MediaBrowseFilter): {
     teamIds: filter.teams.map((team) => team.id),
     conferenceIds: filter.conferences.map((conference) => conference.id),
   };
+}
+
+/** Rebuild a browse filter from ids + optional label maps (picker display). */
+export function coverageToMediaBrowseFilter(input: {
+  isNational?: boolean;
+  teamIds?: string[];
+  conferenceIds?: string[];
+  teamLabels?: Record<string, string> | null;
+  conferenceLabels?: Record<string, string> | null;
+}): MediaBrowseFilter {
+  const teams = (input.teamIds ?? []).map((id) => {
+    const trimmed = id.trim();
+    return {
+      id: trimmed,
+      label:
+        input.teamLabels?.[trimmed]?.trim() ||
+        resolveTeamBadgeLabel(trimmed) ||
+        trimmed,
+    };
+  });
+  const conferences = (input.conferenceIds ?? []).map((id) => {
+    const trimmed = id.trim();
+    return {
+      id: trimmed,
+      label:
+        input.conferenceLabels?.[trimmed]?.trim() ||
+        resolveConferenceBadgeLabel(trimmed) ||
+        trimmed,
+    };
+  });
+  return {
+    national: Boolean(input.isNational),
+    teams,
+    conferences,
+  };
+}
+
+/** Union of browse filters (OR of national; distinct teams/conferences). */
+export function unionMediaBrowseFilters(filters: MediaBrowseFilter[]): MediaBrowseFilter {
+  const out = createEmptyMediaBrowseFilter();
+  const teamById = new Map<string, string>();
+  const conferenceById = new Map<string, string>();
+  for (const filter of filters) {
+    if (filter.national) out.national = true;
+    for (const team of filter.teams) {
+      if (!teamById.has(team.id)) teamById.set(team.id, team.label);
+    }
+    for (const conference of filter.conferences) {
+      if (!conferenceById.has(conference.id)) {
+        conferenceById.set(conference.id, conference.label);
+      }
+    }
+  }
+  out.teams = [...teamById.entries()]
+    .map(([id, label]) => ({ id, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+  out.conferences = [...conferenceById.entries()]
+    .map(([id, label]) => ({ id, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+  return out;
 }
 
 /** Removable chip list for sheet + search-row display. */

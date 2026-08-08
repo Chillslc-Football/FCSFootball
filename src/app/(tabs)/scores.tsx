@@ -1,3 +1,4 @@
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,6 +18,7 @@ import { mergeScoresTabRankings } from '@/data/providers/rankingMerge';
 import {
   prioritizeFavoriteGamesWithinOrder,
 } from '@/data/scores/prioritizeFavoriteScoreGames';
+import { takeScoresFilterHandoff } from '@/data/scores/scoresFilterHandoff';
 import {
   useScoresLiveRefresh,
   type ScoresSilentRefreshOptions,
@@ -151,6 +153,16 @@ export default function ScoresScreen() {
       trigger: 'scores-week-or-filter',
     });
   }, [loadGames]);
+
+  // Home Quick Links (and similar) queue an existing filter id before switching tabs.
+  useFocusEffect(
+    useCallback(() => {
+      const handoff = takeScoresFilterHandoff();
+      if (handoff) {
+        setFilterId(handoff.filterId);
+      }
+    }, []),
+  );
 
   const filterSupport = getScoresFilterSupport(filterId);
 

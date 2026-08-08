@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 
 import { MediaBrowseFilterChips, MediaBrowseSheet } from '@/components/media/MediaBrowseSheet';
-import { MediaSourceCard } from '@/components/media/MediaSourceCard';
+import { MediaSourceDirectoryRow } from '@/components/media/MediaSourceDirectoryRow';
 import type { DiscoverMediaBrowseSeed } from '@/data/mediaDirectory/discoverMediaHandoff';
 import {
   buildMediaBrowseTeamOptions,
@@ -156,7 +156,7 @@ export function useMediaDirectoryController(options?: {
         <Text style={styles.subtitle}>Podcasts, videos, and creators from around the FCS</Text>
       ) : null}
 
-      <View style={styles.searchRow}>
+      <View style={styles.controls}>
         <TextInput
           value={search}
           onChangeText={setSearch}
@@ -166,40 +166,49 @@ export function useMediaDirectoryController(options?: {
           autoCapitalize="none"
           autoCorrect={false}
         />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={
-            browseActive
-              ? `Browse media, ${browseChips.length} filters active`
-              : 'Browse media'
-          }
-          hitSlop={8}
-          onPress={() => setBrowseOpen(true)}
-          style={({ pressed }) => [
-            styles.filterButton,
-            browseActive && styles.filterButtonActive,
-            pressed && styles.pressed,
-          ]}>
-          <Ionicons
-            name="options-outline"
-            size={22}
-            color={browseActive ? colors.primary : colors.textSecondary}
-          />
-          {badgeLetter ? (
-            <View style={styles.filterBadge}>
-              <Text style={styles.filterBadgeText}>{badgeLetter}</Text>
-            </View>
-          ) : null}
-        </Pressable>
-        <Link href={'/suggest-fcs-media' as Href} asChild>
+
+        <View style={styles.actionRow}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Suggest a podcast"
+            accessibilityLabel={
+              browseActive
+                ? `Filter media, ${browseChips.length} filters active`
+                : 'Filter media'
+            }
             hitSlop={8}
-            style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}>
-            <Ionicons name="add" size={22} color={colors.textSecondary} />
+            onPress={() => setBrowseOpen(true)}
+            style={({ pressed }) => [
+              styles.actionButton,
+              styles.filterButton,
+              browseActive && styles.filterButtonActive,
+              pressed && styles.pressed,
+            ]}>
+            <Ionicons
+              name="filter-outline"
+              size={18}
+              color={browseActive ? colors.primary : colors.textSecondary}
+            />
+            <Text
+              style={[styles.filterButtonLabel, browseActive && styles.filterButtonLabelActive]}
+              numberOfLines={1}>
+              {badgeLetter ? `Filter · ${badgeLetter}` : 'Filter'}
+            </Text>
           </Pressable>
-        </Link>
+
+          <Link href={'/suggest-fcs-media' as Href} asChild>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add Creator"
+              hitSlop={8}
+              style={({ pressed }) => [
+                styles.actionButton,
+                styles.addCreatorButton,
+                pressed && styles.pressed,
+              ]}>
+              <Text style={styles.addCreatorLabel}>+ Add Creator</Text>
+            </Pressable>
+          </Link>
+        </View>
       </View>
 
       {browseChips.length > 0 ? (
@@ -257,7 +266,7 @@ export function useMediaDirectoryController(options?: {
 
       <View style={styles.list}>
         {visible.map((source) => (
-          <MediaSourceCard key={source.id} source={source} />
+          <MediaSourceDirectoryRow key={source.id} source={source} />
         ))}
       </View>
 
@@ -296,14 +305,11 @@ export function MediaDirectoryContent({
 const styles = StyleSheet.create({
   root: { gap: spacing.md },
   subtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.xs },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  controls: {
     gap: spacing.xs,
   },
   search: {
-    flex: 1,
-    minWidth: 0,
+    width: '100%',
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -313,38 +319,47 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     ...typography.body,
   },
-  filterButton: {
-    width: 44,
-    height: 44,
-    flexShrink: 0,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  actionButton: {
+    flex: 1,
+    minWidth: 0,
+    height: 40,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+  },
+  filterButton: {
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   filterButtonActive: {
     borderColor: colors.primary,
     backgroundColor: 'rgba(201, 162, 39, 0.12)',
   },
-  filterBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    paddingHorizontal: 3,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+  filterButtonLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
-  filterBadgeText: {
-    fontSize: 10,
+  filterButtonLabelActive: {
+    color: colors.primary,
+  },
+  addCreatorButton: {
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  addCreatorLabel: {
+    ...typography.caption,
+    color: colors.primary,
     fontWeight: '700',
-    color: colors.background,
-    lineHeight: 12,
   },
   teamFilterRow: {
     flexDirection: 'row',
