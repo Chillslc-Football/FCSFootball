@@ -1,4 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Link, type Href } from 'expo-router';
+import type { ComponentProps } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -12,45 +14,76 @@ import { Screen } from '@/components/Screen';
 import { useNotificationPreferences } from '@/hooks/useNotificationPreferences';
 import { colors, spacing, typography } from '@/theme';
 
-function permissionLabel(status: string): string {
-  switch (status) {
-    case 'granted':
-      return 'Enabled';
-    case 'denied':
-      return 'Disabled';
-    default:
-      return 'Not requested';
-  }
-}
-
 export default function SettingsScreen() {
   const {
     preferences,
-    permissionStatus,
+    userStatusView,
     loaded,
-    saving,
+    enablingNotifications,
+    retryingSetup,
     updatePreference,
+    enableNotifications,
+    retryNotificationSetup,
     openSystemSettings,
   } = useNotificationPreferences();
 
+  const actionBusy = enablingNotifications || retryingSetup;
+
   return (
-    <Screen title="Settings" subtitle="App preferences and configuration.">
+    <Screen denseTop>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Notifications</Text>
-        <Text style={styles.helpText}>
-          Favorite-team games are followed automatically. Tap the bell on any other game to receive
-          alerts for that matchup.
-        </Text>
 
-        <View style={styles.card}>
-          <Text style={styles.rowLabel}>Permission status</Text>
-          <Text style={styles.rowValue}>{permissionLabel(permissionStatus)}</Text>
-          {permissionStatus === 'denied' ? (
+        <View style={styles.statusCard}>
+          <Text style={styles.statusTitle}>{userStatusView.title}</Text>
+          <Text style={styles.statusCopy}>{userStatusView.supportingCopy}</Text>
+
+          {userStatusView.primaryAction === 'enable' ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel="Enable Notifications"
+              disabled={actionBusy}
+              onPress={() => void enableNotifications()}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                (pressed || actionBusy) && styles.pressed,
+              ]}>
+              {enablingNotifications ? (
+                <ActivityIndicator color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryButtonText}>Enable Notifications</Text>
+              )}
+            </Pressable>
+          ) : null}
+
+          {userStatusView.primaryAction === 'open_settings' ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open Settings"
               onPress={() => void openSystemSettings()}
-              style={({ pressed }) => [styles.linkButton, pressed && styles.rowPressed]}>
-              <Text style={styles.linkButtonText}>Open device settings</Text>
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.pressed,
+              ]}>
+              <Text style={styles.primaryButtonText}>Open Settings</Text>
+            </Pressable>
+          ) : null}
+
+          {userStatusView.primaryAction === 'retry' ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Try Again"
+              disabled={actionBusy}
+              onPress={() => void retryNotificationSetup()}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                (pressed || actionBusy) && styles.pressed,
+              ]}>
+              {retryingSetup ? (
+                <ActivityIndicator color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryButtonText}>Try Again</Text>
+              )}
             </Pressable>
           ) : null}
         </View>
@@ -62,38 +95,32 @@ export default function SettingsScreen() {
             <PreferenceSwitch
               label="Favorite-team game alerts"
               value={preferences.favoriteGamesEnabled}
-              disabled={saving}
-              onValueChange={(value) => void updatePreference({ favoriteGamesEnabled: value })}
+              onValueChange={(value) => updatePreference({ favoriteGamesEnabled: value })}
             />
             <PreferenceSwitch
               label="Game start"
               value={preferences.gameStartEnabled}
-              disabled={saving}
-              onValueChange={(value) => void updatePreference({ gameStartEnabled: value })}
+              onValueChange={(value) => updatePreference({ gameStartEnabled: value })}
             />
             <PreferenceSwitch
               label="Scores"
               value={preferences.scoreEnabled}
-              disabled={saving}
-              onValueChange={(value) => void updatePreference({ scoreEnabled: value })}
+              onValueChange={(value) => updatePreference({ scoreEnabled: value })}
             />
             <PreferenceSwitch
               label="Quarter endings"
               value={preferences.quarterEndEnabled}
-              disabled={saving}
-              onValueChange={(value) => void updatePreference({ quarterEndEnabled: value })}
+              onValueChange={(value) => updatePreference({ quarterEndEnabled: value })}
             />
             <PreferenceSwitch
               label="Halftime"
               value={preferences.halftimeEnabled}
-              disabled={saving}
-              onValueChange={(value) => void updatePreference({ halftimeEnabled: value })}
+              onValueChange={(value) => updatePreference({ halftimeEnabled: value })}
             />
             <PreferenceSwitch
               label="Close game"
               value={preferences.closeGameEnabled}
-              disabled={saving}
-              onValueChange={(value) => void updatePreference({ closeGameEnabled: value })}
+              onValueChange={(value) => updatePreference({ closeGameEnabled: value })}
             />
             <Text style={styles.noteText}>
               Close-game alerts require a verified ESPN close-game signal and are not active yet.
@@ -101,64 +128,153 @@ export default function SettingsScreen() {
             <PreferenceSwitch
               label="Final"
               value={preferences.finalEnabled}
-              disabled={saving}
-              onValueChange={(value) => void updatePreference({ finalEnabled: value })}
+              onValueChange={(value) => updatePreference({ finalEnabled: value })}
             />
           </>
         )}
       </View>
 
-      <View style={styles.section}>
+      <View style={styles.supportSection}>
         <Text style={styles.sectionTitle}>Support</Text>
-        <Link href={'/feedback' as Href} asChild>
-          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-            <Text style={styles.rowTitle}>Send Feedback</Text>
-            <Text style={styles.rowSubtitle}>Bugs, ideas, or anything that would help</Text>
-          </Pressable>
-        </Link>
-        <Link href={'/about' as Href} asChild>
-          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-            <Text style={styles.rowTitle}>About FCS Pulse</Text>
-            <Text style={styles.rowSubtitle}>Why this app exists</Text>
-          </Pressable>
-        </Link>
+        <SupportActionCard
+          href={'/feedback' as Href}
+          icon="chatbubble-ellipses-outline"
+          title="Send Feedback"
+          subtitle="Bugs, ideas, or anything that would help"
+        />
+        <SupportActionCard
+          href={'/about' as Href}
+          icon="information-circle-outline"
+          title="About FCS Pulse"
+          subtitle="Why this app exists"
+        />
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Admin</Text>
-        <Link href={'/admin' as Href} asChild>
-          <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-            <Text style={styles.rowTitle}>Admin</Text>
-            <Text style={styles.rowSubtitle}>Internal tools, media review, and diagnostics</Text>
-          </Pressable>
-        </Link>
+      <View style={styles.adminSection}>
+        <Text style={styles.adminSectionTitle}>Admin</Text>
+        <AdminSecondaryRow
+          href={'/admin' as Href}
+          title="Admin"
+          subtitle="Internal tools, media review, and diagnostics"
+        />
       </View>
     </Screen>
+  );
+}
+
+/**
+ * Support action card.
+ * Card chrome lives on an inner View (not only Pressable) so Expo Router Link + asChild
+ * cannot drop background/border styles — which previously left only the icon wells visible.
+ */
+function SupportActionCard({
+  href,
+  icon,
+  title,
+  subtitle,
+}: {
+  href: Href;
+  icon: ComponentProps<typeof Ionicons>['name'];
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <Link href={href} asChild>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${title}. ${subtitle}`}
+        accessibilityHint="Opens another screen"
+        style={({ pressed }) => [
+          styles.supportCardPressable,
+          pressed && styles.supportCardPressablePressed,
+        ]}>
+        <View style={styles.supportCard}>
+          <View
+            style={styles.supportIconWell}
+            accessibilityElementsHidden
+            importantForAccessibility="no">
+            <Ionicons name={icon} size={20} color={colors.text} />
+          </View>
+          <View style={styles.supportCardText}>
+            <Text style={styles.supportCardTitle} numberOfLines={1}>
+              {title}
+            </Text>
+            <Text style={styles.supportCardSubtitle} numberOfLines={2}>
+              {subtitle}
+            </Text>
+          </View>
+          <View
+            style={styles.supportChevron}
+            accessibilityElementsHidden
+            importantForAccessibility="no">
+            <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+          </View>
+        </View>
+      </Pressable>
+    </Link>
+  );
+}
+
+/** Compact secondary row — findable for owners, de-emphasized for normal users. */
+function AdminSecondaryRow({
+  href,
+  title,
+  subtitle,
+}: {
+  href: Href;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <Link href={href} asChild>
+      <Pressable
+        accessibilityRole="link"
+        accessibilityLabel={`${title}. ${subtitle}`}
+        accessibilityHint="Opens another screen"
+        style={({ pressed }) => [styles.adminRow, pressed && styles.pressed]}>
+        <View style={styles.adminRowText}>
+          <Text style={styles.adminRowTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={styles.adminRowSubtitle} numberOfLines={2}>
+            {subtitle}
+          </Text>
+        </View>
+        <Ionicons
+          name="chevron-forward"
+          size={16}
+          color={colors.textMuted}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        />
+      </Pressable>
+    </Link>
   );
 }
 
 function PreferenceSwitch({
   label,
   value,
-  disabled,
   onValueChange,
 }: {
   label: string;
   value: boolean;
-  disabled?: boolean;
   onValueChange: (value: boolean) => void;
 }) {
   return (
     <View style={styles.switchRow}>
-      <Text style={styles.switchLabel}>{label}</Text>
-      <Switch
-        accessibilityLabel={label}
-        value={value}
-        disabled={disabled}
-        onValueChange={onValueChange}
-        trackColor={{ false: colors.border, true: colors.primaryMuted }}
-        thumbColor={value ? colors.primary : colors.textMuted}
-      />
+      <Text style={styles.switchLabel} numberOfLines={2}>
+        {label}
+      </Text>
+      <View style={styles.switchControl}>
+        <Switch
+          accessibilityLabel={label}
+          value={value}
+          onValueChange={onValueChange}
+          trackColor={{ false: colors.border, true: colors.primaryMuted }}
+          thumbColor={value ? colors.primary : colors.textMuted}
+        />
+      </View>
     </View>
   );
 }
@@ -170,44 +286,48 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.label,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
-  helpText: {
+  statusCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  statusTitle: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  statusCopy: {
     ...typography.caption,
     color: colors.textSecondary,
     lineHeight: 18,
   },
   noteText: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     marginTop: -spacing.xs,
     marginBottom: spacing.xs,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    gap: spacing.xs,
-  },
-  rowLabel: {
-    ...typography.caption,
-    color: colors.textMuted,
-  },
-  rowValue: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  linkButton: {
+  primaryButton: {
     alignSelf: 'flex-start',
     marginTop: spacing.xs,
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 40,
+    minWidth: 140,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  linkButtonText: {
+  primaryButtonText: {
     ...typography.caption,
-    color: colors.primary,
-    fontWeight: '600',
+    color: colors.onPrimary,
+    fontWeight: '700',
   },
   switchRow: {
     backgroundColor: colors.surface,
@@ -224,27 +344,114 @@ const styles = StyleSheet.create({
   switchLabel: {
     ...typography.body,
     color: colors.text,
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
     paddingRight: spacing.sm,
   },
-  row: {
+  switchControl: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  supportSection: {
+    gap: 12,
+    marginBottom: spacing.md,
+    width: '100%',
+  },
+  supportCardPressable: {
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  supportCardPressablePressed: {
+    opacity: 0.88,
+  },
+  /** Full action chrome — icon + text + chevron all live inside this surface card. */
+  supportCard: {
+    width: '100%',
     backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    minHeight: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  rowPressed: {
-    opacity: 0.85,
+  supportIconWell: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexGrow: 0,
+    flexShrink: 0,
   },
-  rowTitle: {
+  supportCardText: {
+    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  supportCardTitle: {
     ...typography.body,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.text,
-    marginBottom: spacing.xs,
   },
-  rowSubtitle: {
+  supportCardSubtitle: {
     ...typography.caption,
     color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  supportChevron: {
+    width: 22,
+    flexGrow: 0,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adminSection: {
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  adminSectionTitle: {
+    ...typography.label,
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  adminRow: {
+    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 40,
+  },
+  adminRowText: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    gap: 1,
+  },
+  adminRowTitle: {
+    ...typography.caption,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  adminRowSubtitle: {
+    ...typography.caption,
+    fontSize: 12,
+    color: colors.textMuted,
+    lineHeight: 16,
+  },
+  pressed: {
+    opacity: 0.85,
   },
 });

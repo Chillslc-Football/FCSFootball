@@ -1,0 +1,363 @@
+import assert from 'node:assert/strict';
+
+import {
+  coalesceNotificationPreferences,
+  isNotificationDeliveryReady,
+  normalizeNotificationPreferences,
+  parseNotificationPreferencesRecord,
+  reconcileNotificationPreferencesSnapshot,
+  toEffectiveNotificationPreferences,
+} from '@/data/notifications/notificationEffectiveState';
+import {
+  buildNotificationDiagnosticsLines,
+  getNotificationUserStatusView,
+  isProductionPushCapable,
+  resolveNotificationUserStatus,
+} from '@/data/notifications/notificationUserStatus';
+import { DEFAULT_NOTIFICATION_PREFERENCES } from '@/data/notifications/types';
+
+const ALL_ON: typeof DEFAULT_NOTIFICATION_PREFERENCES = {
+  favoriteGamesEnabled: true,
+  gameStartEnabled: true,
+  scoreEnabled: true,
+  quarterEndEnabled: true,
+  halftimeEnabled: true,
+  closeGameEnabled: true,
+  finalEnabled: true,
+};
+
+function test(name: string, fn: () => void): void {
+  try {
+    fn();
+    console.log(`ok  - ${name}`);
+  } catch (error) {
+    console.error(`fail - ${name}`);
+    throw error;
+  }
+}
+
+test('delivery ready requires permission, registration, and push token', () => {
+  assert.equal(
+    isNotificationDeliveryReady({
+      permissionStatus: 'granted',
+      deviceRegistered: true,
+      hasPushToken: true,
+    }),
+    true,
+  );
+  assert.equal(
+    isNotificationDeliveryReady({
+      permissionStatus: 'denied',
+      deviceRegistered: true,
+      hasPushToken: true,
+    }),
+    false,
+  );
+  assert.equal(
+    isNotificationDeliveryReady({
+      permissionStatus: 'undetermined',
+      deviceRegistered: false,
+      hasPushToken: false,
+    }),
+    false,
+  );
+  assert.equal(
+    isNotificationDeliveryReady({
+      permissionStatus: 'granted',
+      deviceRegistered: false,
+      hasPushToken: true,
+    }),
+    false,
+  );
+  assert.equal(
+    isNotificationDeliveryReady({
+      permissionStatus: 'granted',
+      deviceRegistered: true,
+      hasPushToken: false,
+    }),
+    false,
+  );
+});
+
+test('fresh user defaults are all OFF', () => {
+  assert.deepEqual(DEFAULT_NOTIFICATION_PREFERENCES, {
+    favoriteGamesEnabled: false,
+    gameStartEnabled: false,
+    scoreEnabled: false,
+    quarterEndEnabled: false,
+    halftimeEnabled: false,
+    closeGameEnabled: false,
+    finalEnabled: false,
+  });
+  assert.deepEqual(coalesceNotificationPreferences(null, null), DEFAULT_NOTIFICATION_PREFERENCES);
+  assert.deepEqual(normalizeNotificationPreferences(null), DEFAULT_NOTIFICATION_PREFERENCES);
+});
+
+test('desired preferences remain available when delivery is inactive', () => {
+  // Settings shows desired prefs even when permission is not requested.
+  const desired = { ...ALL_ON, favoriteGamesEnabled: true };
+  assert.equal(desired.favoriteGamesEnabled, true);
+  assert.equal(
+    isNotificationDeliveryReady({
+      permissionStatus: 'undetermined',
+      deviceRegistered: false,
+      hasPushToken: false,
+    }),
+    false,
+  );
+  // Effective delivery can be off without wiping the desired preference model.
+  const effective = toEffectiveNotificationPreferences(desired, false);
+  assert.equal(effective.favoriteGamesEnabled, false);
+  assert.equal(desired.favoriteGamesEnabled, true);
+});
+
+test('toggle patch updates desired state without requiring delivery readiness', () => {
+  const current = { ...DEFAULT_NOTIFICATION_PREFERENCES, gameStartEnabled: true };
+  const afterOff = { ...current, gameStartEnabled: false };
+  assert.equal(afterOff.gameStartEnabled, false);
+  assert.equal(
+    isNotificationDeliveryReady({
+      permissionStatus: 'granted',
+      deviceRegistered: false,
+      hasPushToken: false,
+    }),
+    false,
+  );
+  // Delivery inactive must not force desired gameStart back on/off.
+  assert.equal(afterOff.gameStartEnabled, false);
+
+  const afterOn = { ...afterOff, gameStartEnabled: true };
+  assert.equal(afterOn.gameStartEnabled, true);
+});
+
+test('effective preferences stay off until delivery is ready', () => {
+  const desired = { ...ALL_ON, scoreEnabled: false };
+  const effective = toEffectiveNotificationPreferences(desired, false);
+  assert.deepEqual(effective, {
+    favoriteGamesEnabled: false,
+    gameStartEnabled: false,
+    scoreEnabled: false,
+    quarterEndEnabled: false,
+    halftimeEnabled: false,
+    closeGameEnabled: false,
+    finalEnabled: false,
+  });
+
+  const ready = toEffectiveNotificationPreferences(desired, true);
+  assert.deepEqual(ready, desired);
+});
+
+test('normalize fills missing fields from defaults without resetting present values', () => {
+  const partial = normalizeNotificationPreferences({ scoreEnabled: true });
+  assert.deepEqual(partial, {
+    ...DEFAULT_NOTIFICATION_PREFERENCES,
+    scoreEnabled: true,
+  });
+  assert.deepEqual(normalizeNotificationPreferences(null), DEFAULT_NOTIFICATION_PREFERENCES);
+});
+
+test('existing cached prefs remain unchanged by defaults', () => {
+  const cached = { ...ALL_ON, finalEnabled: false };
+  assert.deepEqual(coalesceNotificationPreferences(null, cached), cached);
+  assert.deepEqual(
+    normalizeNotificationPreferences(cached),
+    cached,
+  );
+});
+
+test('existing remote prefs remain unchanged by defaults', () => {
+  const remote = { ...ALL_ON, scoreEnabled: false };
+  const cached = { ...DEFAULT_NOTIFICATION_PREFERENCES, finalEnabled: true };
+  assert.deepEqual(coalesceNotificationPreferences(remote, cached), remote);
+});
+
+test('parse notification preference rows fills missing fields from defaults', () => {
+  const parsed = parseNotificationPreferencesRecord({
+    favorite_games_enabled: true,
+    score_enabled: false,
+    updated_at: '2026-08-01T12:00:00.000Z',
+  });
+  assert.ok(parsed);
+  assert.equal(parsed.preferences.favoriteGamesEnabled, true);
+  assert.equal(parsed.preferences.scoreEnabled, false);
+  // Missing columns use the true-new-user default (OFF), not a reset of saved columns.
+  assert.equal(parsed.preferences.gameStartEnabled, false);
+  assert.equal(parsed.updatedAtMs, Date.parse('2026-08-01T12:00:00.000Z'));
+});
+
+test('reconcile: no local save adopts complete remote (does not reset remote to defaults)', () => {
+  const local = DEFAULT_NOTIFICATION_PREFERENCES;
+  const remote = { ...ALL_ON, scoreEnabled: false };
+  const result = reconcileNotificationPreferencesSnapshot({
+    local,
+    localUpdatedAt: 0,
+    remote,
+    remoteUpdatedAt: 1000,
+  });
+  assert.equal(result.source, 'remote');
+  assert.deepEqual(result.preferences, remote);
+});
+
+test('reconcile: newer local wins over older remote', () => {
+  const local = { ...ALL_ON, finalEnabled: false };
+  const remote = { ...ALL_ON, scoreEnabled: false };
+  const result = reconcileNotificationPreferencesSnapshot({
+    local,
+    localUpdatedAt: 2000,
+    remote,
+    remoteUpdatedAt: 1000,
+  });
+  assert.equal(result.source, 'local');
+  assert.deepEqual(result.preferences, local);
+});
+
+test('reconcile: newer remote replaces older local', () => {
+  const local = { ...ALL_ON, finalEnabled: false };
+  const remote = { ...ALL_ON, scoreEnabled: false };
+  const result = reconcileNotificationPreferencesSnapshot({
+    local,
+    localUpdatedAt: 1000,
+    remote,
+    remoteUpdatedAt: 2000,
+  });
+  assert.equal(result.source, 'remote');
+  assert.deepEqual(result.preferences, remote);
+});
+
+test('reconcile: missing remote keeps complete local (cache not reset by defaults)', () => {
+  const local = { ...ALL_ON, closeGameEnabled: false };
+  const result = reconcileNotificationPreferencesSnapshot({
+    local,
+    localUpdatedAt: 500,
+    remote: null,
+    remoteUpdatedAt: 0,
+  });
+  assert.equal(result.source, 'local');
+  assert.deepEqual(result.preferences, local);
+});
+
+test('reconcile: fresh user with no remote keeps all-OFF defaults', () => {
+  const result = reconcileNotificationPreferencesSnapshot({
+    local: DEFAULT_NOTIFICATION_PREFERENCES,
+    localUpdatedAt: 0,
+    remote: null,
+    remoteUpdatedAt: 0,
+  });
+  assert.equal(result.source, 'local');
+  assert.deepEqual(result.preferences, DEFAULT_NOTIFICATION_PREFERENCES);
+});
+
+test('user status: permission granted + registered + push token → healthy', () => {
+  const status = resolveNotificationUserStatus({
+    permissionStatus: 'granted',
+    deviceRegistered: true,
+    hasPushToken: true,
+  });
+  assert.equal(status, 'healthy');
+  assert.equal(getNotificationUserStatusView(status).title, 'Notifications enabled');
+  assert.equal(getNotificationUserStatusView(status).primaryAction, 'none');
+});
+
+test('user status: permission denied → Notifications are off', () => {
+  const status = resolveNotificationUserStatus({
+    permissionStatus: 'denied',
+    deviceRegistered: true,
+    hasPushToken: true,
+  });
+  assert.equal(status, 'permission_denied');
+  assert.equal(getNotificationUserStatusView(status).title, 'Notifications are off');
+  assert.equal(getNotificationUserStatusView(status).primaryAction, 'open_settings');
+});
+
+test('user status: permission undetermined → Enable Notifications', () => {
+  const status = resolveNotificationUserStatus({
+    permissionStatus: 'undetermined',
+    deviceRegistered: false,
+    hasPushToken: false,
+  });
+  assert.equal(status, 'permission_undetermined');
+  assert.equal(getNotificationUserStatusView(status).primaryAction, 'enable');
+});
+
+test('user status: granted + no token → needs attention', () => {
+  const status = resolveNotificationUserStatus({
+    permissionStatus: 'granted',
+    deviceRegistered: true,
+    hasPushToken: false,
+  });
+  assert.equal(status, 'needs_attention');
+  assert.equal(getNotificationUserStatusView(status).title, 'Notifications need attention');
+  assert.equal(getNotificationUserStatusView(status).primaryAction, 'retry');
+});
+
+test('user status: granted + not registered → needs attention', () => {
+  const status = resolveNotificationUserStatus({
+    permissionStatus: 'granted',
+    deviceRegistered: false,
+    hasPushToken: true,
+  });
+  assert.equal(status, 'needs_attention');
+  assert.equal(getNotificationUserStatusView(status).primaryAction, 'retry');
+});
+
+test('desired preference switches remain independent of delivery readiness', () => {
+  const desired = { ...ALL_ON, scoreEnabled: false };
+  assert.equal(desired.gameStartEnabled, true);
+  assert.equal(
+    isNotificationDeliveryReady({
+      permissionStatus: 'granted',
+      deviceRegistered: false,
+      hasPushToken: false,
+    }),
+    false,
+  );
+  assert.equal(resolveNotificationUserStatus({
+    permissionStatus: 'granted',
+    deviceRegistered: false,
+    hasPushToken: false,
+  }), 'needs_attention');
+  // Desired model is unchanged by delivery/user status mapping.
+  assert.equal(desired.gameStartEnabled, true);
+  assert.equal(desired.scoreEnabled, false);
+});
+
+test('retry/readiness action settles to retry for incomplete registration', () => {
+  const view = getNotificationUserStatusView('needs_attention');
+  assert.equal(view.primaryAction, 'retry');
+  assert.match(view.supportingCopy, /couldn't finish/i);
+  assert.match(view.supportingCopy, /Try again in a moment/i);
+});
+
+test('Settings status copy never uses Delivery Inactive', () => {
+  for (const status of [
+    'healthy',
+    'permission_denied',
+    'permission_undetermined',
+    'needs_attention',
+  ] as const) {
+    const view = getNotificationUserStatusView(status);
+    assert.doesNotMatch(view.title, /Delivery/i);
+    assert.doesNotMatch(view.supportingCopy, /Delivery Inactive/i);
+    assert.doesNotMatch(view.title, /Inactive/i);
+  }
+});
+
+test('Expo Go diagnostics do not pretend production delivery is ready', () => {
+  assert.equal(isProductionPushCapable('expo_go'), false);
+  assert.equal(isProductionPushCapable('installed_build'), true);
+
+  const lines = buildNotificationDiagnosticsLines({
+    permissionStatus: 'granted',
+    deviceRegistered: true,
+    hasPushToken: true,
+    backendPrefsLoaded: true,
+    platform: 'ios',
+    appEnvironment: 'expo_go',
+    supabaseConfigured: true,
+  });
+  assert.ok(lines.some((line) => line === 'Delivery ready: yes'));
+  assert.ok(lines.some((line) => line === 'Production push capable: no'));
+  assert.ok(lines.some((line) => line.includes('Expo Go')));
+});
+
+console.log('\nAll notification init tests passed.');

@@ -860,7 +860,7 @@ const styles = StyleSheet.create({
   },
   centerText: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   missingTitle: {
@@ -909,7 +909,7 @@ const styles = StyleSheet.create({
   },
   sectionHeading: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontWeight: '700',
     letterSpacing: 0.2,
     marginTop: spacing.xs,
@@ -918,17 +918,17 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontSize: 12,
     lineHeight: 16,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     marginTop: -2,
   },
   label: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   labelSecondary: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   hint: {
@@ -976,7 +976,7 @@ const styles = StyleSheet.create({
   },
   coverageLabel: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   coverageTrigger: {
@@ -1060,7 +1060,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  submitText: { ...typography.body, color: colors.background, fontWeight: '700' },
+  submitText: { ...typography.body, color: colors.onPrimary, fontWeight: '700' },
   dismissKeyboard: {
     alignSelf: 'flex-end',
     paddingVertical: 2,

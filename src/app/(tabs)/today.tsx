@@ -12,8 +12,10 @@ import {
 
 import { AddFavoriteTeamPicker } from '@/components/AddFavoriteTeamPicker';
 import { FavoriteTeamRow } from '@/components/FavoriteTeamRow';
+import { HomeAnnouncementBanner } from '@/components/HomeAnnouncementBanner';
 import { NewsArticleCard } from '@/components/NewsArticleCard';
 import { Screen } from '@/components/Screen';
+import { useHomeAnnouncement } from '@/data/announcement/useHomeAnnouncement';
 import {
   buildPickableTeamsFromGames,
   pickableTeamToFavorite,
@@ -35,7 +37,11 @@ import {
   type ScoresSilentRefreshOptions,
 } from '@/data/scores/useScoresLiveRefresh';
 import { ensureSeasonGamesLoaded } from '@/data/teams/loadTeamSeasonGames';
-import { registerEspnGames } from '@/data/teams/teamGamesStore';
+import {
+  refreshCurrentWeekGamesIntoSeason,
+  resolveSeasonRefreshMode,
+} from '@/data/teams/seasonGamesRefresh';
+import { getAllCachedEspnGames, registerEspnGames } from '@/data/teams/teamGamesStore';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { colors, spacing, typography } from '@/theme';
 import type { EspnNormalizedGame } from '@/types';
@@ -52,6 +58,12 @@ export default function FavoritesScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const heroNews = useHeroSportsNews();
   const analystNews = useTheAnalystNews();
+  const {
+    announcement: homeAnnouncement,
+    visible: homeAnnouncementVisible,
+    dismiss: dismissHomeAnnouncement,
+    refresh: refreshHomeAnnouncement,
+  } = useHomeAnnouncement();
 
   const loadScheduleData = useCallback(async (options?: ScoresSilentRefreshOptions & {
     pullRefresh?: boolean;
@@ -60,6 +72,12 @@ export default function FavoritesScreen() {
     const silent = options?.silent ?? false;
     const forceRefresh = options?.forceRefresh ?? pullRefresh;
     const trigger = options?.trigger ?? (pullRefresh ? 'favorites-ptr' : 'favorites-focus');
+    const refreshMode = resolveSeasonRefreshMode({
+      pullRefresh,
+      currentWeekOnly: options?.currentWeekOnly,
+      trigger,
+      hasSeasonCache: getAllCachedEspnGames().length > 0,
+    });
 
     if (!pullRefresh && !silent) {
       setLoadState('loading');
@@ -70,13 +88,20 @@ export default function FavoritesScreen() {
       screen: 'Favorites',
       trigger,
       phase: 'start',
-      note: `force=${forceRefresh}`,
+      note: `force=${forceRefresh} mode=${refreshMode}`,
     });
 
     try {
-      const seasonGames = await ensureSeasonGamesLoaded({
-        forceRefresh,
-      });
+      let seasonGames;
+      let modeNote = 'season';
+      if (refreshMode === 'current-week') {
+        const refreshed = await refreshCurrentWeekGamesIntoSeason({ forceRefresh });
+        seasonGames = refreshed.allGames;
+        modeNote = `current-week ${refreshed.weekId} merged (${refreshed.weekGames.length} week games)`;
+      } else {
+        seasonGames = await ensureSeasonGamesLoaded({ forceRefresh });
+      }
+
       const merged = await mergeStaticRankingsOntoGames(seasonGames);
       setGames(merged.games);
       registerEspnGames(merged.games);
@@ -86,6 +111,7 @@ export default function FavoritesScreen() {
         trigger,
         phase: 'success',
         count: merged.games.length,
+        note: modeNote,
       });
     } catch (error) {
       logEspnRefreshDev({
@@ -154,8 +180,9 @@ export default function FavoritesScreen() {
         }),
         heroRefresh({ force: true, background: true }),
         analystRefresh({ force: true, background: true }),
+        refreshHomeAnnouncement({ forceRefresh: true }),
       ]);
-    }, [analystRefresh, heroRefresh, loadScheduleData]),
+    }, [analystRefresh, heroRefresh, loadScheduleData, refreshHomeAnnouncement]),
   );
 
   const isLoading = !favoritesLoaded || loadState === 'loading';
@@ -186,6 +213,13 @@ export default function FavoritesScreen() {
           colors={[colors.primary]}
         />
       }>
+      {homeAnnouncementVisible && homeAnnouncement ? (
+        <HomeAnnouncementBanner
+          message={homeAnnouncement.message}
+          onDismiss={() => void dismissHomeAnnouncement()}
+        />
+      ) : null}
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>My Teams</Text>
 
@@ -237,14 +271,22 @@ export default function FavoritesScreen() {
             accessibilityLabel="Open FCS Top 25 scores"
             onPress={() => openScoresWithFilter('fcs-top-25')}
             style={({ pressed }) => [styles.quickLink, pressed && styles.quickLinkPressed]}>
-            <Text style={styles.quickLinkText}>FCS Top 25</Text>
+            <Ionicons name="trophy-outline" size={18} color={colors.primary} />
+            <Text style={styles.quickLinkText} numberOfLines={1}>
+              FCS Top 25
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
           </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Open FCS vs FBS scores"
             onPress={() => openScoresWithFilter('fcs-vs-fbs')}
             style={({ pressed }) => [styles.quickLink, pressed && styles.quickLinkPressed]}>
-            <Text style={styles.quickLinkText}>FCS vs FBS</Text>
+            <Ionicons name="swap-horizontal-outline" size={18} color={colors.primary} />
+            <Text style={styles.quickLinkText} numberOfLines={1}>
+              FCS vs FBS
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
           </Pressable>
         </View>
       </View>
@@ -299,12 +341,12 @@ export default function FavoritesScreen() {
 
 const styles = StyleSheet.create({
   section: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xl,
     gap: spacing.sm,
   },
   sectionTitle: {
     ...typography.label,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   addButton: {
     flexDirection: 'row',
@@ -368,14 +410,16 @@ const styles = StyleSheet.create({
   },
   quickLink: {
     flex: 1,
+    flexDirection: 'row',
     backgroundColor: colors.surface,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.primaryMuted,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: spacing.xs,
     minHeight: 48,
   },
   quickLinkPressed: {
@@ -387,6 +431,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
     textAlign: 'center',
+    flexShrink: 1,
   },
   newsLoadingBox: {
     paddingVertical: spacing.lg,

@@ -12,6 +12,7 @@ import { GameFilterDropdown } from '@/components/GameFilterDropdown';
 import { ScoresGameCard } from '@/components/ScoresGameCard';
 import { Screen } from '@/components/Screen';
 import { WeekDropdown } from '@/components/WeekDropdown';
+import { formatScoresLoadError } from '@/data/providers/espnFetch';
 import { espnScoresProvider } from '@/data/providers/espnProvider';
 import { logEspnRefreshDev } from '@/data/providers/espnRefreshLog';
 import { mergeScoresTabRankings } from '@/data/providers/rankingMerge';
@@ -19,6 +20,15 @@ import {
   prioritizeFavoriteGamesWithinOrder,
 } from '@/data/scores/prioritizeFavoriteScoreGames';
 import { takeScoresFilterHandoff } from '@/data/scores/scoresFilterHandoff';
+import {
+  buildScoresLoadContextKey,
+  shouldSkipScoresFocusRefresh,
+} from '@/data/scores/scoresRefreshCoalesce';
+import {
+  createScoresRequestGeneration,
+  resolveScoresVisibleUpdate,
+  type ScoresFetchContext,
+} from '@/data/scores/scoresRequestGuard';
 import {
   useScoresLiveRefresh,
   type ScoresSilentRefreshOptions,
@@ -32,6 +42,7 @@ import {
   resolveScoresLeagueFromFilter,
   type ScoresFilterId,
 } from '@/data/scores/scoresFilters';
+import { resolveCurrentScoresWeekId } from '@/data/providers/espnScheduleWeek';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { colors, spacing, typography } from '@/theme';
 import { extractLocalGameDateIso, formatGameDateLabel } from '@/utils/formatGameTime';
@@ -39,8 +50,6 @@ import { sortEspnNormalizedGames } from '@/utils/sortGames';
 import type { EspnNormalizedGame, ScheduleWeekId } from '@/types';
 
 type LoadState = 'loading' | 'success' | 'error';
-
-const DEFAULT_SCORES_WEEK: ScheduleWeekId = 'week-1';
 
 type ScoresDateGroup = {
   date: string;
@@ -73,21 +82,47 @@ function groupScoresByDate(games: EspnNormalizedGame[]): ScoresDateGroup[] {
 
 export default function ScoresScreen() {
   const { favorites, loaded: favoritesLoaded } = useFavoriteTeams();
-  const [weekId, setWeekId] = useState<ScheduleWeekId>(DEFAULT_SCORES_WEEK);
+  const [weekId, setWeekId] = useState<ScheduleWeekId>(() => resolveCurrentScoresWeekId());
   const [filterId, setFilterId] = useState<ScoresFilterId>(DEFAULT_SCORES_FILTER);
   const leagueFilter = useMemo(() => resolveScoresLeagueFromFilter(filterId), [filterId]);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [games, setGames] = useState<EspnNormalizedGame[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sourceLabel, setSourceLabel] = useState('');
-  const gamesCountRef = useRef(0);
-  gamesCountRef.current = games.length;
+  const gamesRef = useRef(games);
+  gamesRef.current = games;
+  const appliedContextRef = useRef<ScoresFetchContext | null>(null);
+  const requestGenerationRef = useRef(createScoresRequestGeneration());
+  const lastLoadKeyRef = useRef<string | null>(null);
+  const lastLoadAtRef = useRef(0);
 
   const loadGames = useCallback(async (options?: ScoresSilentRefreshOptions & { pullRefresh?: boolean }) => {
     const silent = options?.silent ?? false;
     const pullRefresh = options?.pullRefresh ?? false;
     const forceRefresh = options?.forceRefresh ?? pullRefresh;
     const trigger = options?.trigger ?? (pullRefresh ? 'scores-ptr' : 'scores-mount');
+    const requestContext: ScoresFetchContext = { weekId, leagueFilter };
+    const contextKey = buildScoresLoadContextKey(weekId, leagueFilter);
+
+    if (
+      shouldSkipScoresFocusRefresh({
+        trigger,
+        contextKey,
+        lastLoadKey: lastLoadKeyRef.current,
+        lastLoadAtMs: lastLoadAtRef.current,
+      })
+    ) {
+      logEspnRefreshDev({
+        source: 'ESPN',
+        screen: 'Scores',
+        trigger,
+        phase: 'success',
+        note: `coalesced focus; same context just loaded (${contextKey})`,
+      });
+      return;
+    }
+
+    const requestGeneration = requestGenerationRef.current.bump();
 
     if (!silent && !pullRefresh) {
       setLoadState('loading');
@@ -99,7 +134,7 @@ export default function ScoresScreen() {
       screen: 'Scores',
       trigger,
       phase: 'start',
-      note: `${weekId}/${leagueFilter} force=${forceRefresh}`,
+      note: `${weekId}/${leagueFilter} force=${forceRefresh} gen=${requestGeneration}`,
     });
 
     try {
@@ -108,20 +143,95 @@ export default function ScoresScreen() {
         forceRefresh,
       });
 
+      if (!requestGenerationRef.current.isCurrent(requestGeneration)) {
+        logEspnRefreshDev({
+          source: 'ESPN',
+          screen: 'Scores',
+          trigger,
+          phase: 'success',
+          note: `stale gen=${requestGeneration}; skipped visible state`,
+        });
+        return;
+      }
+
       const merged = await mergeScoresTabRankings(response.data.games, leagueFilter);
 
-      setGames(merged.games);
-      registerEspnGames(merged.games);
+      if (!requestGenerationRef.current.isCurrent(requestGeneration)) {
+        logEspnRefreshDev({
+          source: 'ESPN',
+          screen: 'Scores',
+          trigger,
+          phase: 'success',
+          note: `stale gen=${requestGeneration} after ranking merge; skipped visible state`,
+        });
+        return;
+      }
+
+      const visibleUpdate = resolveScoresVisibleUpdate({
+        isCurrent: true,
+        fetchedGames: merged.games,
+        previousGames: gamesRef.current,
+        previousContext: appliedContextRef.current,
+        requestContext,
+      });
+
+      if (visibleUpdate.type === 'preserve') {
+        if (__DEV__) {
+          console.warn(
+            '[ScoresScreen] empty ESPN success for current week/league; keeping previous scores',
+            { weekId, leagueFilter, previousCount: gamesRef.current.length, trigger },
+          );
+        }
+        setSourceLabel(`${response.data.weekLabel} · ESPN scoreboard`);
+        setLoadState('success');
+        setErrorMessage(null);
+        lastLoadKeyRef.current = contextKey;
+        lastLoadAtRef.current = Date.now();
+        logEspnRefreshDev({
+          source: 'ESPN',
+          screen: 'Scores',
+          trigger,
+          phase: 'success',
+          count: gamesRef.current.length,
+          note: 'preserved board after empty success',
+        });
+        return;
+      }
+
+      if (visibleUpdate.type !== 'apply') {
+        return;
+      }
+
+      setGames(visibleUpdate.games);
+      appliedContextRef.current = requestContext;
+      if (visibleUpdate.games.length > 0) {
+        registerEspnGames(visibleUpdate.games);
+      }
       setSourceLabel(`${response.data.weekLabel} · ESPN scoreboard`);
       setLoadState('success');
+      setErrorMessage(null);
+      lastLoadKeyRef.current = contextKey;
+      lastLoadAtRef.current = Date.now();
       logEspnRefreshDev({
         source: 'ESPN',
         screen: 'Scores',
         trigger,
         phase: 'success',
-        count: merged.games.length,
+        count: visibleUpdate.games.length,
       });
     } catch (err) {
+      if (!requestGenerationRef.current.isCurrent(requestGeneration)) {
+        logEspnRefreshDev({
+          source: 'ESPN',
+          screen: 'Scores',
+          trigger,
+          phase: 'error',
+          note: `stale gen=${requestGeneration}; skipped error state`,
+          error: err,
+        });
+        return;
+      }
+
       logEspnRefreshDev({
         source: 'ESPN',
         screen: 'Scores',
@@ -131,7 +241,7 @@ export default function ScoresScreen() {
       });
 
       // Preserve last successful games on any refresh failure.
-      if (silent || pullRefresh || gamesCountRef.current > 0) {
+      if (silent || pullRefresh || gamesRef.current.length > 0) {
         console.warn('[ScoresScreen] refresh failed; keeping previous scores:', err);
         if (!silent && !pullRefresh) {
           setLoadState('success');
@@ -140,9 +250,8 @@ export default function ScoresScreen() {
       }
 
       setGames([]);
-      setErrorMessage(
-        err instanceof Error ? err.message : 'Could not load scores from ESPN.',
-      );
+      appliedContextRef.current = requestContext;
+      setErrorMessage(formatScoresLoadError(err));
       setLoadState('error');
     }
   }, [weekId, leagueFilter]);
@@ -154,11 +263,17 @@ export default function ScoresScreen() {
     });
   }, [loadGames]);
 
-  // Home Quick Links (and similar) queue an existing filter id before switching tabs.
+  // Fresh Scores visits default to the current FCS week.
+  // Explicit week handoffs win; Home Quick Links pass filter only → current week + filter.
   useFocusEffect(
     useCallback(() => {
       const handoff = takeScoresFilterHandoff();
-      if (handoff) {
+      if (handoff?.weekId) {
+        setWeekId(handoff.weekId);
+      } else {
+        setWeekId(resolveCurrentScoresWeekId());
+      }
+      if (handoff?.filterId) {
         setFilterId(handoff.filterId);
       }
     }, []),
@@ -345,7 +460,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
   },

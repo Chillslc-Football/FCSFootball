@@ -1,3 +1,6 @@
+// Required for supabase-js Auth/REST URL handling on React Native / Expo.
+import 'react-native-url-polyfill/auto';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
@@ -33,49 +36,28 @@ export function resolveSupabaseAnonKey(): string | null {
   return fromExtra || null;
 }
 
-/** TEMP DEBUG — remove after diagnosing Suggest Media Supabase config. */
-export function debugLogSupabaseConfig(source: string): void {
-  const envUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const envKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  const extra = Constants.expoConfig?.extra;
-  const resolvedUrl = resolveSupabaseUrl();
-  const resolvedKey = resolveSupabaseAnonKey();
-  const configured = isSupabaseConfigured();
-  const client = getSupabaseClient();
+/**
+ * Dev-only presence check — never logs URL/key values.
+ * Useful after EAS builds to confirm env inlining without leaking secrets.
+ */
+export function debugLogSupabaseConfig(source?: string): void {
+  if (!__DEV__) return;
 
-  console.log(`[SupabaseDebug:${source}] ========== START ==========`);
-  console.log(`[SupabaseDebug:${source}] 1 process.env.EXPO_PUBLIC_SUPABASE_URL =`, envUrl);
-  console.log(
-    `[SupabaseDebug:${source}] 1b typeof/length URL =`,
-    typeof envUrl,
-    envUrl == null ? 'nullish' : String(envUrl).length,
-  );
-  console.log(`[SupabaseDebug:${source}] 2 process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY =`, envKey);
-  console.log(
-    `[SupabaseDebug:${source}] 2b typeof/length KEY =`,
-    typeof envKey,
-    envKey == null ? 'nullish' : String(envKey).length,
-  );
-  console.log(`[SupabaseDebug:${source}] 3 Constants.expoConfig?.extra =`, extra);
-  console.log(`[SupabaseDebug:${source}] 3b extra.supabaseUrl =`, (extra as SupabaseExtra | undefined)?.supabaseUrl);
-  console.log(
-    `[SupabaseDebug:${source}] 3c extra.supabaseAnonKey =`,
-    (extra as SupabaseExtra | undefined)?.supabaseAnonKey,
-  );
-  console.log(`[SupabaseDebug:${source}] 4 resolveSupabaseUrl() =`, resolvedUrl);
-  console.log(`[SupabaseDebug:${source}] 5 resolveSupabaseAnonKey() =`, resolvedKey);
-  console.log(`[SupabaseDebug:${source}] 6 isSupabaseConfigured() =`, configured);
-  console.log(
-    `[SupabaseDebug:${source}] 7 getSupabaseClient() =`,
-    client ? `SupabaseClient(ok) urlHost=${(() => {
-      try {
-        return resolvedUrl ? new URL(resolvedUrl).host : 'n/a';
-      } catch {
-        return 'invalid-url';
-      }
-    })()}` : null,
-  );
-  console.log(`[SupabaseDebug:${source}] ========== END ==========`);
+  const url = resolveSupabaseUrl();
+  const urlPresent = Boolean(url);
+  const anonKeyPresent = Boolean(resolveSupabaseAnonKey());
+  let host: string | null = null;
+  try {
+    host = url ? new URL(url).host : null;
+  } catch {
+    host = 'invalid_url';
+  }
+  const prefix = source ? `[${source}] ` : '';
+
+  console.log(`${prefix}Supabase config:`);
+  console.log(`URL present: ${urlPresent}`);
+  console.log(`URL host: ${host ?? 'n/a'}`);
+  console.log(`Anon key present: ${anonKeyPresent}`);
 }
 
 export function isSupabaseConfigured(): boolean {

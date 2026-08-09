@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   statusText_final: {
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   statusDetail: {
     ...typography.caption,
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
   },
   confBadgeText: {
     ...typography.label,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontSize: 9,
   },
   teamRow: {
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
   },
   rankBadgeText: {
     ...typography.label,
-    color: colors.background,
+    color: colors.onPrimary,
     fontSize: 9,
   },
   teamName: {
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
   },
   teamConference: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontSize: 11,
     maxWidth: 72,
   },
@@ -294,13 +294,13 @@ const styles = StyleSheet.create({
   },
   atLabel: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     marginLeft: spacing.sm,
     fontStyle: 'italic',
   },
   venueText: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     marginTop: spacing.xs,
   },
   footer: {

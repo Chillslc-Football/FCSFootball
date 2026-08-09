@@ -41,7 +41,10 @@ export function FavoriteTeamRow({ favorite, allGames, isLast = false }: Favorite
     name: enriched.name || 'Team',
   });
 
-  const isLive = nextGameInfo?.game.normalizedStatus === 'in_progress';
+  const isLive =
+    nextGameInfo?.game.normalizedStatus === 'in_progress' ||
+    nextGameInfo?.game.normalizedStatus === 'delayed' ||
+    nextGameInfo?.game.normalizedStatus === 'suspended';
   // Same naming as ScoresGameCard: shortDisplayName ?? full team name.
   const displayName = enriched.shortDisplayName?.trim() || enriched.name?.trim() || 'Team';
 
@@ -76,7 +79,9 @@ export function FavoriteTeamRow({ favorite, allGames, isLast = false }: Favorite
             record={enriched.record}
           />
           {enriched.record ? (
-            <Text style={styles.recordText}>{enriched.record}</Text>
+            <Text style={styles.recordText} numberOfLines={1}>
+              {enriched.record}
+            </Text>
           ) : null}
         </View>
 
@@ -184,7 +189,7 @@ const styles = StyleSheet.create({
   },
   noGameText: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     lineHeight: 16,
   },
 });

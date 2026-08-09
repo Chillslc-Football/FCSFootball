@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
   },
   centerText: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   missingTitle: {
@@ -266,7 +266,7 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   section: {
     gap: spacing.sm,
@@ -274,7 +274,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     ...typography.caption,
     fontWeight: '700',
-    color: colors.textMuted,
+    color: colors.textSecondary,
     letterSpacing: 0.3,
   },
   description: {
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
   },
   emptyLinks: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   linkList: {
     gap: spacing.xs,

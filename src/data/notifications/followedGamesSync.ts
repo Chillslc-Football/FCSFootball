@@ -13,7 +13,8 @@ const FINAL_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 function buildFollowedGameRecord(game: EspnNormalizedGame): FollowedGameRecord {
   const kickoffAt = game.startTime;
-  const isFinal = game.normalizedStatus === 'final';
+  const isFinal =
+    game.normalizedStatus === 'final' || game.normalizedStatus === 'cancelled';
   const expiresAt = isFinal
     ? new Date(Date.now() + FINAL_EXPIRY_MS).toISOString()
     : undefined;

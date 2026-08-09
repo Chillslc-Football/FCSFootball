@@ -40,26 +40,44 @@ The function uses `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` automatically i
 
 ## 5. Schedule the function
 
-Use Supabase Dashboard → Database → Extensions → enable `pg_cron` and `pg_net`, then create a cron job:
+Use Supabase Dashboard → Database → Extensions → enable `pg_cron`, `pg_net`, and Vault.
+
+**Do not** call the Edge Function with empty headers. Deployed `poll-espn-games` uses `verify_jwt = true`, so cron must send a **service_role JWT** as `Authorization: Bearer …` (and `apikey`).
+
+**Do not** commit the service role key. Store it in Supabase Vault:
+
+1. Dashboard → Project Settings → API → copy the **service_role** secret (legacy JWT starting with `eyJ`).
+2. Dashboard → Database → Vault → create secret named exactly:
+   - `poll_espn_games_service_role_key`
+3. Or run (local machine, never commit output):
+   - `powershell -File scripts/fix-poll-espn-games-cron-auth.ps1`
+
+Then schedule / repair the job (one active job named `poll-espn-games`):
 
 ```sql
 select cron.schedule(
   'poll-espn-games',
   '* * * * *',
-  $$
+  $cmd$
   select net.http_post(
-    url := 'https://YOUR_PROJECT.supabase.co/functions/v1/poll-espn-games',
+    url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/poll-espn-games',
     headers := jsonb_build_object(
-      'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key', true),
-      'Content-Type', 'application/json'
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'poll_espn_games_service_role_key'),
+      'apikey', (select decrypted_secret from vault.decrypted_secrets where name = 'poll_espn_games_service_role_key')
     ),
-    body := '{}'::jsonb
+    body := '{}'::jsonb,
+    timeout_milliseconds := 25000
   );
-  $$
+  $cmd$
 );
 ```
 
-Adjust cadence per environment (live season: every 1 minute recommended).
+If the job already exists, use `cron.alter_job` instead of creating a second schedule. See `supabase/manual/20260808_fix_poll_espn_games_cron_auth.sql`.
+
+**Health check (manual):** recent rows in `net._http_response` for this URL should be `status_code` 2xx, not 401. Cron `job_run_details.status = succeeded` only means the SQL fired — always check HTTP status codes.
+
+Cadence: every 1 minute (`* * * * *`) for live season.
 
 ## 6. Expo push configuration
 

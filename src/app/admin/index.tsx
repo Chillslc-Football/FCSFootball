@@ -21,14 +21,27 @@ const DEVELOPER_TOOLS: AdminLink[] = [
     subtitle: 'Scores & schedule via espnScoresProvider',
   },
   {
+    href: '/developer/notification-diagnostics' as Href,
+    title: 'Notification Diagnostics',
+    subtitle: 'Permission, registration, token present — no secrets',
+  },
+  {
     href: '/developer/notification-test' as Href,
     title: 'Notification Test',
-    subtitle: 'Local notification simulations (development only)',
+    subtitle: 'Local simulations + Expo Push self-test (this device only)',
   },
   {
     href: '/developer/ncaa-rankings-test' as Href,
     title: 'NCAA Rankings Test',
     subtitle: 'Stats Perform FCS Top 25 — not connected yet',
+  },
+];
+
+const APP_CONTROLS: AdminLink[] = [
+  {
+    href: '/admin/announcement' as Href,
+    title: 'Home Announcement',
+    subtitle: 'Short dismissible message on the Home screen',
   },
 ];
 
@@ -58,6 +71,7 @@ export default function AdminHubScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.intro}>Internal tools for administration, development, and diagnostics.</Text>
 
+      <AdminSection title="App Controls" links={APP_CONTROLS} />
       <AdminSection title="Developer Tools" links={DEVELOPER_TOOLS} />
       <AdminSection title="Media Administration" links={MEDIA_ADMINISTRATION} />
       <AdminSection title="Diagnostics" links={DIAGNOSTICS} />

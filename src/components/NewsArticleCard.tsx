@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
   },
   meta: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   excerpt: {
     ...typography.caption,

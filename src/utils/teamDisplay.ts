@@ -34,6 +34,70 @@ export function getHomeCompactName(game: EspnNormalizedGame): string {
   });
 }
 
+export type TeamScheduleCompactNameSource = {
+  /** ESPN school/location without mascot (e.g. Montana State) */
+  location?: string;
+  /** ESPN shortDisplayName (e.g. Montana St, Tarleton) */
+  shortDisplayName?: string;
+  abbreviation?: string;
+  /** Full ESPN displayName (often includes mascot) */
+  displayName: string;
+};
+
+/** True when a label is a readable school name, not a bare 2–4 letter code. */
+export function isReadableScheduleTeamLabel(
+  value: string | undefined,
+  abbreviation?: string,
+): value is string {
+  const trimmed = value?.trim();
+  if (!trimmed) return false;
+
+  const abbrev = abbreviation?.trim();
+  if (abbrev && trimmed.toUpperCase() === abbrev.toUpperCase()) return false;
+
+  // Skip pure codes like "MTST" / "TAR" — keep "Montana St", "Austin Peay".
+  if (/^[A-Z0-9]{2,4}$/.test(trimmed)) return false;
+
+  return true;
+}
+
+/**
+ * Dense Team schedule row label only.
+ * Prefers ESPN shortDisplayName, then location (school without mascot), then displayName.
+ * Does not use bare abbreviations.
+ */
+export function getTeamScheduleCompactName(source: TeamScheduleCompactNameSource): string {
+  const abbreviation = source.abbreviation?.trim();
+
+  if (isReadableScheduleTeamLabel(source.shortDisplayName, abbreviation)) {
+    return source.shortDisplayName.trim();
+  }
+
+  if (isReadableScheduleTeamLabel(source.location, abbreviation)) {
+    return source.location.trim();
+  }
+
+  return source.displayName.trim();
+}
+
+export function getAwayTeamScheduleCompactName(game: EspnNormalizedGame): string {
+  return getTeamScheduleCompactName({
+    location: game.awayLocation,
+    shortDisplayName: game.awayShortDisplayName,
+    abbreviation: game.awayAbbreviation,
+    displayName: game.awayTeam,
+  });
+}
+
+export function getHomeTeamScheduleCompactName(game: EspnNormalizedGame): string {
+  return getTeamScheduleCompactName({
+    location: game.homeLocation,
+    shortDisplayName: game.homeShortDisplayName,
+    abbreviation: game.homeAbbreviation,
+    displayName: game.homeTeam,
+  });
+}
+
 export type TeamDetailHeading = {
   title: string;
   mascot?: string;

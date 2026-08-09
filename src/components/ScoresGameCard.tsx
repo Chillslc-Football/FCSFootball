@@ -8,8 +8,10 @@ import { FavoriteStar } from '@/components/FavoriteStar';
 import { TeamLogo } from '@/components/TeamLogo';
 import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
 import { openWatchOnEspn, resolveEspnWatchTargets } from '@/data/providers/espnWatchLinks';
+import { resolveEspnGameStatusPresentation } from '@/data/providers/espnGameStatus';
+import { formatEspnGameSituationLine } from '@/data/providers/espnGameSituation';
 import { toGameStatus } from '@/data/providers/espnTodayMapper';
-import { colors, spacing } from '@/theme';
+import { colors, LAYOUT_COLUMNS, spacing } from '@/theme';
 import { formatGameKickoffTime } from '@/utils/formatGameTime';
 import { buildTeamHref } from '@/utils/teamId';
 import type { EspnNormalizedGame } from '@/types';
@@ -95,10 +97,14 @@ function TeamLine({
             hitSlop={4}
             onPress={onRightPress}
             style={({ pressed }) => [styles.rightColTap, pressed && styles.rightColTapPressed]}>
-            <Text style={[styles.rightCol, isWinner && styles.rightColWinner]}>{rightValue}</Text>
+            <Text style={[styles.rightCol, isWinner && styles.rightColWinner]} numberOfLines={1}>
+              {rightValue}
+            </Text>
           </Pressable>
         ) : (
-          <Text style={[styles.rightCol, isWinner && styles.rightColWinner]}>{rightValue}</Text>
+          <Text style={[styles.rightCol, isWinner && styles.rightColWinner]} numberOfLines={1}>
+            {rightValue}
+          </Text>
         )
       ) : null}
     </View>
@@ -144,19 +150,19 @@ export function ScoresGameCard({ game, isLast = false }: ScoresGameCardProps) {
     : game.homeRecord?.trim() || undefined;
 
   const kickoffLabel = formatGameKickoffTime(game);
-  const isInProgress = game.normalizedStatus === 'in_progress';
-  const isFinal = game.normalizedStatus === 'final';
+  const statusPresentation = resolveEspnGameStatusPresentation(game);
+  const situationLine = formatEspnGameSituationLine(game);
 
   return (
     <View style={[styles.row, !isLast && styles.rowBorder]}>
       <View style={styles.leftMeta}>
         <GameAlertBell game={game} />
-        {isInProgress ? (
+        {statusPresentation.kind === 'live' ? (
           <Text style={[styles.leftMetaText, styles.leftMetaLive]} numberOfLines={2}>
-            {game.status}
+            {statusPresentation.label}
           </Text>
-        ) : isFinal ? (
-          <Text style={styles.leftMetaText}>Final</Text>
+        ) : statusPresentation.kind === 'final' || statusPresentation.kind === 'special' ? (
+          <Text style={styles.leftMetaText}>{statusPresentation.label}</Text>
         ) : (
           <Text style={styles.leftMetaText}>{kickoffLabel}</Text>
         )}
@@ -207,6 +213,11 @@ export function ScoresGameCard({ game, isLast = false }: ScoresGameCardProps) {
           favoriteRank={homeRank}
           favoriteRecord={game.homeRecord}
         />
+        {situationLine ? (
+          <Text style={styles.situationText} numberOfLines={1}>
+            {situationLine}
+          </Text>
+        ) : null}
         <CompactWatchLabel game={game} />
       </View>
     </View>
@@ -246,6 +257,13 @@ const styles = StyleSheet.create({
     gap: 4,
     minWidth: 0,
   },
+  situationText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    lineHeight: 16,
+    marginTop: 2,
+  },
   teamLine: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -274,7 +292,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   rightCol: {
-    width: 36,
+    width: LAYOUT_COLUMNS.scoreValue,
     fontSize: 14,
     fontWeight: '600',
     color: colors.textSecondary,
@@ -286,7 +304,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   rightColTap: {
-    width: 36,
+    width: LAYOUT_COLUMNS.scoreValue,
     flexShrink: 0,
     alignItems: 'flex-end',
   },

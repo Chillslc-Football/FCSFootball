@@ -5,6 +5,7 @@ import { GameCardDevDiagnostics } from '@/components/GameCardDevDiagnostics';
 import { TeamLogo } from '@/components/TeamLogo';
 import { TeamNameLink } from '@/components/TeamNameLink';
 import { isFcsFbsEspnGame } from '@/data/scores/scoresFilters';
+import { formatEspnGameSituationLine } from '@/data/providers/espnGameSituation';
 import { toGameStatus } from '@/data/providers/espnTodayMapper';
 import { colors, spacing, typography } from '@/theme';
 import { formatGameStatusDetail } from '@/utils/formatGameTime';
@@ -93,7 +94,9 @@ export function TodayGameCard({ game, onWatchOpened, showDevDiagnostics }: Today
     startTime: game.startTime,
     status,
     espnStatus: game.status,
+    normalizedStatus: game.normalizedStatus,
   });
+  const situationLine = formatEspnGameSituationLine(game);
   const showFbsBadge = isFcsFbsEspnGame(game);
 
   return (
@@ -139,6 +142,12 @@ export function TodayGameCard({ game, onWatchOpened, showDevDiagnostics }: Today
         isWinner={homeWinner}
         showScore={showScore}
       />
+
+      {situationLine ? (
+        <Text style={styles.situationText} numberOfLines={1}>
+          {situationLine}
+        </Text>
+      ) : null}
 
       <View style={styles.metaRow}>
         {game.venue ? (
@@ -215,7 +224,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   statusText_final: {
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   statusDetail: {
     ...typography.caption,
@@ -243,7 +252,7 @@ const styles = StyleSheet.create({
   },
   rankBadgeText: {
     ...typography.label,
-    color: colors.background,
+    color: colors.onPrimary,
     fontSize: 9,
   },
   teamName: {
@@ -256,9 +265,14 @@ const styles = StyleSheet.create({
   },
   atLabel: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     marginLeft: spacing.sm,
     fontStyle: 'italic',
+  },
+  situationText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   score: {
     ...typography.heading,
@@ -275,7 +289,7 @@ const styles = StyleSheet.create({
   },
   venueText: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   footer: {
     flexDirection: 'row',

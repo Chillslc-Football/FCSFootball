@@ -9,7 +9,6 @@ import {
   type MediaBrowseFilter,
 } from '@/data/mediaDirectory/mediaBrowse';
 import {
-  isMediaSourceNational,
   sourceMatchesConference,
   sourceMatchesTeam,
 } from '@/data/mediaDirectory/mediaCoverage';
@@ -22,6 +21,13 @@ import type { MediaSource } from '@/data/mediaDirectory/types';
 import { isEspnTeamId } from '@/utils/teamId';
 
 export const CONTEXTUAL_MEDIA_INLINE_LIMIT = 4;
+
+/** Primary empty copy for Team page contextual media. */
+export const TEAM_CONTEXTUAL_MEDIA_EMPTY_MESSAGE = 'No team media found.';
+
+/** Optional supporting line under the Team media empty state. */
+export const TEAM_CONTEXTUAL_MEDIA_EMPTY_SUPPORTING =
+  'Know a creator who covers this team?';
 
 export function isKnownMediaConferenceId(conferenceId: string | null | undefined): boolean {
   return isMediaBrowseConferenceId(conferenceId);
@@ -38,8 +44,11 @@ function approvedOnly(sources: MediaSource[]): MediaSource[] {
 }
 
 /**
- * Team page media: exact team → conference-tagged (not already listed) → national.
- * Dedupes by source id. Alphabetical within each tier.
+ * Team page media: approved creators explicitly tagged to this team only.
+ * No conference-only or national-only fallback.
+ * National creators still appear when they are also tagged to this team.
+ *
+ * `conferenceId` is accepted for call-site compatibility but is not used for selection.
  */
 export function selectTeamContextualMedia(
   sources: MediaSource[],
@@ -52,42 +61,14 @@ export function selectTeamContextualMedia(
   const teamId = input.teamId.trim();
   if (!teamId) return [];
 
-  const conferenceId = input.conferenceId?.trim() || null;
-  const approved = approvedOnly(sources);
-  const seen = new Set<string>();
-  const ordered: MediaSource[] = [];
-
-  function pushTier(tier: MediaSource[]) {
-    for (const source of tier.slice().sort(compareMediaSourcesByName)) {
-      if (seen.has(source.id)) continue;
-      seen.add(source.id);
-      ordered.push(source);
-    }
-  }
-
-  pushTier(approved.filter((source) => sourceMatchesTeam(source, teamId)));
-
-  if (conferenceId && isKnownMediaConferenceId(conferenceId)) {
-    pushTier(
-      approved.filter(
-        (source) =>
-          sourceMatchesConference(source, conferenceId) && !sourceMatchesTeam(source, teamId),
-      ),
-    );
-  }
-
-  pushTier(
-    approved.filter(
-      (source) =>
-        isMediaSourceNational(source) &&
-        !sourceMatchesTeam(source, teamId) &&
-        !(conferenceId && sourceMatchesConference(source, conferenceId)),
-    ),
-  );
+  const matching = approvedOnly(sources)
+    .filter((source) => sourceMatchesTeam(source, teamId))
+    .slice()
+    .sort(compareMediaSourcesByName);
 
   const limit = input.limit;
-  if (typeof limit === 'number' && limit >= 0) return ordered.slice(0, limit);
-  return ordered;
+  if (typeof limit === 'number' && limit >= 0) return matching.slice(0, limit);
+  return matching;
 }
 
 /**

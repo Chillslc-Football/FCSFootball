@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { formatAdminSignInError } from '@/data/media/adminAuthErrors';
 import {
   adminListMediaSubmissions,
 } from '@/data/media/mediaAdminApi';
@@ -109,12 +110,20 @@ export default function AdminMediaSubmissionsScreen() {
         <Pressable
           disabled={signingIn}
           onPress={() => {
+            if (signingIn) return;
             setSigningIn(true);
             setSignInError(null);
-            void auth.signIn(email, password).then((result) => {
-              if (!result.ok) setSignInError(result.error);
-              setSigningIn(false);
-            });
+            void auth
+              .signIn(email, password)
+              .then((result) => {
+                if (!result.ok) setSignInError(result.error);
+              })
+              .catch((error) => {
+                setSignInError(formatAdminSignInError(error, 'sign_in'));
+              })
+              .finally(() => {
+                setSigningIn(false);
+              });
           }}
           style={({ pressed }) => [styles.button, pressed && styles.pressed]}>
           {signingIn ? (
@@ -254,7 +263,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  buttonText: { ...typography.body, color: colors.background, fontWeight: '700' },
+  buttonText: { ...typography.body, color: colors.onPrimary, fontWeight: '700' },
   pressed: { opacity: 0.85 },
   error: { ...typography.caption, color: colors.error },
   message: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
@@ -278,7 +287,7 @@ const styles = StyleSheet.create({
   },
   chipSelected: { borderColor: colors.primary, backgroundColor: colors.primaryMuted },
   chipText: { ...typography.caption, color: colors.textSecondary },
-  chipTextSelected: { color: colors.background, fontWeight: '700' },
+  chipTextSelected: { color: colors.onPrimary, fontWeight: '700' },
   card: {
     backgroundColor: colors.surface,
     borderWidth: 1,

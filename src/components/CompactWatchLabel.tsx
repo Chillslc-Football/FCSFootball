@@ -58,12 +58,14 @@ export function CompactWatchLabel({
   }
 
   const alignEnd = align === 'end';
+  const stack = alignEnd;
   const linkTextStyle = [styles.linkText, alignEnd && styles.textEnd];
   const networkTextStyle = [
     styles.networkText,
     alignEnd && styles.textEnd,
     !canOpen && styles.disabledText,
   ];
+  const rowStyle = [styles.row, alignEnd && styles.rowEnd, stack && styles.rowStack];
 
   // ESPN family: network name is the single clickable control (when a URL exists).
   if (isEspnFamily && networkLabel) {
@@ -74,15 +76,13 @@ export function CompactWatchLabel({
         accessibilityState={{ disabled: !canOpen }}
         disabled={!canOpen || opening}
         onPress={onLinkPress}
-        style={({ pressed }) => [
-          styles.row,
-          alignEnd && styles.rowEnd,
-          pressed && canOpen && styles.pressed,
-        ]}>
+        style={({ pressed }) => [...rowStyle, pressed && canOpen && styles.pressed]}>
         {opening ? (
           <ActivityIndicator color={colors.primary} size="small" />
         ) : (
-          <Text style={[styles.linkText, alignEnd && styles.textEnd, !canOpen && styles.disabledText]}>
+          <Text
+            style={[styles.linkText, alignEnd && styles.textEnd, !canOpen && styles.disabledText]}
+            numberOfLines={1}>
             {networkLabel}
           </Text>
         )}
@@ -92,7 +92,7 @@ export function CompactWatchLabel({
 
   // Non-ESPN (or missing network): plain network text + optional ESPN Gamecast link.
   return (
-    <View style={[styles.row, alignEnd && styles.rowEnd]}>
+    <View style={rowStyle}>
       {networkLabel ? (
         <Text style={networkTextStyle} numberOfLines={1}>
           {networkLabel}
@@ -104,12 +104,15 @@ export function CompactWatchLabel({
           accessibilityLabel={ESPN_GAMECAST_LINK_LABEL}
           accessibilityState={{ disabled: opening }}
           disabled={opening}
+          hitSlop={stack ? { top: 4, bottom: 4, left: 4, right: 4 } : undefined}
           onPress={onLinkPress}
           style={({ pressed }) => [styles.linkHit, pressed && styles.pressed]}>
           {opening ? (
             <ActivityIndicator color={colors.primary} size="small" />
           ) : (
-            <Text style={linkTextStyle}>{ESPN_GAMECAST_LINK_LABEL}</Text>
+            <Text style={linkTextStyle} numberOfLines={1}>
+              {ESPN_GAMECAST_LINK_LABEL}
+            </Text>
           )}
         </Pressable>
       ) : null}
@@ -132,6 +135,15 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     justifyContent: 'flex-end',
   },
+  /** Team schedule right column — network + Gamecast stacked tightly. */
+  rowStack: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    flexWrap: 'nowrap',
+    gap: 0,
+    marginTop: 0,
+    paddingVertical: 0,
+  },
   linkHit: {
     paddingVertical: 1,
   },
@@ -153,6 +165,7 @@ const styles = StyleSheet.create({
   textEnd: {
     textAlign: 'right',
     fontSize: 10,
+    lineHeight: 13,
   },
   disabledText: {
     color: colors.textMuted,

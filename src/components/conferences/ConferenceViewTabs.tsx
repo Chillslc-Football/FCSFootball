@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
     ...typography.body,
     fontSize: 15,
     fontWeight: '500',
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   tabTextActive: {
     color: colors.text,

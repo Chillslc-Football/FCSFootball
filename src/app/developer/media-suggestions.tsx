@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
   },
   chipSelected: { borderColor: colors.primary, backgroundColor: colors.primaryMuted },
   chipText: { ...typography.caption, color: colors.textSecondary },
-  chipTextSelected: { color: colors.background, fontWeight: '700' },
+  chipTextSelected: { color: colors.onPrimary, fontWeight: '700' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs },
   button: {
     backgroundColor: colors.primary,
@@ -346,6 +346,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
-  buttonText: { ...typography.caption, color: colors.background, fontWeight: '700' },
+  buttonText: { ...typography.caption, color: colors.onPrimary, fontWeight: '700' },
   secondaryText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
 });

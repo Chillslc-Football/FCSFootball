@@ -1,6 +1,7 @@
+import { shouldPollEspnNormalizedStatus } from '@/data/providers/espnGameStatus';
 import type { EspnNormalizedGame } from '@/types';
 
-/** TTL when any cached scoreboard includes in-progress games. */
+/** TTL when any cached scoreboard includes in-progress / delayed / suspended games. */
 export const ESPN_CACHE_TTL_LIVE_MS = 30_000;
 
 /** TTL for upcoming, final, and schedule-only scoreboard payloads. */
@@ -20,7 +21,7 @@ export type EspnScoreboardCachePayload = {
 };
 
 export function resolveEspnCacheTtlMs(games: Pick<EspnNormalizedGame, 'normalizedStatus'>[]): number {
-  const hasLive = games.some((game) => game.normalizedStatus === 'in_progress');
+  const hasLive = games.some((game) => shouldPollEspnNormalizedStatus(game.normalizedStatus));
   return hasLive ? ESPN_CACHE_TTL_LIVE_MS : ESPN_CACHE_TTL_DEFAULT_MS;
 }
 

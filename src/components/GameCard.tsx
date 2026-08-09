@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   statusText_final: {
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   statusDetail: {
     ...typography.caption,
@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
   },
   rankBadgeText: {
     ...typography.label,
-    color: colors.background,
+    color: colors.onPrimary,
     fontSize: 9,
   },
   teamName: {

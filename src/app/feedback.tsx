@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
   },
   label: {
     ...typography.label,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     marginTop: spacing.sm,
   },
   input: {
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     ...typography.body,
-    color: colors.background,
+    color: colors.onPrimary,
     fontWeight: '700',
   },
   successBox: {

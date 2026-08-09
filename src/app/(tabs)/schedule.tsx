@@ -1,5 +1,5 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 
 import { ConferenceDropdown } from '@/components/ConferenceDropdown';
@@ -83,6 +83,13 @@ export default function ConferencesScreen() {
       })();
     }, [activeView, scheduleRefreshSilent, standingsRefreshSilent]),
   );
+
+  // Switching to Standings without leaving the Conferences tab should still
+  // force-refresh authoritative ESPN records (not only on screen focus).
+  useEffect(() => {
+    if (activeView !== 'standings') return;
+    void standingsRefreshSilent();
+  }, [activeView, selectedConference, standingsRefreshSilent]);
 
   useScoresLiveRefresh({
     screen: 'Conference',

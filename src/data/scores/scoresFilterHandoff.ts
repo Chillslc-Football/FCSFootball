@@ -1,12 +1,15 @@
 /**
- * Home → Scores filter handoff for the tab navigator.
- * Queues an existing ScoresFilterId; Scores applies it via setFilterId.
+ * Home → Scores navigation handoff for the tab navigator.
+ * Queues an optional filter and/or explicit week; Scores consumes once on focus.
  */
 import type { ScoresFilterId } from '@/data/scores/scoresFilters';
+import type { ScheduleWeekId } from '@/types';
 
 export type ScoresFilterHandoff = {
   id: number;
-  filterId: ScoresFilterId;
+  filterId?: ScoresFilterId;
+  /** When set, Scores uses this week instead of resolving the current week. */
+  weekId?: ScheduleWeekId;
 };
 
 let nextHandoffId = 1;
@@ -14,10 +17,28 @@ let queued: ScoresFilterHandoff | null = null;
 let lastConsumedId = 0;
 
 /** Queue a Scores filter before navigating to the Scores tab. */
-export function queueScoresFilterHandoff(filterId: ScoresFilterId): ScoresFilterHandoff {
+export function queueScoresFilterHandoff(
+  filterId: ScoresFilterId,
+  options?: { weekId?: ScheduleWeekId },
+): ScoresFilterHandoff {
   const handoff: ScoresFilterHandoff = {
     id: nextHandoffId++,
     filterId,
+    weekId: options?.weekId,
+  };
+  queued = handoff;
+  return handoff;
+}
+
+/** Queue an explicit Scores week (optional filter) — wins over current-week default. */
+export function queueScoresWeekHandoff(
+  weekId: ScheduleWeekId,
+  options?: { filterId?: ScoresFilterId },
+): ScoresFilterHandoff {
+  const handoff: ScoresFilterHandoff = {
+    id: nextHandoffId++,
+    weekId,
+    filterId: options?.filterId,
   };
   queued = handoff;
   return handoff;

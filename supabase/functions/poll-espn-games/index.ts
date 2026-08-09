@@ -535,11 +535,16 @@ Deno.serve(async (req) => {
         });
       }
 
-      if (
-        preferenceAllows('final', prefs) &&
-        priorState !== 'post' &&
-        game.state === 'post'
-      ) {
+      // ESPN often uses state=post for postponed/cancelled — do not treat those as Final.
+      const statusNameUpper = (game.statusName ?? '').toUpperCase();
+      const isCompletedFinal =
+        game.state === 'post' &&
+        !statusNameUpper.includes('POSTPONED') &&
+        !statusNameUpper.includes('CANCELED') &&
+        !statusNameUpper.includes('CANCELLED') &&
+        !statusNameUpper.includes('SUSPENDED');
+
+      if (preferenceAllows('final', prefs) && priorState !== 'post' && isCompletedFinal) {
         pending.push({
           deviceId,
           pushToken,

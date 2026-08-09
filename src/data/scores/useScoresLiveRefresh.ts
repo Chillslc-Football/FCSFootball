@@ -7,6 +7,7 @@ import {
   countLiveEspnNormalizedGames,
   hasLiveEspnNormalizedGames,
   SCORES_LIVE_REFRESH_INTERVAL_MS,
+  shouldRunScoresLiveInterval,
 } from '@/data/scores/scoresLiveRefresh';
 import type { EspnNormalizedGame } from '@/types';
 
@@ -14,6 +15,11 @@ export type ScoresSilentRefreshOptions = {
   forceRefresh?: boolean;
   silent?: boolean;
   trigger?: string;
+  /**
+   * When true, loaders should refresh only the current FCS week into the season store
+   * (not weeks 1–17). Used by live-interval ticks on Home/Team.
+   */
+  currentWeekOnly?: boolean;
 };
 
 type UseScoresLiveRefreshArgs = {
@@ -68,11 +74,16 @@ export function useScoresLiveRefresh({
   const wasPollingRef = useRef(false);
 
   const runSilentForceRefresh = useCallback(
-    async (trigger: string) => {
+    async (trigger: string, options?: { currentWeekOnly?: boolean }) => {
       if (pollInFlightRef.current) return;
       pollInFlightRef.current = true;
       try {
-        await loadGames({ forceRefresh: true, silent: true, trigger });
+        await loadGames({
+          forceRefresh: true,
+          silent: true,
+          trigger,
+          currentWeekOnly: options?.currentWeekOnly,
+        });
       } finally {
         pollInFlightRef.current = false;
       }
@@ -128,7 +139,12 @@ export function useScoresLiveRefresh({
     return () => subscription.remove();
   }, [enabled, prefix, refreshOnAppActive, runSilentForceRefresh]);
 
-  const shouldPoll = enabled && appIsActive && isScreenFocused && hasVisibleLiveGames;
+  const shouldPoll = shouldRunScoresLiveInterval({
+    enabled,
+    appIsActive,
+    isScreenFocused,
+    hasVisibleLiveGames,
+  });
 
   useEffect(() => {
     if (!shouldPoll) {
@@ -164,7 +180,8 @@ export function useScoresLiveRefresh({
     wasPollingRef.current = true;
 
     const intervalId = setInterval(() => {
-      void runSilentForceRefresh(`${prefix}-live-poll`);
+      // Live ticks refresh only the current week on season-backed screens (Home/Team).
+      void runSilentForceRefresh(`${prefix}-live-poll`, { currentWeekOnly: true });
     }, SCORES_LIVE_REFRESH_INTERVAL_MS);
 
     return () => {

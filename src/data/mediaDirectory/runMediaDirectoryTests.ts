@@ -20,6 +20,7 @@ import {
 import {
   buildDiscoverBrowseFilterFromHandoff,
   buildDiscoverMediaBrowseSeed,
+  consumeDiscoverSectionParam,
   queueDiscoverMediaHandoff,
   resetDiscoverMediaHandoffForTests,
   resolveDiscoverMediaHandoffFromParams,
@@ -1727,7 +1728,7 @@ test('browse team and conference option lists are searchable / alphabetical', ()
   );
 });
 
-test('team contextual media orders exact team, conference, then national without duplicates', () => {
+test('1: team with explicit media shows team creators only', () => {
   const teamExact = baseSource({
     id: 'ctx-team-exact',
     name: 'Zebra Team Show',
@@ -1776,11 +1777,13 @@ test('team contextual media orders exact team, conference, then national without
 
   assert.deepEqual(
     ordered.map((source) => source.id),
-    ['ctx-team-and-conf', 'ctx-team-exact', 'ctx-conf-only', 'ctx-national'],
+    ['ctx-team-and-conf', 'ctx-team-exact'],
   );
   assert.equal(new Set(ordered.map((source) => source.id)).size, ordered.length);
   assert.ok(!ordered.some((source) => source.id === 'ctx-other-team'));
   assert.ok(!ordered.some((source) => source.id === 'ctx-unapproved'));
+  assert.ok(!ordered.some((source) => source.id === 'ctx-conf-only'));
+  assert.ok(!ordered.some((source) => source.id === 'ctx-national'));
 
   // Artwork and repeated links preserved on exact match.
   assert.equal(ordered.find((source) => source.id === 'ctx-team-exact')?.logo_url, teamExact.logo_url);
@@ -1797,7 +1800,7 @@ test('team contextual media orders exact team, conference, then national without
   );
 });
 
-test('team contextual media empty when no relevant creators', () => {
+test('2: team with no media → empty state (no creators)', () => {
   const sources = [
     baseSource({
       id: 'ctx-empty-other',
@@ -1810,6 +1813,68 @@ test('team contextual media empty when no relevant creators', () => {
     selectTeamContextualMedia(sources, {
       teamId: MONTANA_STATE_ESPN_TEAM_ID,
       conferenceId: 'mvfc',
+    }),
+    [],
+  );
+});
+
+test('3: team with no media + national creators exist → nationals do NOT appear', () => {
+  const nationalA = baseSource({
+    id: 'ctx-national-a',
+    name: 'National FCS Hour',
+    isNational: true,
+    scope: 'national',
+  });
+  const nationalB = baseSource({
+    id: 'ctx-national-b',
+    name: 'Wide FCS Show',
+    isNational: true,
+  });
+
+  assert.deepEqual(
+    selectTeamContextualMedia([nationalA, nationalB], {
+      teamId: MONTANA_STATE_ESPN_TEAM_ID,
+      conferenceId: 'big-sky',
+    }),
+    [],
+  );
+});
+
+test('4: national creator explicitly tagged to team → may appear', () => {
+  const nationalAndTeam = baseSource({
+    id: 'ctx-national-and-team',
+    name: 'National + Bobcats',
+    isNational: true,
+    teamIds: [MONTANA_STATE_ESPN_TEAM_ID],
+  });
+  const nationalOnly = baseSource({
+    id: 'ctx-national-only',
+    name: 'National Only',
+    isNational: true,
+  });
+
+  const ordered = selectTeamContextualMedia([nationalOnly, nationalAndTeam], {
+    teamId: MONTANA_STATE_ESPN_TEAM_ID,
+  });
+
+  assert.deepEqual(
+    ordered.map((source) => source.id),
+    ['ctx-national-and-team'],
+  );
+});
+
+test('5: conference-only creator not tagged to team → does NOT appear', () => {
+  const conferenceOnly = baseSource({
+    id: 'ctx-conf-only-strict',
+    name: 'Big Sky Only Pod',
+    conferenceIds: ['big-sky'],
+    isNational: false,
+  });
+
+  assert.deepEqual(
+    selectTeamContextualMedia([conferenceOnly], {
+      teamId: MONTANA_STATE_ESPN_TEAM_ID,
+      conferenceId: 'big-sky',
     }),
     [],
   );
@@ -2103,7 +2168,42 @@ test('contextual preview limit, artwork initials fallback, and suggest a11y labe
     'utf8',
   );
   assert.match(preview, /accessibilityLabel=\{SUGGEST_MEDIA_A11Y_LABEL\}/);
-  assert.match(preview, /No media listed for this team yet\.|emptyMessage/);
+  assert.match(preview, /emptyMessage/);
+  assert.match(preview, /emptySupportingMessage/);
+
+  const teamMediaSection = readFileSync(
+    path.join(process.cwd(), 'src/components/media/TeamMediaSection.tsx'),
+    'utf8',
+  );
+  assert.match(teamMediaSection, /TEAM_CONTEXTUAL_MEDIA_EMPTY_MESSAGE/);
+  assert.match(teamMediaSection, /TEAM_CONTEXTUAL_MEDIA_EMPTY_SUPPORTING/);
+});
+
+test('discover section params apply once and do not overwrite later user selection', () => {
+  // First observation of section=media applies.
+  const first = consumeDiscoverSectionParam('media', null);
+  assert.equal(first.apply, 'media');
+  assert.equal(first.nextLastSeen, 'media');
+
+  // Startup/loading re-runs with the same sticky param must not re-apply
+  // (would fight a user tap on News while Media data is still loading).
+  const repeatWhileLoading = consumeDiscoverSectionParam('media', 'media');
+  assert.equal(repeatWhileLoading.apply, null);
+  assert.equal(repeatWhileLoading.nextLastSeen, 'media');
+
+  // Clearing the route param resets lastSeen so a later navigation can apply.
+  const cleared = consumeDiscoverSectionParam('', 'media');
+  assert.equal(cleared.apply, null);
+  assert.equal(cleared.nextLastSeen, null);
+
+  const newsNav = consumeDiscoverSectionParam('news', null);
+  assert.equal(newsNav.apply, 'news');
+  assert.equal(newsNav.nextLastSeen, 'news');
+
+  // Switching intended section via a new param value still applies once.
+  const switchToMedia = consumeDiscoverSectionParam('media', 'news');
+  assert.equal(switchToMedia.apply, 'media');
+  assert.equal(switchToMedia.nextLastSeen, 'media');
 });
 
 console.log('\nAll media directory tests passed.');

@@ -5,9 +5,15 @@ import { CompactWatchLabel } from '@/components/CompactWatchLabel';
 import { FavoriteStar } from '@/components/FavoriteStar';
 import { TeamLogo } from '@/components/TeamLogo';
 import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
+import { resolveEspnGameStatusPresentation } from '@/data/providers/espnGameStatus';
+import { formatEspnGameSituationLine } from '@/data/providers/espnGameSituation';
 import { toGameStatus } from '@/data/providers/espnTodayMapper';
-import { colors, spacing } from '@/theme';
-import { formatGameKickoffDate, formatGameKickoffTime } from '@/utils/formatGameTime';
+import { colors, LAYOUT_COLUMNS, spacing } from '@/theme';
+import { formatGameKickoffDateCompact, formatGameKickoffTime } from '@/utils/formatGameTime';
+import {
+  getAwayTeamScheduleCompactName,
+  getHomeTeamScheduleCompactName,
+} from '@/utils/teamDisplay';
 import { buildTeamHref } from '@/utils/teamId';
 import type { EspnNormalizedGame } from '@/types';
 
@@ -64,9 +70,9 @@ function TeamLine({
         accessibilityLabel={`View ${navigationName} team page`}
         onPress={() => router.push(buildTeamHref({ teamId, name: navigationName }))}
         style={({ pressed }) => [styles.teamTapArea, pressed && styles.teamTapAreaPressed]}>
-        <TeamLogo name={logoName} abbreviation={abbreviation} logoUrl={logoUrl} size={22} />
+        <TeamLogo name={logoName} abbreviation={abbreviation} logoUrl={logoUrl} size={20} />
         <Text style={[styles.teamName, isWinner && styles.teamNameWinner]} numberOfLines={1}>
-          {rank != null ? `${rank} ${teamName}` : teamName}
+          {rank != null ? `#${rank} ${teamName}` : teamName}
         </Text>
       </Pressable>
       <FavoriteStar
@@ -78,6 +84,7 @@ function TeamLine({
         conference={favoriteConference}
         rank={favoriteRank}
         record={favoriteRecord}
+        style={styles.favoriteStar}
       />
       {rightValue ? <Text style={[styles.rightCol, isWinner && styles.rightColWinner]}>{rightValue}</Text> : null}
     </View>
@@ -102,8 +109,8 @@ export function TeamScheduleGameRow({ game, isLast = false }: TeamScheduleGameRo
     game.homeScore != null &&
     game.homeScore > game.awayScore;
 
-  const awayName = game.awayShortDisplayName ?? game.awayTeam;
-  const homeName = game.homeShortDisplayName ?? game.homeTeam;
+  const awayName = getAwayTeamScheduleCompactName(game);
+  const homeName = getHomeTeamScheduleCompactName(game);
   const awayRank = game.awayIsRanked ? game.awayRank : undefined;
   const homeRank = game.homeIsRanked ? game.homeRank : undefined;
 
@@ -114,10 +121,10 @@ export function TeamScheduleGameRow({ game, isLast = false }: TeamScheduleGameRo
     ? String(game.homeScore ?? '—')
     : game.homeRecord?.trim() || undefined;
 
-  const dateLabel = formatGameKickoffDate(game);
+  const dateLabel = formatGameKickoffDateCompact(game);
   const kickoffLabel = formatGameKickoffTime(game);
-  const isInProgress = game.normalizedStatus === 'in_progress';
-  const isFinal = game.normalizedStatus === 'final';
+  const statusPresentation = resolveEspnGameStatusPresentation(game);
+  const situationLine = formatEspnGameSituationLine(game);
 
   return (
     <View style={[styles.row, !isLast && styles.rowBorder]}>
@@ -162,20 +169,29 @@ export function TeamScheduleGameRow({ game, isLast = false }: TeamScheduleGameRo
           favoriteRank={homeRank}
           favoriteRecord={game.homeRecord}
         />
+        {situationLine ? (
+          <Text style={styles.situationText} numberOfLines={1}>
+            {situationLine}
+          </Text>
+        ) : null}
       </View>
 
       <View style={styles.rightMeta}>
-        <Text style={styles.dateText} numberOfLines={2}>
+        <Text style={styles.dateText} numberOfLines={1}>
           {dateLabel}
         </Text>
-        {isInProgress ? (
+        {statusPresentation.kind === 'live' ? (
           <Text style={[styles.timeText, styles.timeTextLive]} numberOfLines={2}>
-            {game.status}
+            {statusPresentation.label}
           </Text>
-        ) : isFinal ? (
-          <Text style={styles.timeText}>Final</Text>
+        ) : statusPresentation.kind === 'final' || statusPresentation.kind === 'special' ? (
+          <Text style={styles.timeText} numberOfLines={2}>
+            {statusPresentation.label}
+          </Text>
         ) : (
-          <Text style={styles.timeText}>{kickoffLabel}</Text>
+          <Text style={styles.timeText} numberOfLines={1}>
+            {kickoffLabel}
+          </Text>
         )}
         <CompactWatchLabel game={game} align="end" />
       </View>
@@ -187,9 +203,9 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    gap: spacing.sm,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    gap: 4,
   },
   rowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -197,29 +213,35 @@ const styles = StyleSheet.create({
   },
   matchup: {
     flex: 1,
-    gap: 4,
+    gap: 2,
     minWidth: 0,
   },
+  situationText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    lineHeight: 14,
+  },
   rightMeta: {
-    width: 76,
+    // Compact dates (Sep 13) + time + network — keep fixed so names get remaining width.
+    width: LAYOUT_COLUMNS.scheduleMeta,
     alignItems: 'flex-end',
     flexShrink: 0,
-    paddingTop: 2,
-    gap: 2,
+    gap: 1,
   },
   dateText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textAlign: 'right',
+    lineHeight: 15,
+  },
+  timeText: {
     fontSize: 11,
     fontWeight: '600',
     color: colors.textSecondary,
     textAlign: 'right',
     lineHeight: 14,
-  },
-  timeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    textAlign: 'right',
-    lineHeight: 16,
   },
   timeTextLive: {
     color: colors.error,
@@ -227,33 +249,38 @@ const styles = StyleSheet.create({
   teamLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 3,
     minWidth: 0,
+    minHeight: 22,
   },
   teamTapArea: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 4,
     minWidth: 0,
+    minHeight: 22,
   },
   teamTapAreaPressed: {
     opacity: 0.7,
   },
+  favoriteStar: {
+    padding: 0,
+  },
   teamName: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '400',
     color: colors.text,
-    lineHeight: 18,
+    lineHeight: 16,
     minWidth: 0,
   },
   teamNameWinner: {
     fontWeight: '700',
   },
   rightCol: {
-    width: 36,
-    fontSize: 14,
+    width: 28,
+    fontSize: 13,
     fontWeight: '600',
     color: colors.textSecondary,
     textAlign: 'right',

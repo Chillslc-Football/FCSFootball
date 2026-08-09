@@ -4,7 +4,7 @@ import { TeamLogo } from '@/components/TeamLogo';
 import { FavoriteStar } from '@/components/FavoriteStar';
 import { TeamNameLink } from '@/components/TeamNameLink';
 import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
-import { colors, spacing, typography } from '@/theme';
+import { colors, LAYOUT_COLUMNS, POLL_RANK_COLUMN_WIDTH, spacing, typography } from '@/theme';
 import type { GameLocation, NextGame, PollMovement, RankedTeam, TeamRecord } from '@/types';
 
 type Top25TeamCardProps = {
@@ -34,7 +34,9 @@ function MovementBadge({ movement }: { movement?: PollMovement }) {
   if (movement === null || movement === undefined) {
     return (
       <View style={[styles.movementBadge, styles.movementNew]}>
-        <Text style={[styles.movementText, styles.movementNewText]}>NEW</Text>
+        <Text style={[styles.movementText, styles.movementNewText]} numberOfLines={1}>
+          NEW
+        </Text>
       </View>
     );
   }
@@ -42,7 +44,9 @@ function MovementBadge({ movement }: { movement?: PollMovement }) {
   if (movement === 0) {
     return (
       <View style={[styles.movementBadge, styles.movementFlat]}>
-        <Text style={[styles.movementText, styles.movementFlatText]}>—</Text>
+        <Text style={[styles.movementText, styles.movementFlatText]} numberOfLines={1}>
+          —
+        </Text>
       </View>
     );
   }
@@ -50,7 +54,9 @@ function MovementBadge({ movement }: { movement?: PollMovement }) {
   const isUp = movement > 0;
   return (
     <View style={[styles.movementBadge, isUp ? styles.movementUp : styles.movementDown]}>
-      <Text style={[styles.movementText, isUp ? styles.movementUpText : styles.movementDownText]}>
+      <Text
+        style={[styles.movementText, isUp ? styles.movementUpText : styles.movementDownText]}
+        numberOfLines={1}>
         {isUp ? `▲ ${movement}` : `▼ ${Math.abs(movement)}`}
       </Text>
     </View>
@@ -95,7 +101,9 @@ export function Top25TeamCard({
   return (
     <View style={styles.card}>
       <View style={styles.mainRow}>
-        <Text style={styles.rank}>{rank}</Text>
+        <Text style={styles.rank} numberOfLines={1}>
+          {rank}
+        </Text>
         <TeamLogo
           name={team.name}
           abbreviation={resolvedAbbreviation ?? team.abbreviation}
@@ -108,6 +116,7 @@ export function Top25TeamCard({
               name={team.name}
               teamId={resolvedTeamId}
               style={styles.teamName}
+              numberOfLines={1}
             />
             <FavoriteStar
               teamId={espnTeamId ?? undefined}
@@ -117,11 +126,15 @@ export function Top25TeamCard({
               isFavorite={favorited}
             />
           </View>
-          <Text style={styles.record}>{formatRecord(record)}</Text>
+          <Text style={styles.record} numberOfLines={1}>
+            {formatRecord(record)}
+          </Text>
         </View>
         <View style={styles.trailing}>
           {pollPoints !== undefined ? (
-            <Text style={styles.points}>{pollPoints.toLocaleString()} pts</Text>
+            <Text style={styles.points} numberOfLines={1}>
+              {pollPoints.toLocaleString()} pts
+            </Text>
           ) : null}
           <MovementBadge movement={movement} />
         </View>
@@ -150,15 +163,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    minWidth: 0,
   },
   rank: {
     ...typography.heading,
     color: colors.primary,
-    width: 28,
+    width: POLL_RANK_COLUMN_WIDTH,
+    minWidth: POLL_RANK_COLUMN_WIDTH,
+    flexGrow: 0,
+    flexShrink: 0,
     textAlign: 'center',
+    lineHeight: 24,
   },
   info: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
     minWidth: 0,
   },
   nameRow: {
@@ -172,7 +192,9 @@ const styles = StyleSheet.create({
     ...typography.body,
     fontWeight: '600',
     color: colors.text,
-    flex: undefined,
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
     marginBottom: 0,
   },
   record: {
@@ -182,20 +204,23 @@ const styles = StyleSheet.create({
   trailing: {
     alignItems: 'flex-end',
     gap: spacing.xs,
+    flexGrow: 0,
+    flexShrink: 0,
+    minWidth: LAYOUT_COLUMNS.pollTrailingMin,
   },
   points: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   divider: {
     height: 1,
     backgroundColor: colors.border,
     marginVertical: spacing.sm,
-    marginLeft: 36,
+    marginLeft: POLL_RANK_COLUMN_WIDTH + spacing.sm,
   },
   nextGame: {
-    marginLeft: 36,
+    marginLeft: POLL_RANK_COLUMN_WIDTH + spacing.sm,
     gap: spacing.xs,
   },
   nextGameHeader: {
@@ -205,7 +230,7 @@ const styles = StyleSheet.create({
   },
   nextGameLabel: {
     ...typography.label,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontSize: 10,
   },
   nextGameOpponent: {
@@ -244,6 +269,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     minWidth: 44,
     alignItems: 'center',
+    flexShrink: 0,
   },
   movementText: {
     ...typography.label,

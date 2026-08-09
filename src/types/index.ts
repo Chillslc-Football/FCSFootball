@@ -10,7 +10,14 @@ export type Game = {
   homeTeamId: string;
   awayTeamId: string;
   scheduledAt: string;
-  status: 'scheduled' | 'in_progress' | 'final';
+  status:
+    | 'scheduled'
+    | 'in_progress'
+    | 'final'
+    | 'delayed'
+    | 'postponed'
+    | 'suspended'
+    | 'cancelled';
 };
 
 export type TeamDivision = 'fcs' | 'fbs';
@@ -23,6 +30,20 @@ export type EspnLinkCandidate = {
   href: string;
   rel: string[];
   text?: string;
+};
+
+/** Glanceable live football situation from scoreboard competition.situation. */
+export type EspnGameSituation = {
+  down?: number;
+  distance?: number;
+  yardLine?: number;
+  downDistanceText?: string;
+  shortDownDistanceText?: string;
+  possessionText?: string;
+  possessionTeamId?: string;
+  isRedZone?: boolean;
+  /** Prefers ESPN text: e.g. "3rd & 10 at IDAHO 45" */
+  displayText?: string;
 };
 
 /**
@@ -59,6 +80,8 @@ export type EspnNormalizedGame = {
   statusDetail?: string;
   /** Mapped internal Game.status when ESPN state is recognized */
   normalizedStatus?: Game['status'];
+  /** Live down/distance/field position when present on the scoreboard payload */
+  situation?: EspnGameSituation;
   startTime: string;
   broadcast?: string;
   /** Primary ESPN web gamecast URL when provided by API */

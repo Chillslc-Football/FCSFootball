@@ -1,19 +1,40 @@
+/**
+ * FCS Pulse dark theme tokens.
+ * Navy + gold identity — prefer these over hardcoded hex in UI code.
+ *
+ * Hierarchy (lightest → deepest for chrome):
+ *   surfaceElevated > surface > background > header/tabBar
+ */
 export const colors = {
-  background: '#0F1419',
-  surface: '#1A2230',
-  surfaceElevated: '#232D3F',
-  primary: '#C9A227',
-  primaryMuted: '#A8861F',
+  /** Page canvas — lighter navy/slate (Candidate B) */
+  background: '#243B56',
+  /** Cards / list rows — clearly lighter than the page */
+  surface: '#314F6E',
+  /** Sheets, raised chips, pressed states */
+  surfaceElevated: '#3C5F84',
+  /** Deep FCS navy for headers and tab bar */
+  header: '#0D1830',
+  /** Brand gold — selected, actionable, accent */
+  primary: '#D4AF37',
+  /** Softer gold for tracks / soft fills */
+  primaryMuted: '#C09A2E',
+  /** Dark navy text/icons on gold fills */
+  onPrimary: '#0D1830',
   accent: '#2E7D32',
-  text: '#F0F2F5',
-  textSecondary: '#9BA3AF',
-  textMuted: '#6B7280',
-  border: '#2A3344',
-  tabBar: '#121820',
-  tabBarBorder: '#1E2736',
-  tabIconDefault: '#6B7280',
-  tabIconSelected: '#C9A227',
-  error: '#EF4444',
+  /** Primary copy */
+  text: '#F7F9FC',
+  /** Supporting copy — light silver, comfortably readable */
+  textSecondary: '#C5CEDA',
+  /** Disabled / truly low-priority only */
+  textMuted: '#7D8796',
+  /** Visible blue-gray edges between layers */
+  border: '#4A6A8C',
+  tabBar: '#0D1830',
+  tabBarBorder: '#1A2A42',
+  /** Inactive tabs — clearly inactive, not disabled */
+  tabIconDefault: '#9AABBF',
+  tabIconSelected: '#D4AF37',
+  error: '#F04444',
   success: '#22C55E',
 } as const;
 

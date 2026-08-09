@@ -9,9 +9,9 @@ import {
   lookupTeamRank,
   registerAliasKeys,
 } from '@/data/providers/teamNameMatch';
-import { ncaaRankingsProvider } from '@/data/providers/ncaaRankingsProvider';
+import { loadNcaaRankingsForEnrichment } from '@/data/providers/ncaaRankingsEnrichment';
 import type { RankingMergeInput, ScoresLeagueFilterId } from '@/data/providers/types';
-import type { EspnNormalizedGame, RankedTeam } from '@/types';
+import type { EspnNormalizedGame, NcaaRankingsPayload, RankedTeam } from '@/types';
 
 export type RankingMergeResult = {
   games: EspnNormalizedGame[];
@@ -141,13 +141,40 @@ function findPollNameForRank(
   return matches.find((entry) => lowerEspn.includes(entry.team.name.toLowerCase()))?.team.name;
 }
 
-/** Load rankings from static provider and merge onto ESPN games. */
+function emptyRankingMergeResult(games: EspnNormalizedGame[]): RankingMergeResult {
+  return {
+    games,
+    rankedTeamsLoaded: 0,
+    gamesWithRankMatches: 0,
+    matchedRankCount: 0,
+    unmatchedRankedTeams: [],
+  };
+}
+
+/**
+ * Load NCAA Top 25 (cache-first, non-fatal) and merge onto ESPN games.
+ * Ranking fetch failure returns games unchanged — never throws for poll errors.
+ */
 export async function mergeStaticRankingsOntoGames(
   games: EspnNormalizedGame[],
+  options?: {
+    loadRankings?: () => Promise<NcaaRankingsPayload | null>;
+  },
 ): Promise<RankingMergeResult> {
-  const response = await ncaaRankingsProvider.getTop25();
+  let payload: NcaaRankingsPayload | null = null;
+  try {
+    payload = await (options?.loadRankings ?? loadNcaaRankingsForEnrichment)();
+  } catch (error) {
+    console.warn('[mergeStaticRankingsOntoGames] rankings unavailable (non-fatal):', error);
+    return emptyRankingMergeResult(games);
+  }
+
+  if (!payload?.teams?.length) {
+    return emptyRankingMergeResult(games);
+  }
+
   return mergeRankingsOntoGames({
-    rankings: response.data.teams,
+    rankings: payload.teams,
     games,
   });
 }

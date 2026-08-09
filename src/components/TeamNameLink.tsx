@@ -63,12 +63,14 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   pressable: {
+    flexGrow: 1,
     flexShrink: 1,
     minWidth: 0,
   },
   link: {
     ...typography.body,
     color: colors.text,
+    flexShrink: 1,
   },
   record: {
     ...typography.body,

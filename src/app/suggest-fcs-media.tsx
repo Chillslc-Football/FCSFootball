@@ -827,7 +827,7 @@ const styles = StyleSheet.create({
   },
   label: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   labelSecondary: {
@@ -964,7 +964,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  submitText: { ...typography.body, color: colors.background, fontWeight: '700' },
+  submitText: { ...typography.body, color: colors.onPrimary, fontWeight: '700' },
   dismissKeyboard: {
     alignSelf: 'flex-end',
     paddingVertical: 2,

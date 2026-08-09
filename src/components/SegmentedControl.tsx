@@ -16,6 +16,8 @@ type SegmentedControlProps<T extends string> = {
   accessibilityLabel?: string;
   /** Gold selected state for primary Discover News/Media control. */
   variant?: 'default' | 'accent';
+  /** Slightly shorter segments — keeps min touch height ≥ 36. */
+  compact?: boolean;
 };
 
 export function SegmentedControl<T extends string>({
@@ -25,8 +27,10 @@ export function SegmentedControl<T extends string>({
   style,
   accessibilityLabel,
   variant = 'default',
+  compact = false,
 }: SegmentedControlProps<T>) {
   const isAccent = variant === 'accent';
+  const useCompactSegments = isAccent || compact;
 
   return (
     <View
@@ -44,7 +48,7 @@ export function SegmentedControl<T extends string>({
             onPress={() => onSelect(option.id)}
             style={[
               styles.segment,
-              isAccent && styles.segmentCompact,
+              useCompactSegments && styles.segmentCompact,
               isActive && (isAccent ? styles.segmentActiveAccent : styles.segmentActive),
             ]}>
             <Text
@@ -108,7 +112,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   segmentTextActiveAccent: {
-    color: colors.background,
+    color: colors.onPrimary,
     fontWeight: '700',
   },
 });

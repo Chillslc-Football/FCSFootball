@@ -7,7 +7,7 @@ export default function AdminLayout() {
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: colors.surface },
+        headerStyle: { backgroundColor: colors.header },
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: '600' },
         headerBackTitle: 'Back',
@@ -15,6 +15,7 @@ export default function AdminLayout() {
         headerLeft: (props) => <StackHeaderBackButton {...props} />,
       }}>
       <Stack.Screen name="index" options={{ title: 'Admin' }} />
+      <Stack.Screen name="announcement" options={{ title: 'Announcement' }} />
       <Stack.Screen name="media-submissions" options={{ title: 'Media submissions' }} />
       <Stack.Screen name="[id]" options={{ title: 'Review submission' }} />
     </Stack>

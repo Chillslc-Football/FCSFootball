@@ -60,7 +60,7 @@ const styles = StyleSheet.create({
   },
   feedbackButtonText: {
     ...typography.body,
-    color: colors.background,
+    color: colors.onPrimary,
     fontWeight: '700',
   },
   pressed: { opacity: 0.85 },

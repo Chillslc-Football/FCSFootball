@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
   },
   fcsBadgeText: {
     ...typography.label,
-    color: colors.background,
+    color: colors.onPrimary,
     fontSize: 8,
   },
   fbsBadge: {

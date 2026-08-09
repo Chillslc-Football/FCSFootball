@@ -449,8 +449,8 @@ const styles = StyleSheet.create({
   choiceSub: { ...typography.caption, color: colors.textSecondary },
   backLink: { ...typography.caption, color: colors.primary, fontWeight: '600' },
   field: { gap: spacing.xs },
-  label: { ...typography.caption, color: colors.textMuted, fontWeight: '600' },
-  helper: { ...typography.caption, color: colors.textMuted, marginTop: -spacing.xs },
+  label: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
+  helper: { ...typography.caption, color: colors.textSecondary, marginTop: -spacing.xs },
   input: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -473,7 +473,7 @@ const styles = StyleSheet.create({
   },
   chipSelected: { borderColor: colors.primary, backgroundColor: colors.primaryMuted },
   chipText: { ...typography.caption, color: colors.textSecondary },
-  chipTextSelected: { color: colors.background, fontWeight: '700' },
+  chipTextSelected: { color: colors.onPrimary, fontWeight: '700' },
   linkCard: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -498,7 +498,7 @@ const styles = StyleSheet.create({
   },
   creatorOptionSelected: { borderColor: colors.primary },
   creatorOptionName: { ...typography.body, color: colors.text, fontWeight: '600' },
-  creatorOptionMeta: { ...typography.caption, color: colors.textMuted },
+  creatorOptionMeta: { ...typography.caption, color: colors.textSecondary },
   existingLinks: { gap: spacing.xs, marginTop: spacing.xs },
   existingLinkLine: { ...typography.caption, color: colors.textSecondary },
   secondaryButton: {
@@ -518,7 +518,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  submitText: { ...typography.body, color: colors.background, fontWeight: '700' },
+  submitText: { ...typography.body, color: colors.onPrimary, fontWeight: '700' },
   pressed: { opacity: 0.85 },
   errorText: { ...typography.caption, color: colors.error },
   successText: { ...typography.caption, color: colors.primary, lineHeight: 18 },

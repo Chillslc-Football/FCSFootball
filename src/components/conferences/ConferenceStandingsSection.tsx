@@ -8,7 +8,7 @@ import type { ConferenceId } from '@/data/conferences/conferenceList';
 import { sortConferenceStandingsByFavorites } from '@/data/conferences/sortConferenceStandingsByFavorites';
 import { useConferenceStandings } from '@/data/conferences/useConferenceStandings';
 import { useFavoriteTeams } from '@/data/favorites/FavoriteTeamsContext';
-import { colors, spacing, typography } from '@/theme';
+import { colors, spacing, STANDINGS_COLUMN_WIDTHS, typography } from '@/theme';
 import { buildTeamHref } from '@/utils/teamId';
 import type { ConferenceStandingEntry } from '@/types';
 
@@ -20,9 +20,21 @@ type ConferenceStandingsSectionProps = {
 function StandingsHeaderRow() {
   return (
     <View style={[styles.row, styles.headerRow]}>
-      <Text style={[styles.headerCell, styles.teamHeader]}>TEAM</Text>
-      <Text style={styles.headerCell}>CONF</Text>
-      <Text style={styles.headerCell}>OVERALL</Text>
+      <View style={styles.teamCol}>
+        <Text style={[styles.headerLabel, styles.teamHeaderLabel]} numberOfLines={1}>
+          TEAM
+        </Text>
+      </View>
+      <View style={styles.confCol}>
+        <Text style={styles.headerLabel} numberOfLines={1}>
+          CONF
+        </Text>
+      </View>
+      <View style={styles.overallCol}>
+        <Text style={styles.headerLabel} numberOfLines={1}>
+          OVERALL
+        </Text>
+      </View>
     </View>
   );
 }
@@ -46,25 +58,35 @@ function StandingsRow({ entry }: { entry: ConferenceStandingEntry }) {
         router.push(buildTeamHref({ teamId: entry.teamId, name: entry.displayName }))
       }
       style={({ pressed }) => [styles.row, styles.dataRow, pressed && styles.dataRowPressed]}>
-      <View style={styles.teamCell}>
-        <TeamLogo
-          name={entry.displayName}
-          abbreviation={entry.abbreviation}
-          logoUrl={entry.logoUrl}
-          size={24}
-        />
-        <Text style={styles.teamName} numberOfLines={1}>
-          {entry.shortDisplayName}
-        </Text>
-        <FavoriteStar
-          teamId={entry.teamId}
-          teamName={entry.displayName}
-          abbreviation={entry.abbreviation}
-          logoUrl={entry.logoUrl}
-        />
+      <View style={styles.teamCol}>
+        <View style={styles.teamCell}>
+          <TeamLogo
+            name={entry.displayName}
+            abbreviation={entry.abbreviation}
+            logoUrl={entry.logoUrl}
+            size={24}
+          />
+          <Text style={styles.teamName} numberOfLines={1} ellipsizeMode="tail">
+            {entry.shortDisplayName}
+          </Text>
+          <FavoriteStar
+            teamId={entry.teamId}
+            teamName={entry.displayName}
+            abbreviation={entry.abbreviation}
+            logoUrl={entry.logoUrl}
+          />
+        </View>
       </View>
-      <Text style={styles.recordCell}>{entry.conferenceRecord}</Text>
-      <Text style={styles.recordCell}>{entry.overallRecord}</Text>
+      <View style={styles.confCol}>
+        <Text style={styles.recordCell} numberOfLines={1}>
+          {entry.conferenceRecord}
+        </Text>
+      </View>
+      <View style={styles.overallCol}>
+        <Text style={styles.recordCell} numberOfLines={1}>
+          {entry.overallRecord}
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -196,40 +218,56 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  headerCell: {
-    width: 52,
+  teamCol: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
+  },
+  confCol: {
+    width: STANDINGS_COLUMN_WIDTHS.conf,
+    flexGrow: 0,
+    flexShrink: 0,
+    alignItems: 'center',
+  },
+  overallCol: {
+    width: STANDINGS_COLUMN_WIDTHS.overall,
+    flexGrow: 0,
+    flexShrink: 0,
+    alignItems: 'center',
+  },
+  headerLabel: {
     ...typography.label,
     fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
     color: colors.textMuted,
-    textAlign: 'right',
+    textAlign: 'center',
+    width: '100%',
   },
-  teamHeader: {
-    flex: 1,
-    width: undefined,
+  teamHeaderLabel: {
     textAlign: 'left',
   },
   teamCell: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     minWidth: 0,
   },
   teamName: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
     ...typography.body,
     fontSize: 14,
     color: colors.text,
     minWidth: 0,
   },
   recordCell: {
-    width: 52,
     ...typography.body,
     fontSize: 13,
     fontWeight: '600',
     color: colors.textSecondary,
-    textAlign: 'right',
+    textAlign: 'center',
+    width: '100%',
   },
 });

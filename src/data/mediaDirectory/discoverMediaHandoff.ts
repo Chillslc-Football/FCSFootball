@@ -148,3 +148,26 @@ export function discoverMediaParamConsumptionKey(
   const conferenceId = payload.conferenceId?.trim() || '';
   return `team:${teamId}|conference:${conferenceId}`;
 }
+
+export type DiscoverSection = 'news' | 'media';
+
+/**
+ * Consume a sticky Discover `section` route param exactly once per appearance.
+ *
+ * Route params often linger on the tab after navigation. Re-applying them on every
+ * focus-effect re-run (e.g. while News/Media data loads) overwrites manual segment
+ * taps. Empty/missing params reset `lastSeen` so a later navigation can apply again.
+ */
+export function consumeDiscoverSectionParam(
+  sectionParam: string | undefined | null,
+  lastSeen: DiscoverSection | null,
+): { apply: DiscoverSection | null; nextLastSeen: DiscoverSection | null } {
+  const normalized = sectionParam?.trim().toLowerCase();
+  if (normalized === 'media' || normalized === 'news') {
+    if (lastSeen === normalized) {
+      return { apply: null, nextLastSeen: lastSeen };
+    }
+    return { apply: normalized, nextLastSeen: normalized };
+  }
+  return { apply: null, nextLastSeen: null };
+}

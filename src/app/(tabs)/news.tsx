@@ -17,20 +17,20 @@ import { Screen } from '@/components/Screen';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import {
   buildDiscoverBrowseFilterFromHandoff,
+  consumeDiscoverSectionParam,
   discoverMediaParamConsumptionKey,
   queueDiscoverMediaHandoff,
   resolveDiscoverMediaHandoffFromParams,
   takeDiscoverMediaHandoff,
   type DiscoverMediaBrowseSeed,
   type DiscoverMediaHandoffPayload,
+  type DiscoverSection,
 } from '@/data/mediaDirectory/discoverMediaHandoff';
 import { getNewsArticleKey, mergeNewsFeeds } from '@/data/news/newsUtils';
 import { useHeroSportsNews } from '@/data/news/useHeroSportsNews';
 import { useTheAnalystNews } from '@/data/news/useTheAnalystNews';
 import { colors, spacing, typography } from '@/theme';
 import type { NewsArticle } from '@/types/news';
-
-type DiscoverSection = 'news' | 'media';
 
 const DISCOVER_SECTION_OPTIONS: { id: DiscoverSection; label: string }[] = [
   { id: 'news', label: 'News' },
@@ -45,16 +45,14 @@ function firstParam(value: string | string[] | undefined): string | undefined {
   return value;
 }
 
-function clearDiscoverMediaRouteParams(
-  router: ReturnType<typeof useRouter>,
-  keepSectionMedia: boolean,
-) {
+/** Clear filter/section route params after they have been consumed. */
+function clearDiscoverRouteParams(router: ReturnType<typeof useRouter>) {
   router.setParams({
     teamId: '',
     teamName: '',
     conferenceId: '',
     conferenceName: '',
-    ...(keepSectionMedia ? { section: 'media' } : {}),
+    section: '',
   });
 }
 
@@ -68,17 +66,29 @@ export default function NewsScreen() {
     conferenceName?: string | string[];
   }>();
 
+  const sectionParam = firstParam(params.section);
+  const teamIdParam = firstParam(params.teamId);
+  const teamNameParam = firstParam(params.teamName);
+  const conferenceIdParam = firstParam(params.conferenceId);
+  const conferenceNameParam = firstParam(params.conferenceName);
+
   const [discoverSection, setDiscoverSection] = useState<DiscoverSection>(discoverSectionSession);
+  const [mediaArmed, setMediaArmed] = useState(discoverSectionSession === 'media');
   const [browseFilterSeed, setBrowseFilterSeed] = useState<DiscoverMediaBrowseSeed | null>(null);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const heroNews = useHeroSportsNews();
   const analystNews = useTheAnalystNews();
   const focusInFlightRef = useRef<Promise<void> | null>(null);
   const consumedParamKeyRef = useRef<string | null>(null);
+  const lastSeenSectionParamRef = useRef<DiscoverSection | null>(null);
 
   const selectDiscoverSection = useCallback((section: DiscoverSection) => {
+    // User taps always win immediately — never blocked by News/Media loading.
     discoverSectionSession = section;
     setDiscoverSection(section);
+    if (section === 'media') {
+      setMediaArmed(true);
+    }
   }, []);
 
   const applyHandoffPayload = useCallback(
@@ -86,6 +96,7 @@ export default function NewsScreen() {
       const filter = buildDiscoverBrowseFilterFromHandoff(payload);
       const hasFilter =
         filter.teams.length > 0 || filter.conferences.length > 0 || filter.national;
+      setMediaArmed(true);
       selectDiscoverSection('media');
       if (hasFilter) {
         setBrowseFilterSeed({ id: seedId, filter });
@@ -94,37 +105,62 @@ export default function NewsScreen() {
     [selectDiscoverSection],
   );
 
-  // Consume View All / deep-link filters on focus so tab navigators always receive them.
+  // Consume View All / deep-link filters once. Sticky section params must not
+  // re-apply on every focus-effect identity change while data is loading.
   useFocusEffect(
     useCallback(() => {
-      const section = firstParam(params.section)?.toLowerCase();
-      if (section === 'media') {
-        selectDiscoverSection('media');
-      } else if (section === 'news') {
-        selectDiscoverSection('news');
-      }
-
       const queued = takeDiscoverMediaHandoff();
       if (queued) {
         applyHandoffPayload(queued.payload, queued.id);
         consumedParamKeyRef.current = discoverMediaParamConsumptionKey(queued.payload);
-        clearDiscoverMediaRouteParams(router, true);
+        lastSeenSectionParamRef.current = 'media';
+        clearDiscoverRouteParams(router);
         return;
       }
 
-      const fromParams = resolveDiscoverMediaHandoffFromParams(params);
-      if (!fromParams) return;
+      const fromParams = resolveDiscoverMediaHandoffFromParams({
+        teamId: teamIdParam,
+        teamName: teamNameParam,
+        conferenceId: conferenceIdParam,
+        conferenceName: conferenceNameParam,
+      });
+      if (fromParams) {
+        const paramKey = discoverMediaParamConsumptionKey(fromParams);
+        if (consumedParamKeyRef.current !== paramKey) {
+          const handoff = queueDiscoverMediaHandoff(fromParams);
+          // Immediately consume so a remount cannot re-queue the same route params.
+          takeDiscoverMediaHandoff();
+          consumedParamKeyRef.current = paramKey;
+          lastSeenSectionParamRef.current = 'media';
+          applyHandoffPayload(fromParams, handoff.id);
+          clearDiscoverRouteParams(router);
+          return;
+        }
+      }
 
-      const paramKey = discoverMediaParamConsumptionKey(fromParams);
-      if (consumedParamKeyRef.current === paramKey) return;
-
-      const handoff = queueDiscoverMediaHandoff(fromParams);
-      // Immediately consume so a remount cannot re-queue the same route params.
-      takeDiscoverMediaHandoff();
-      consumedParamKeyRef.current = paramKey;
-      applyHandoffPayload(fromParams, handoff.id);
-      clearDiscoverMediaRouteParams(router, true);
-    }, [applyHandoffPayload, params, router, selectDiscoverSection]),
+      const sectionResult = consumeDiscoverSectionParam(
+        sectionParam,
+        lastSeenSectionParamRef.current,
+      );
+      lastSeenSectionParamRef.current = sectionResult.nextLastSeen;
+      if (sectionResult.apply) {
+        if (sectionResult.apply === 'media') {
+          setMediaArmed(true);
+        }
+        discoverSectionSession = sectionResult.apply;
+        setDiscoverSection(sectionResult.apply);
+        // Drop sticky section so later effect re-runs cannot override taps.
+        router.setParams({ section: '' });
+      }
+    }, [
+      applyHandoffPayload,
+      conferenceIdParam,
+      conferenceNameParam,
+      router,
+      sectionParam,
+      teamIdParam,
+      teamNameParam,
+    ]),
   );
 
   const {
@@ -134,6 +170,8 @@ export default function NewsScreen() {
   } = useMediaDirectoryController({
     showIntroSubtitle: false,
     browseFilterSeed,
+    // Defer Media fetch until the user (or a route handoff) opens Media.
+    enabled: mediaArmed,
   });
 
   const articles = useMemo(
@@ -146,6 +184,13 @@ export default function NewsScreen() {
   const bothError =
     heroNews.loadState === 'error' && analystNews.loadState === 'error';
   const anyStale = heroNews.isStale || analystNews.isStale;
+  const isRefreshingNews =
+    heroNews.isFetching || analystNews.isFetching || pullRefreshing;
+  /** Normal refresh with stories already on screen — not an error. */
+  const showRefreshStatus = isRefreshingNews && articles.length > 0;
+  /** Live fetch failed after the attempt; keep cached stories. */
+  const showUnavailableStatus =
+    anyStale && !isRefreshingNews && articles.length > 0;
   const showEmpty =
     !bothLoading &&
     articles.length === 0 &&
@@ -260,13 +305,20 @@ export default function NewsScreen() {
           </View>
         ) : null}
 
-        {anyStale && articles.length > 0 ? (
-          <View style={styles.staleBanner}>
-            <Text style={styles.staleText}>
-              One or more sources are stale or unavailable — showing the last successful feeds.
+        {showRefreshStatus ? (
+          <View style={styles.refreshStatus}>
+            <ActivityIndicator color={colors.primary} size="small" />
+            <Text style={styles.refreshStatusText}>Getting the latest FCS news…</Text>
+          </View>
+        ) : null}
+
+        {showUnavailableStatus ? (
+          <View style={styles.unavailableStatus}>
+            <Text style={styles.unavailableStatusText}>
+              Some news sources are unavailable. Showing the latest available stories.
             </Text>
             {__DEV__ && errorMessage ? (
-              <Text style={styles.staleDetail}>{errorMessage}</Text>
+              <Text style={styles.unavailableStatusDetail}>{errorMessage}</Text>
             ) : null}
           </View>
         ) : null}
@@ -281,12 +333,13 @@ export default function NewsScreen() {
       </View>
     ),
     [
-      anyStale,
       articles.length,
       bothLoading,
       errorMessage,
       showEmpty,
       showError,
+      showRefreshStatus,
+      showUnavailableStatus,
     ],
   );
 
@@ -382,7 +435,7 @@ const styles = StyleSheet.create({
   },
   centerText: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   messageBox: {
     gap: spacing.xs,
@@ -394,21 +447,27 @@ const styles = StyleSheet.create({
   },
   messageDetail: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
-  staleBanner: {
+  refreshStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
-    padding: spacing.sm,
-    borderRadius: 8,
-    backgroundColor: colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingVertical: spacing.xs,
   },
-  staleText: {
+  refreshStatusText: {
     ...typography.caption,
     color: colors.textSecondary,
   },
-  staleDetail: {
+  unavailableStatus: {
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  unavailableStatusText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  unavailableStatusDetail: {
     ...typography.caption,
     color: colors.textMuted,
   },

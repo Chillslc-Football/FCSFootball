@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  buttonText: { ...typography.body, color: colors.background, fontWeight: '700' },
+  buttonText: { ...typography.body, color: colors.onPrimary, fontWeight: '700' },
   error: { ...typography.caption, color: colors.error },
   success: { ...typography.caption, color: colors.success },
 });

@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 
-import { updateDevicePushToken } from '@/data/notifications/deviceRegistration';
+import { syncPushTokenIfPermitted } from '@/data/notifications/deviceRegistration';
+import { debugLogSupabaseConfig } from '@/data/notifications/supabaseClient';
 import {
   addNotificationResponseListener,
   addPushTokenListener,
@@ -13,11 +14,17 @@ export function NotificationBootstrap() {
   const router = useRouter();
 
   useEffect(() => {
+    debugLogSupabaseConfig('NotificationBootstrap');
     configureNotificationHandler();
     void setupAndroidNotificationChannel();
 
-    const tokenSubscription = addPushTokenListener((token) => {
-      void updateDevicePushToken(token.data);
+    // Launch path: register device + attach Expo push token if permission already granted.
+    // Does not prompt for permission.
+    void syncPushTokenIfPermitted();
+
+    const tokenSubscription = addPushTokenListener(() => {
+      // Native push token rotated — refresh Expo token when already permitted.
+      void syncPushTokenIfPermitted();
     });
 
     const responseSubscription = addNotificationResponseListener((response) => {

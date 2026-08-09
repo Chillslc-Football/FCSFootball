@@ -51,6 +51,9 @@ export function useNewsSource({
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [refreshing, setRefreshing] = useState(false);
+  /** True for any in-flight live fetch (including background focus refresh). */
+  const [isFetching, setIsFetching] = useState(false);
+  /** True only after a live fetch fails while cached/previous stories are still shown. */
   const [isStale, setIsStale] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -69,6 +72,7 @@ export function useNewsSource({
 
       const run = (async () => {
         const background = options.background ?? false;
+        setIsFetching(true);
         if (!background) {
           setRefreshing(true);
         }
@@ -115,7 +119,7 @@ export function useNewsSource({
             setArticles(staleArticles);
             setIsStale(true);
             setLoadState('success');
-            // Keep prior UI content; surface failure via stale banner + logs (not a silent swap).
+            // Keep prior UI content; surface failure via unavailable banner + logs.
             setErrorMessage(message);
           } else if (articlesRef.current.length > 0) {
             setIsStale(true);
@@ -128,6 +132,7 @@ export function useNewsSource({
           }
         } finally {
           setRefreshing(false);
+          setIsFetching(false);
         }
       })();
 
@@ -145,6 +150,7 @@ export function useNewsSource({
 
   // Hydrate from any local cache immediately. Live network refresh is owned by the
   // News screen (focus + pull-to-refresh) so both sources stay in sync.
+  // TTL-expired cache is normal — do not mark isStale (that means a live fetch failed).
   useEffect(() => {
     if (hasHydratedRef.current) return;
     hasHydratedRef.current = true;
@@ -157,9 +163,6 @@ export function useNewsSource({
           const cachedArticles = sortArticlesByPublishedAtDesc(cached.articles);
           setArticles(cachedArticles);
           setLoadState('success');
-          if (!fresh) {
-            setIsStale(true);
-          }
           return;
         }
         // No cache yet — kick off a live fetch so the first open is not blank.
@@ -179,6 +182,7 @@ export function useNewsSource({
     articles,
     loadState,
     refreshing,
+    isFetching,
     isStale,
     errorMessage,
     refresh,

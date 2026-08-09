@@ -524,12 +524,15 @@ export function groupScoresByStatus(games: EspnNormalizedGame[]): ScoresStatusGr
   for (const game of games) {
     switch (game.normalizedStatus) {
       case 'in_progress':
+      case 'delayed':
+      case 'suspended':
         live.push(game);
         break;
       case 'final':
         finalGames.push(game);
         break;
       default:
+        // scheduled / postponed / cancelled — not final
         upcoming.push(game);
     }
   }

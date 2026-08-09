@@ -18,14 +18,15 @@ export type NotificationPreferences = {
   finalEnabled: boolean;
 };
 
+/** Fallback only when neither local nor remote preferences exist (truly new users). */
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
-  favoriteGamesEnabled: true,
-  gameStartEnabled: true,
-  scoreEnabled: true,
-  quarterEndEnabled: true,
-  halftimeEnabled: true,
-  closeGameEnabled: true,
-  finalEnabled: true,
+  favoriteGamesEnabled: false,
+  gameStartEnabled: false,
+  scoreEnabled: false,
+  quarterEndEnabled: false,
+  halftimeEnabled: false,
+  closeGameEnabled: false,
+  finalEnabled: false,
 };
 
 export type FollowedGameRecord = {

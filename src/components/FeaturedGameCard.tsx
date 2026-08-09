@@ -31,7 +31,7 @@ const STATUS_DETAIL_STYLE: Record<GameStatus, { badge: object; text: object }> =
   },
   final: {
     badge: { backgroundColor: colors.surfaceElevated },
-    text: { color: colors.textMuted },
+    text: { color: colors.textSecondary },
   },
 };
 
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
   },
   rankBadgeText: {
     ...typography.label,
-    color: colors.background,
+    color: colors.onPrimary,
     fontSize: 9,
   },
   teamName: {
@@ -208,7 +208,7 @@ const styles = StyleSheet.create({
   },
   atLabel: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     marginLeft: spacing.sm,
     fontStyle: 'italic',
   },

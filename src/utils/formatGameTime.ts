@@ -288,6 +288,38 @@ const MONTH_LONG_TO_SHORT: Record<string, string> = {
   December: 'Dec',
 };
 
+const WEEKDAY_PREFIX_RE =
+  /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s*/i;
+
+/**
+ * Compact schedule date for tight columns: "Sat, September 6th" → "Sep 6".
+ * Strips weekday + ordinals; shortens long month names. Does not invent dates.
+ */
+export function toCompactKickoffDateLabel(dateRaw: string): string {
+  const trimmed = dateRaw.trim();
+  if (!trimmed || trimmed === 'TBD') return trimmed || 'TBD';
+
+  return trimmed
+    .replace(WEEKDAY_PREFIX_RE, '')
+    .replace(/\b(\d{1,2})(st|nd|rd|th)\b/gi, '$1')
+    .replace(
+      /\b(January|February|March|April|May|June|July|August|September|October|November|December)\b/g,
+      (month) => MONTH_LONG_TO_SHORT[month] ?? month,
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Compact kickoff date for Team / dense schedule rows.
+ * Uses shared ESPN/ISO date resolution, then shortens for narrow columns.
+ */
+export function formatGameKickoffDateCompact(
+  source: EspnKickoffDisplaySource | string | undefined,
+): string {
+  return toCompactKickoffDateLabel(formatGameKickoffDate(source));
+}
+
 /** Favorites upcoming kickoff only — compact display; does not change shared formatters. */
 export function formatFavoriteUpcomingKickoff(
   source: EspnKickoffDisplaySource | string | undefined,
@@ -297,15 +329,7 @@ export function formatFavoriteUpcomingKickoff(
 
   if (dateRaw === 'TBD' && timeRaw === 'TBD') return 'TBD';
 
-  const datePart =
-    dateRaw === 'TBD'
-      ? dateRaw
-      : dateRaw
-          .replace(/\b(\d{1,2})(st|nd|rd|th)\b/gi, '$1')
-          .replace(
-            /\b(January|February|March|April|May|June|July|August|September|October|November|December)\b/g,
-            (month) => MONTH_LONG_TO_SHORT[month] ?? month,
-          );
+  const datePart = dateRaw === 'TBD' ? dateRaw : toCompactKickoffDateLabel(dateRaw);
 
   const timePart =
     timeRaw === 'TBD' ? timeRaw : timeRaw.replace(/\b(EDT|EST)\b/gi, 'ET');
@@ -389,8 +413,26 @@ export function formatGameStatusDetail(options: {
   status: GameStatus;
   espnStatus: string;
   fallback?: string;
+  /** When postponed/cancelled/delayed, prefer ESPN status over kickoff time. */
+  normalizedStatus?: string;
 }): string {
-  const { status, espnStatus, fallback, ...kickoffFields } = options;
+  const { status, espnStatus, fallback, normalizedStatus, ...kickoffFields } = options;
+
+  const espnLower = espnStatus.toLowerCase();
+  const looksInterrupted =
+    normalizedStatus === 'postponed' ||
+    normalizedStatus === 'cancelled' ||
+    normalizedStatus === 'delayed' ||
+    normalizedStatus === 'suspended' ||
+    /\bpostponed\b/.test(espnLower) ||
+    /\bcancelled\b|\bcanceled\b/.test(espnLower) ||
+    /\bsuspended\b/.test(espnLower) ||
+    /\bweather delay\b/.test(espnLower) ||
+    /\bdelayed\b/.test(espnLower);
+
+  if (looksInterrupted) {
+    return espnStatus || fallback || 'Status TBD';
+  }
 
   if (status === 'upcoming') {
     const kickoff = formatGameKickoffTime(kickoffFields);

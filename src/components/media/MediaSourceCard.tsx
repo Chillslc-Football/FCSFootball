@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: colors.textSecondary,
     letterSpacing: 0.2,
   },
   description: {
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontSize: 12,
     lineHeight: 16,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     paddingTop: spacing.xs,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,

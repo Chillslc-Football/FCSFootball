@@ -50,11 +50,19 @@ export function findNextTeamGame(
     const teamGames = allGames.filter((game) => gameIncludesTeamKey(game, teamKey));
     if (teamGames.length === 0) return null;
 
-    const live = teamGames.find((game) => game.normalizedStatus === 'in_progress');
+    const live = teamGames.find(
+      (game) =>
+        game.normalizedStatus === 'in_progress' ||
+        game.normalizedStatus === 'delayed' ||
+        game.normalizedStatus === 'suspended',
+    );
     const candidate =
       live ??
       teamGames
-        .filter((game) => game.normalizedStatus !== 'final')
+        .filter(
+          (game) =>
+            game.normalizedStatus !== 'final' && game.normalizedStatus !== 'cancelled',
+        )
         .sort((a, b) => (a.startTime ?? '').localeCompare(b.startTime ?? ''))[0];
 
     if (!candidate) return null;

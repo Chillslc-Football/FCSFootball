@@ -1,35 +1,30 @@
+import {
+  EspnFetchError,
+  formatEspnFetchError,
+  withEspnTransportRetry,
+} from '@/data/providers/espnFetchErrors';
+
 export const ESPN_FETCH_TIMEOUT_MS = 8_000;
 
 export type FetchWithTimeoutOptions = {
   signal?: AbortSignal;
   timeoutMs?: number;
+  /**
+   * When true (default), one extra attempt after a transport/network failure.
+   * Does not retry timeouts, cancellations, HTTP status, or JSON errors.
+   */
+  transportRetryOnce?: boolean;
 };
 
-export class EspnFetchError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'EspnFetchError';
-  }
-}
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof Error && err.name === 'AbortError';
-}
-
-function mapFetchError(err: unknown, timeoutMs: number): EspnFetchError {
-  if (err instanceof EspnFetchError) {
-    return err;
-  }
-
-  if (isAbortError(err)) {
-    return new EspnFetchError(
-      `ESPN fetch timed out after ${timeoutMs / 1000} seconds. ESPN may be blocking Expo Go or the network is unavailable.`,
-    );
-  }
-
-  const message = err instanceof Error ? err.message : 'Network request failed';
-  return new EspnFetchError(`ESPN fetch failed: ${message}. Check network access in Expo Go.`);
-}
+export { EspnFetchError } from '@/data/providers/espnFetchErrors';
+export type { EspnFetchErrorCode } from '@/data/providers/espnFetchErrors';
+export {
+  ESPN_TRANSPORT_RETRY_DELAY_MS,
+  formatEspnFetchError,
+  formatScoresLoadError,
+  isEspnTransportFailure,
+  withEspnTransportRetry,
+} from '@/data/providers/espnFetchErrors';
 
 /**
  * Fetch JSON from ESPN with a hard timeout (Promise.race + AbortController)
@@ -37,13 +32,30 @@ function mapFetchError(err: unknown, timeoutMs: number): EspnFetchError {
  */
 export async function fetchEspnJson<T = unknown>(
   url: string,
-  { signal, timeoutMs = ESPN_FETCH_TIMEOUT_MS }: FetchWithTimeoutOptions = {},
+  {
+    signal,
+    timeoutMs = ESPN_FETCH_TIMEOUT_MS,
+    transportRetryOnce = true,
+  }: FetchWithTimeoutOptions = {},
+): Promise<T> {
+  const runOnce = () => fetchEspnJsonOnce<T>(url, { signal, timeoutMs });
+
+  if (!transportRetryOnce) {
+    return runOnce();
+  }
+
+  return withEspnTransportRetry(runOnce);
+}
+
+async function fetchEspnJsonOnce<T>(
+  url: string,
+  { signal, timeoutMs = ESPN_FETCH_TIMEOUT_MS }: FetchWithTimeoutOptions,
 ): Promise<T> {
   console.log('[ESPN Provider] fetch started', url);
 
   if (signal?.aborted) {
     console.log('[ESPN Provider] fetch cancelled');
-    throw new EspnFetchError('Request was cancelled.');
+    throw new EspnFetchError('Request was cancelled.', 'cancelled');
   }
 
   const abortController = new AbortController();
@@ -77,14 +89,17 @@ export async function fetchEspnJson<T = unknown>(
     };
 
     const onExternalAbort = () => {
-      finish({ ok: false, err: new EspnFetchError('Request was cancelled.') });
+      finish({ ok: false, err: new EspnFetchError('Request was cancelled.', 'cancelled') });
     };
 
     signal?.addEventListener('abort', onExternalAbort);
 
-    const timeoutError = new EspnFetchError(
-      `ESPN fetch timed out after ${timeoutMs / 1000} seconds. ESPN may be blocking Expo Go or the network is unavailable.`,
-    );
+    const timeoutMessage =
+      typeof __DEV__ !== 'undefined' && __DEV__
+        ? `ESPN fetch timed out after ${timeoutMs / 1000} seconds. ESPN may be blocking Expo Go or the network is unavailable.`
+        : 'ESPN request timed out. Check your connection and try again.';
+
+    const timeoutError = new EspnFetchError(timeoutMessage, 'timeout');
 
     const runFetch = async (): Promise<T> => {
       const response = await fetch(url, {
@@ -96,13 +111,14 @@ export async function fetchEspnJson<T = unknown>(
       if (!response.ok) {
         throw new EspnFetchError(
           `ESPN request failed with status ${response.status}. The API may be blocking this client.`,
+          'http',
         );
       }
 
       try {
         return (await response.json()) as T;
       } catch {
-        throw new EspnFetchError('ESPN response was not valid JSON.');
+        throw new EspnFetchError('ESPN response was not valid JSON.', 'json');
       }
     };
 
@@ -119,6 +135,6 @@ export async function fetchEspnJson<T = unknown>(
       }),
     ])
       .then((data) => finish({ ok: true, data }))
-      .catch((err) => finish({ ok: false, err: mapFetchError(err, timeoutMs) }));
+      .catch((err) => finish({ ok: false, err: formatEspnFetchError(err, timeoutMs) }));
   });
 }

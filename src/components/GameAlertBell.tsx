@@ -14,7 +14,12 @@ type GameAlertBellProps = {
 };
 
 function gameHasScheduledKickoff(game: EspnNormalizedGame): boolean {
-  if (game.normalizedStatus === 'in_progress' || game.normalizedStatus === 'final') {
+  if (
+    game.normalizedStatus === 'in_progress' ||
+    game.normalizedStatus === 'delayed' ||
+    game.normalizedStatus === 'suspended' ||
+    game.normalizedStatus === 'final'
+  ) {
     return true;
   }
   return parseGameStartTime(game.startTime) != null;

@@ -14,10 +14,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TeamLogo } from '@/components/TeamLogo';
 import { FavoriteStarButton } from '@/components/FavoriteStarButton';
 import { TeamMediaSection } from '@/components/media/TeamMediaSection';
+import { TeamRosterSection } from '@/components/TeamRosterSection';
 import { TeamScheduleGameRow } from '@/components/TeamScheduleGameRow';
+import { SegmentedControl } from '@/components/SegmentedControl';
 
 import {
   loadTeamSeasonData,
+  TEAM_SCHEDULE_PARTIAL_NOTE,
   TEAM_SCHEDULE_SOURCE_NOTE,
   type TeamProfile,
 } from '@/data/teams/loadTeamSeasonGames';
@@ -36,6 +39,12 @@ import { isEspnTeamId } from '@/utils/teamId';
 import type { EspnNormalizedGame } from '@/types';
 
 type LoadState = 'loading' | 'success' | 'error';
+type TeamPageTabId = 'schedule' | 'roster';
+
+const TEAM_PAGE_TABS: { id: TeamPageTabId; label: string }[] = [
+  { id: 'schedule', label: 'Schedule' },
+  { id: 'roster', label: 'Roster' },
+];
 
 function isPureNumericId(value: string): boolean {
   return /^\d+$/.test(value.trim());
@@ -123,7 +132,7 @@ function TeamHeader({ profile, routeId }: { profile: TeamProfile; routeId: strin
         name={profile.displayName}
         abbreviation={profile.abbreviation}
         logoUrl={profile.logoUrl}
-        size={40}
+        size={36}
       />
       <View style={styles.headerInfo}>
         <View style={styles.nameRow}>
@@ -181,10 +190,15 @@ export default function TeamDetailScreen() {
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [profile, setProfile] = useState<TeamProfile | null>(null);
   const [games, setGames] = useState<EspnNormalizedGame[]>([]);
+  const [isPartialSchedule, setIsPartialSchedule] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TeamPageTabId>('schedule');
+  const [rosterRefreshToken, setRosterRefreshToken] = useState(0);
   const hasDataRef = useRef(false);
   const loadedRouteRef = useRef<string | null>(null);
   const inFlightRef = useRef<Promise<void> | null>(null);
+  const activeTabRef = useRef<TeamPageTabId>('schedule');
+  activeTabRef.current = activeTab;
 
   const loadTeam = useCallback(
     async (options?: ScoresSilentRefreshOptions) => {
@@ -197,6 +211,8 @@ export default function TeamDetailScreen() {
       if (loadedRouteRef.current !== routeId) {
         loadedRouteRef.current = routeId;
         hasDataRef.current = false;
+        setActiveTab('schedule');
+        setRosterRefreshToken(0);
       }
 
       if (inFlightRef.current && !options?.forceRefresh) {
@@ -206,6 +222,7 @@ export default function TeamDetailScreen() {
       const silent = options?.silent ?? false;
       const forceRefresh = options?.forceRefresh ?? false;
       const trigger = options?.trigger ?? 'team-mount';
+      const pullRefresh = trigger.endsWith('-ptr');
 
       const run = (async () => {
         if (!silent && !hasDataRef.current) {
@@ -218,13 +235,19 @@ export default function TeamDetailScreen() {
           screen: 'Team',
           trigger,
           phase: 'start',
-          note: `${routeId} force=${forceRefresh}`,
+          note: `${routeId} force=${forceRefresh} currentWeekOnly=${Boolean(options?.currentWeekOnly)}`,
         });
 
         try {
-          const data = await loadTeamSeasonData(routeId, { forceRefresh });
+          const data = await loadTeamSeasonData(routeId, {
+            forceRefresh,
+            currentWeekOnly: options?.currentWeekOnly,
+            trigger,
+            pullRefresh,
+          });
           setProfile(data.profile);
           setGames(data.games);
+          setIsPartialSchedule(data.isPartialSchedule);
           setLoadState('success');
           hasDataRef.current = true;
           logEspnRefreshDev({
@@ -233,6 +256,9 @@ export default function TeamDetailScreen() {
             trigger,
             phase: 'success',
             count: data.games.length,
+            note: data.isPartialSchedule
+              ? `partial weeks=${data.failedWeekIds.join(',')}`
+              : undefined,
           });
         } catch (err) {
           logEspnRefreshDev({
@@ -251,6 +277,7 @@ export default function TeamDetailScreen() {
 
           setProfile(null);
           setGames([]);
+          setIsPartialSchedule(false);
           setErrorMessage(err instanceof Error ? err.message : 'Could not load team data.');
           setLoadState('error');
         }
@@ -270,11 +297,16 @@ export default function TeamDetailScreen() {
     screen: 'Team',
     visibleGames: games,
     loadGames: loadTeam,
-    enabled: Boolean(routeId),
+    // Live score polling only while viewing schedule (not roster).
+    enabled: Boolean(routeId) && activeTab === 'schedule',
   });
 
   const { refreshing, onPullToRefresh } = usePullToRefresh(
     useCallback(async () => {
+      if (activeTabRef.current === 'roster') {
+        setRosterRefreshToken((value) => value + 1);
+        return;
+      }
       await loadTeam({ forceRefresh: true, silent: true, trigger: 'team-ptr' });
     }, [loadTeam]),
   );
@@ -297,7 +329,7 @@ export default function TeamDetailScreen() {
         style={styles.container}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: spacing.md, paddingBottom: Math.max(insets.bottom, spacing.xxl) },
+          { paddingTop: spacing.sm, paddingBottom: Math.max(insets.bottom, spacing.xl) },
         ]}
         refreshControl={
           <RefreshControl
@@ -335,27 +367,53 @@ export default function TeamDetailScreen() {
               />
             ) : null}
 
-            <Text style={styles.sourceNote}>{TEAM_SCHEDULE_SOURCE_NOTE}</Text>
+            <SegmentedControl
+              accessibilityLabel="Team page sections"
+              options={TEAM_PAGE_TABS}
+              selected={activeTab}
+              onSelect={setActiveTab}
+              style={styles.tabControl}
+              compact
+            />
 
-            <Text style={styles.sectionTitle}>Season schedule & results</Text>
+            {activeTab === 'schedule' ? (
+              <>
+                <View style={styles.scheduleIntro}>
+                  <Text style={styles.sourceNote} numberOfLines={1}>
+                    {TEAM_SCHEDULE_SOURCE_NOTE}
+                  </Text>
+                  {isPartialSchedule ? (
+                    <Text style={styles.sourceNote}>{TEAM_SCHEDULE_PARTIAL_NOTE}</Text>
+                  ) : null}
+                  <Text style={styles.sectionTitle}>Season schedule & results</Text>
+                </View>
 
-            {games.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Text style={styles.emptyTitle}>No games found for {profile.name}.</Text>
-                <Text style={styles.emptyText}>
-                  Games appear here when ESPN scoreboard data includes this team for loaded weeks.
-                </Text>
-              </View>
+                {games.length === 0 ? (
+                  <View style={styles.emptyBox}>
+                    <Text style={styles.emptyTitle}>No games found for {profile.name}.</Text>
+                    <Text style={styles.emptyText}>
+                      Games appear here when ESPN scoreboard data includes this team for loaded
+                      weeks.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.scheduleList}>
+                    {games.map((game, index) => (
+                      <TeamScheduleGameRow
+                        key={game.id}
+                        game={game}
+                        isLast={index === games.length - 1}
+                      />
+                    ))}
+                  </View>
+                )}
+              </>
             ) : (
-              <View style={styles.scheduleList}>
-                {games.map((game, index) => (
-                  <TeamScheduleGameRow
-                    key={game.id}
-                    game={game}
-                    isLast={index === games.length - 1}
-                  />
-                ))}
-              </View>
+              <TeamRosterSection
+                espnTeamId={espnTeamIdForMedia}
+                active={activeTab === 'roster'}
+                refreshToken={rosterRefreshToken}
+              />
             )}
           </>
         ) : null}
@@ -371,8 +429,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    paddingHorizontal: spacing.lg,
-    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+  },
+  tabControl: {
+    marginTop: 2,
+  },
+  scheduleIntro: {
+    gap: 4,
   },
   loadingBox: {
     backgroundColor: colors.surface,
@@ -413,7 +477,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm + 2,
   },
   headerInfo: {
     flex: 1,
@@ -434,21 +499,21 @@ const styles = StyleSheet.create({
   },
   rankBadgeText: {
     ...typography.label,
-    color: colors.background,
+    color: colors.onPrimary,
     fontSize: 9,
   },
   teamName: {
     flex: 1,
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: colors.text,
-    lineHeight: 22,
+    lineHeight: 21,
     minWidth: 0,
   },
   metaText: {
     ...typography.caption,
     color: colors.textSecondary,
-    lineHeight: 16,
+    lineHeight: 15,
   },
   metaRow: {
     flexDirection: 'row',
@@ -460,14 +525,16 @@ const styles = StyleSheet.create({
   },
   sourceNote: {
     ...typography.caption,
-    color: colors.textMuted,
-    lineHeight: 18,
+    fontSize: 11,
+    color: colors.textSecondary,
+    lineHeight: 14,
   },
   sectionTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: colors.text,
     letterSpacing: 0.2,
+    marginTop: 2,
   },
   scheduleList: {
     backgroundColor: colors.surface,
@@ -475,6 +542,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
+    marginTop: 2,
   },
   emptyBox: {
     backgroundColor: colors.surface,
@@ -493,7 +561,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     ...typography.caption,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
   },

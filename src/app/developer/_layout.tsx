@@ -7,7 +7,7 @@ export default function DeveloperLayout() {
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: colors.surface },
+        headerStyle: { backgroundColor: colors.header },
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: '600' },
         headerBackTitle: 'Back',
@@ -19,6 +19,11 @@ export default function DeveloperLayout() {
       <Stack.Screen name="espn-test" options={{ title: 'ESPN Data Test' }} />
       <Stack.Screen name="ncaa-rankings-test" options={{ title: 'NCAA Rankings Test' }} />
       <Stack.Screen name="notification-test" options={{ title: 'Notification Test' }} />
+      <Stack.Screen
+        name="notification-diagnostics"
+        options={{ title: 'Notification Diagnostics' }}
+      />
+      <Stack.Screen name="live-game-simulator" options={{ title: 'Live Game Simulator' }} />
       <Stack.Screen name="media-suggestions" options={{ title: 'Media Suggestions' }} />
     </Stack>
   );

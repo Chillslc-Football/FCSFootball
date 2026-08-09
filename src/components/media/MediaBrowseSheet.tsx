@@ -500,7 +500,7 @@ const styles = StyleSheet.create({
   },
   chipText: {
     ...typography.caption,
-    color: colors.background,
+    color: colors.onPrimary,
     fontWeight: '700',
   },
   clearButton: {

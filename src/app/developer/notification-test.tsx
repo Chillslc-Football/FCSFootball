@@ -1,6 +1,10 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { scheduleLocalTestNotification } from '@/services/notifications/notificationService';
+import {
+  scheduleLocalTestNotification,
+  sendExpoPushToCurrentDevice,
+} from '@/services/notifications/notificationService';
 import { colors, spacing, typography } from '@/theme';
 
 type TestAction = {
@@ -56,11 +60,47 @@ const TEST_ACTIONS: TestAction[] = [
 ];
 
 export default function NotificationTestScreen() {
+  const [sendingRemote, setSendingRemote] = useState(false);
+
   return (
     <View style={styles.container}>
       <Text style={styles.warning}>
-        Development only — local notifications do not write production sent-event rows.
+        Development only — local notifications do not write production sent-event rows. Remote
+        self-push targets only this device via Expo Push and does not create ESPN game records.
       </Text>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Send test notification via Expo Push to this device"
+        disabled={sendingRemote}
+        onPress={() => {
+          if (sendingRemote) return;
+          setSendingRemote(true);
+          void sendExpoPushToCurrentDevice(
+            'FCS Pulse remote test',
+            'Expo Push delivery check for this device only',
+          )
+            .then((result) => {
+              if (result.ok) {
+                Alert.alert('Remote push sent', 'Check the notification tray on this device.');
+              } else {
+                Alert.alert('Remote push failed', result.error ?? 'Unknown error');
+              }
+            })
+            .finally(() => setSendingRemote(false));
+        }}
+        style={({ pressed }) => [
+          styles.row,
+          styles.remoteRow,
+          (pressed || sendingRemote) && styles.rowPressed,
+        ]}>
+        <Text style={styles.rowTitle}>
+          {sendingRemote ? 'Sending remote push…' : 'Send Test Notification (Expo Push)'}
+        </Text>
+        <Text style={styles.rowSubtitle}>
+          Uses this device token only — not ESPN poll / not broadcast
+        </Text>
+      </Pressable>
 
       {TEST_ACTIONS.map((action) => (
         <Pressable
@@ -105,6 +145,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.md,
   },
+  remoteRow: {
+    borderColor: colors.primary,
+  },
   rowPressed: {
     opacity: 0.85,
   },
@@ -112,5 +155,10 @@ const styles = StyleSheet.create({
     ...typography.body,
     fontWeight: '600',
     color: colors.text,
+  },
+  rowSubtitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 4,
   },
 });

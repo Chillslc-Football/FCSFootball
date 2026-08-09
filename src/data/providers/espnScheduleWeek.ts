@@ -368,3 +368,49 @@ export function getScheduleWeekScoreboardUrl(weekId: ScheduleWeekId): string | u
   const config = getScheduleWeekConfig(weekId);
   return config.scoreboardUrl;
 }
+
+function toLocalIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Resolve the Scores tab's default week from the existing 2026 FCS calendar.
+ * Uses VISIBLE_SCORES_WEEK_IDS date windows (Week 1 includes Week 0 dates; playoffs 13–17).
+ *
+ * Fallbacks (no invented dates):
+ * - Before Week 1 window → week-1 (same as prior hardcoded default)
+ * - After National Championship window → week-17
+ * - Mon–Tue gaps between Wed–Sun windows → upcoming week
+ */
+export function resolveCurrentScoresWeekId(now: Date = new Date()): ScheduleWeekId {
+  const todayIso = toLocalIsoDate(now);
+
+  for (const id of VISIBLE_SCORES_WEEK_IDS) {
+    const meta = getScheduleWeekMeta(id);
+    if (todayIso >= meta.startDateIso && todayIso <= meta.endDateIso) {
+      return id;
+    }
+  }
+
+  const week1 = getScheduleWeekMeta('week-1');
+  if (todayIso < week1.startDateIso) {
+    return 'week-1';
+  }
+
+  const championship = getScheduleWeekMeta('week-17');
+  if (todayIso > championship.endDateIso) {
+    return 'week-17';
+  }
+
+  for (const id of VISIBLE_SCORES_WEEK_IDS) {
+    const meta = getScheduleWeekMeta(id);
+    if (todayIso < meta.startDateIso) {
+      return id;
+    }
+  }
+
+  return 'week-17';
+}

@@ -3,6 +3,10 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import {
+  NOTIFICATION_PUSH_TOKEN_TIMEOUT_MS,
+  raceTimeout,
+} from '@/data/notifications/notificationSetup';
 import type { NotificationPermissionStatus } from '@/data/notifications/types';
 
 export const GAME_ALERTS_CHANNEL_ID = 'game-alerts';
@@ -32,7 +36,7 @@ export async function setupAndroidNotificationChannel(): Promise<void> {
     description: 'Live updates for favorite and followed FCS/FBS games',
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: '#C9A227',
+    lightColor: '#D4AF37',
   });
 }
 
@@ -71,35 +75,76 @@ function resolveExpoProjectId(): string | undefined {
   return extra?.eas?.projectId ?? Constants.easConfig?.projectId;
 }
 
-export async function registerForPushNotifications(): Promise<string | null> {
-  configureNotificationHandler();
-  await setupAndroidNotificationChannel();
+const EXPO_PUSH_TOKEN_RETRY_DELAY_MS = 750;
 
+async function sleep(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchExpoPushTokenOnce(): Promise<string | null> {
   if (!Device.isDevice) {
     console.warn('[notificationService] Push notifications require a physical device.');
-    return null;
-  }
-
-  const permission = await requestNotificationPermissions();
-  if (permission !== 'granted') {
     return null;
   }
 
   const projectId = resolveExpoProjectId();
   if (!projectId) {
     console.warn(
-      '[notificationService] EXPO_PUBLIC_EAS_PROJECT_ID is missing — cannot register push token.',
+      '[notificationService] Expo projectId is missing — cannot register push token.',
     );
     return null;
   }
 
   try {
-    const token = await Notifications.getExpoPushTokenAsync({ projectId });
+    const token = await raceTimeout(
+      Notifications.getExpoPushTokenAsync({ projectId }),
+      NOTIFICATION_PUSH_TOKEN_TIMEOUT_MS,
+      'Expo push token request timed out',
+    );
     return token.data;
   } catch (error) {
     console.warn('[notificationService] Failed to register Expo push token:', error);
     return null;
   }
+}
+
+/** One transport-style retry for cold-start Expo token failures. */
+async function fetchExpoPushToken(): Promise<string | null> {
+  const first = await fetchExpoPushTokenOnce();
+  if (first) return first;
+  await sleep(EXPO_PUSH_TOKEN_RETRY_DELAY_MS);
+  return fetchExpoPushTokenOnce();
+}
+
+export function hasExpoProjectIdConfigured(): boolean {
+  return Boolean(resolveExpoProjectId());
+}
+
+/**
+ * Returns an Expo push token only when OS permission is already granted.
+ * Does not prompt the user.
+ */
+export async function getExistingExpoPushToken(): Promise<string | null> {
+  const permission = await getNotificationPermissionStatus();
+  if (permission !== 'granted') {
+    return null;
+  }
+
+  configureNotificationHandler();
+  await setupAndroidNotificationChannel();
+  return fetchExpoPushToken();
+}
+
+export async function registerForPushNotifications(): Promise<string | null> {
+  configureNotificationHandler();
+  await setupAndroidNotificationChannel();
+
+  const permission = await requestNotificationPermissions();
+  if (permission !== 'granted') {
+    return null;
+  }
+
+  return fetchExpoPushToken();
 }
 
 export function addNotificationResponseListener(
@@ -131,4 +176,62 @@ export async function scheduleLocalTestNotification(
     },
     trigger: null,
   });
+}
+
+export type ExpoSelfPushResult = {
+  ok: boolean;
+  error?: string;
+};
+
+/**
+ * Send one Expo remote push to THIS device only.
+ * Does not touch ESPN poll, followed games, or sent_notification_events.
+ */
+export async function sendExpoPushToCurrentDevice(
+  title: string,
+  body: string,
+): Promise<ExpoSelfPushResult> {
+  const token = await getExistingExpoPushToken();
+  if (!token) {
+    return {
+      ok: false,
+      error: 'No Expo push token on this device. Grant permission and retry registration first.',
+    };
+  }
+
+  try {
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: token,
+        title,
+        body,
+        sound: 'default',
+        data: { test: true, source: 'developer_self_push' },
+      }),
+    });
+
+    if (!response.ok) {
+      return { ok: false, error: `Expo push HTTP ${response.status}` };
+    }
+
+    const payload = (await response.json()) as {
+      data?: Array<{ status?: string; message?: string }>;
+    };
+    const ticket = Array.isArray(payload.data) ? payload.data[0] : undefined;
+    if (ticket?.status === 'error') {
+      return { ok: false, error: ticket.message ?? 'Expo push ticket error' };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Expo push request failed',
+    };
+  }
 }

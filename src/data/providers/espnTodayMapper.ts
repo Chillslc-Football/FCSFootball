@@ -49,10 +49,13 @@ function toScoreboardTeam(
 export function toGameStatus(game: EspnNormalizedGame): GameStatus {
   switch (game.normalizedStatus) {
     case 'in_progress':
+    case 'delayed':
+    case 'suspended':
       return 'live';
     case 'final':
       return 'final';
     default:
+      // postponed / cancelled / scheduled → not final; cards use ESPN status text where needed
       return 'upcoming';
   }
 }

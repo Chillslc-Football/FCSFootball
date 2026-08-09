@@ -55,26 +55,34 @@ export function ContextualMediaPreview({
   title,
   sources,
   emptyMessage,
+  emptySupportingMessage,
   onViewAll,
   onSuggest,
   onPressSource,
   limit = CONTEXTUAL_MEDIA_INLINE_LIMIT,
+  compact = false,
 }: {
   title: string;
   sources: MediaSource[];
   emptyMessage: string;
+  /** Optional secondary empty-state line (Team page). */
+  emptySupportingMessage?: string;
   onViewAll: () => void;
   onSuggest: () => void;
   /** When set, each creator tile is tappable (e.g. open Creator Detail). */
   onPressSource?: (source: MediaSource) => void;
   limit?: number;
+  /** Tighter vertical spacing for dense screens (Team page). */
+  compact?: boolean;
 }) {
   const inline = sources.slice(0, limit);
 
   return (
-    <View style={styles.section} accessibilityRole="summary">
+    <View
+      style={[styles.section, compact && styles.sectionCompact]}
+      accessibilityRole="summary">
       <View style={styles.headerRow}>
-        <Text style={styles.title} numberOfLines={2}>
+        <Text style={[styles.title, compact && styles.titleCompact]} numberOfLines={2}>
           {title}
         </Text>
         <View style={styles.headerActions}>
@@ -98,7 +106,12 @@ export function ContextualMediaPreview({
       </View>
 
       {inline.length === 0 ? (
-        <Text style={styles.emptyText}>{emptyMessage}</Text>
+        <View style={styles.emptyBlock}>
+          <Text style={styles.emptyText}>{emptyMessage}</Text>
+          {emptySupportingMessage ? (
+            <Text style={styles.emptySupportingText}>{emptySupportingMessage}</Text>
+          ) : null}
+        </View>
       ) : (
         <ScrollView
           horizontal
@@ -147,6 +160,10 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.sm,
   },
+  sectionCompact: {
+    gap: spacing.xs,
+    marginBottom: 0,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -158,6 +175,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
     letterSpacing: 0.2,
+  },
+  titleCompact: {
+    fontSize: 12,
+    lineHeight: 16,
   },
   headerActions: {
     flexDirection: 'row',
@@ -184,9 +205,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  emptyBlock: {
+    gap: 2,
+  },
   emptyText: {
     ...typography.caption,
     color: colors.textMuted,
+  },
+  emptySupportingText: {
+    ...typography.caption,
+    fontSize: 11,
+    color: colors.textMuted,
+    lineHeight: 14,
   },
   row: {
     gap: spacing.sm,

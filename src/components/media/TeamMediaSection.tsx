@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ContextualMediaPreview } from '@/components/media/ContextualMediaPreview';
 import {
   CONTEXTUAL_MEDIA_INLINE_LIMIT,
+  TEAM_CONTEXTUAL_MEDIA_EMPTY_MESSAGE,
+  TEAM_CONTEXTUAL_MEDIA_EMPTY_SUPPORTING,
   buildSuggestMediaHref,
   selectTeamContextualMedia,
 } from '@/data/mediaDirectory/contextualMedia';
@@ -61,8 +63,10 @@ export function TeamMediaSection({
     <ContextualMediaPreview
       title={heading}
       sources={matching}
-      emptyMessage="No media listed for this team yet."
+      emptyMessage={TEAM_CONTEXTUAL_MEDIA_EMPTY_MESSAGE}
+      emptySupportingMessage={TEAM_CONTEXTUAL_MEDIA_EMPTY_SUPPORTING}
       limit={CONTEXTUAL_MEDIA_INLINE_LIMIT}
+      compact
       onViewAll={() => router.push(prepareDiscoverTeamMediaNavigation(espnTeamId, teamName))}
       onSuggest={() => router.push(suggestHref)}
       onPressSource={(source) =>

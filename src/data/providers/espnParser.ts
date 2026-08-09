@@ -5,6 +5,11 @@ import {
   resolveEspnConferenceName,
   resolveEspnDivisionFromConferenceId,
 } from '@/data/providers/espnConferenceLookup';
+import { mapEspnStatusToNormalized } from '@/data/providers/espnGameStatus';
+import {
+  buildEspnSituationDisplayText,
+  parseEspnCompetitionSituation,
+} from '@/data/providers/espnGameSituation';
 import {
   parseEspnTeamAbbreviation,
   parseEspnTeamLogoUrl,
@@ -36,19 +41,6 @@ function asNumber(value: unknown): number | undefined {
 
 const FCS_GROUP_IDS = new Set(['81']);
 const FBS_GROUP_IDS = new Set(['80']);
-
-function mapEspnStateToGameStatus(state: string | undefined): Game['status'] | undefined {
-  switch (state) {
-    case 'pre':
-      return 'scheduled';
-    case 'in':
-      return 'in_progress';
-    case 'post':
-      return 'final';
-    default:
-      return undefined;
-  }
-}
 
 function divisionFromGroupRecord(group: Record<string, unknown>): EspnDivisionHint | undefined {
   const id = asString(group.id);
@@ -474,9 +466,11 @@ function parseEvent(event: unknown): EspnNormalizedGame | null {
   const resolvedStatusObj = statusObj ?? competitionStatusObj;
   const statusType =
     resolvedStatusObj && isRecord(resolvedStatusObj.type) ? resolvedStatusObj.type : undefined;
+  const statusTypeName = statusType ? asString(statusType.name) : undefined;
+  const statusDescription = statusType ? asString(statusType.description) : undefined;
   const statusName =
-    (statusType && asString(statusType.description)) ??
-    (statusType && asString(statusType.name)) ??
+    statusDescription ??
+    statusTypeName ??
     (statusType && asString(statusType.state)) ??
     'Unknown';
   const statusState = statusType ? asString(statusType.state) : undefined;
@@ -502,7 +496,26 @@ function parseEvent(event: unknown): EspnNormalizedGame | null {
   const groupInfo =
     parsedGroupInfo ?? (conferenceGroupInfo.length > 0 ? conferenceGroupInfo : undefined);
 
-  const normalizedStatus = mapEspnStateToGameStatus(statusState);
+  const normalizedStatus = mapEspnStatusToNormalized({
+    state: statusState,
+    typeName: statusTypeName,
+    description: statusDescription,
+  });
+
+  const parsedSituation = parseEspnCompetitionSituation(competition.situation);
+  const situation = parsedSituation
+    ? {
+        ...parsedSituation,
+        displayText: buildEspnSituationDisplayText(parsedSituation, {
+          possessionAbbreviation:
+            parsedSituation.possessionTeamId === awayTeamId
+              ? awayAbbreviation
+              : parsedSituation.possessionTeamId === homeTeamId
+                ? homeAbbreviation
+                : undefined,
+        }),
+      }
+    : undefined;
 
   const game: Game | undefined =
     awayTeamId && homeTeamId && normalizedStatus
@@ -548,6 +561,7 @@ function parseEvent(event: unknown): EspnNormalizedGame | null {
     statusShortDetail,
     statusDetail: statusDetailText,
     normalizedStatus,
+    situation,
     broadcast,
     espnLink,
     espnUid,
@@ -591,6 +605,8 @@ export function summarizeParsedEspnGames(games: EspnNormalizedGame[]): EspnParse
         statusBreakdown.scheduled++;
         break;
       case 'in_progress':
+      case 'delayed':
+      case 'suspended':
         statusBreakdown.live++;
         break;
       case 'final':

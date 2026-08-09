@@ -53,11 +53,17 @@ export function useMediaDirectoryController(options?: {
    */
   browseFilterSeed?: DiscoverMediaBrowseSeed | null;
   initialSearch?: string;
+  /**
+   * When false, skip the initial network/seed load (Discover keeps the segment
+   * interactive while News is showing). Defaults to true for `/media`.
+   */
+  enabled?: boolean;
 }): MediaDirectoryController {
   const showIntroSubtitle = options?.showIntroSubtitle ?? true;
   const teamFilter = options?.teamFilter ?? null;
   const onClearTeamFilter = options?.onClearTeamFilter;
   const browseFilterSeed = options?.browseFilterSeed ?? null;
+  const enabled = options?.enabled ?? true;
   const [sources, setSources] = useState<MediaSource[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -66,6 +72,7 @@ export function useMediaDirectoryController(options?: {
     browseFilterSeed?.filter ?? createEmptyMediaBrowseFilter(),
   );
   const [browseOpen, setBrowseOpen] = useState(false);
+  const hasLoadedRef = useRef(false);
 
   const appliedBrowseSeedIdRef = useRef<number | null>(browseFilterSeed?.id ?? null);
   useEffect(() => {
@@ -81,6 +88,7 @@ export function useMediaDirectoryController(options?: {
       const result = await loadApprovedMediaSources({ forceRefresh });
       setSources(result.sources);
       setLoadState('success');
+      hasLoadedRef.current = true;
     } catch (error) {
       setLoadState('error');
       setErrorMessage(error instanceof Error ? error.message : 'Could not load media.');
@@ -88,8 +96,10 @@ export function useMediaDirectoryController(options?: {
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
+    if (hasLoadedRef.current) return;
     void load(false);
-  }, [load]);
+  }, [enabled, load]);
 
   const { refreshing, onPullToRefresh } = usePullToRefresh(
     useCallback(async () => {
@@ -377,7 +387,7 @@ const styles = StyleSheet.create({
   },
   teamChipText: {
     ...typography.caption,
-    color: colors.background,
+    color: colors.onPrimary,
     fontWeight: '700',
   },
   clearTeamButton: {
