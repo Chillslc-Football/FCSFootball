@@ -1,0 +1,5 @@
+# Cloudflare Pages: serve pretty paths without trailing-slash 404s.
+/privacy /privacy/index.html 200
+/privacy/ /privacy/index.html 200
+/delete-data /delete-data/index.html 200
+/delete-data/ /delete-data/index.html 200
