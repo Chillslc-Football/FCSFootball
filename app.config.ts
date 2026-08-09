@@ -31,6 +31,8 @@ const config: ExpoConfig = {
     // EAS remote versioning controls the production Android versionCode.
     versionCode: 1,
 
+    googleServicesFile: './google-services.json',
+
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
       monochromeImage: './assets/adaptive-icon-monochrome.png',

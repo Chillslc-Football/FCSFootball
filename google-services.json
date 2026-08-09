@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "193733212975",
+    "project_id": "fcs-pulse",
+    "storage_bucket": "fcs-pulse.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:193733212975:android:44a35d67866aa00ceb3fda",
+        "android_client_info": {
+          "package_name": "com.chillslc.fcsfootball"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCJLrCWIgHplaT_lGzZO6FUcgA-qdhRdlY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
