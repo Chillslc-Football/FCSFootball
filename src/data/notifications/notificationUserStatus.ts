@@ -21,10 +21,14 @@ export type NotificationDiagnosticsSnapshot = NotificationDeliverySnapshot & {
   platform: 'ios' | 'android' | 'web' | 'unknown';
   appEnvironment: 'expo_go' | 'installed_build';
   supabaseConfigured: boolean;
+  projectIdConfigured?: boolean;
   lastSetupPhase?: string;
   lastSetupResult?: string;
   lastSetupDetail?: string;
   deviceUuidPresent?: boolean;
+  lastFailedProbe?: string;
+  pushTokenFailureCategory?: string;
+  pushTokenFailureDetail?: string;
 };
 
 /**
@@ -109,10 +113,26 @@ export function buildNotificationDiagnosticsLines(
     `Platform: ${snapshot.platform}`,
     `App environment: ${snapshot.appEnvironment === 'expo_go' ? 'Expo Go' : 'installed build'}`,
     `Supabase configured: ${snapshot.supabaseConfigured ? 'yes' : 'no'}`,
+    `Expo projectId configured: ${
+      snapshot.projectIdConfigured === undefined
+        ? 'n/a'
+        : snapshot.projectIdConfigured
+          ? 'yes'
+          : 'no'
+    }`,
     `Last setup phase: ${snapshot.lastSetupPhase ?? 'idle'}`,
     `Last setup result: ${snapshot.lastSetupResult ?? 'n/a'}`,
     ...(snapshot.lastSetupDetail
       ? [`Last setup detail: ${snapshot.lastSetupDetail}`]
+      : []),
+    ...(snapshot.lastFailedProbe
+      ? [`Last diagnostic failed probe: ${snapshot.lastFailedProbe}`]
+      : []),
+    ...(snapshot.pushTokenFailureCategory
+      ? [`Push token failure: ${snapshot.pushTokenFailureCategory}`]
+      : []),
+    ...(snapshot.pushTokenFailureDetail
+      ? [`Push token detail: ${snapshot.pushTokenFailureDetail}`]
       : []),
   ];
 }

@@ -12,15 +12,38 @@ type SupabaseExtra = {
 
 let client: SupabaseClient | null = null;
 
+/**
+ * One authoritative extra reader for Supabase URL/anon key.
+ * Checks expoConfig, then embedded manifests — never invents credentials.
+ */
 function readExtra(): SupabaseExtra {
-  const extra = Constants.expoConfig?.extra;
-  if (!extra || typeof extra !== 'object') return {};
-  return extra as SupabaseExtra;
+  const candidates: unknown[] = [
+    Constants.expoConfig?.extra,
+    // Some installed builds surface config via classic / updates manifests.
+    (Constants as { manifest?: { extra?: unknown } }).manifest?.extra,
+    (Constants as { manifest2?: { extra?: unknown } }).manifest2?.extra,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const extra = candidate as SupabaseExtra;
+    if (extra.supabaseUrl || extra.supabaseAnonKey) {
+      return {
+        supabaseUrl: typeof extra.supabaseUrl === 'string' ? extra.supabaseUrl : undefined,
+        supabaseAnonKey:
+          typeof extra.supabaseAnonKey === 'string' ? extra.supabaseAnonKey : undefined,
+      };
+    }
+  }
+
+  const firstObject = candidates.find((c) => c && typeof c === 'object');
+  return firstObject ? (firstObject as SupabaseExtra) : {};
 }
 
 /**
  * Resolve URL from the same EXPO_PUBLIC_* names used project-wide.
  * Falls back to app.config `extra` (populated from those same env vars).
+ * Metro inlines direct process.env.EXPO_PUBLIC_* property access at bundle time.
  */
 export function resolveSupabaseUrl(): string | null {
   const fromEnv = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();

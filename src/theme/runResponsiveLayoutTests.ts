@@ -16,6 +16,9 @@ import {
   LAYOUT_COLUMNS,
   POLL_RANK_COLUMN_WIDTH,
   STANDINGS_COLUMN_WIDTHS,
+  quickLinkLabelFitsAtWidth,
+  quickLinkLabelMaxWidth,
+  quickLinkCardWidth,
 } from '@/theme/layoutColumns';
 
 function test(name: string, fn: () => void | Promise<void>): Promise<void> {
@@ -156,6 +159,32 @@ async function main(): Promise<void> {
       isEspnTransportFailure(new EspnFetchError('Request was cancelled.', 'cancelled')),
       false,
     );
+  });
+
+  await test('Quick Links preserve full labels at normal phone widths', () => {
+    const labels = ['FCS Top 25', 'FCS vs FBS'] as const;
+    for (const width of [360, 390, 430]) {
+      for (const label of labels) {
+        assert.equal(
+          quickLinkLabelFitsAtWidth(label, width),
+          true,
+          `"${label}" should fit at ${width}pt`,
+        );
+      }
+      // Geometry: icon + chevron never shrink; text gets remaining card width.
+      const card = quickLinkCardWidth(width);
+      const textMax = quickLinkLabelMaxWidth(card);
+      const chrome =
+        LAYOUT_COLUMNS.quickLinkIcon +
+        LAYOUT_COLUMNS.quickLinkChevron +
+        LAYOUT_COLUMNS.quickLinkGap * 2 +
+        LAYOUT_COLUMNS.quickLinkPaddingH * 2;
+      assert.equal(textMax, card - chrome);
+      assert.ok(textMax > chrome, 'text slot must exceed fixed chrome at normal widths');
+    }
+
+    // Narrowest practical phone: may ellipsize, but text slot remains > 0.
+    assert.ok(quickLinkLabelMaxWidth(quickLinkCardWidth(320)) > 0);
   });
 
   console.log('\nAll responsive layout tests passed.');

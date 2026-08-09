@@ -7,27 +7,14 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Platform } from 'react-native';
 
-import {
-  loadNotificationDiagnosticsSnapshot,
-  withTimeout,
-} from '@/data/notifications/deviceRegistration';
-import { getLastNotificationSetupDiagnostic } from '@/data/notifications/notificationSetup';
+import { collectNotificationDiagnosticsProbes } from '@/data/notifications/notificationDiagnostics';
 import {
   buildNotificationDiagnosticsLines,
   type NotificationDiagnosticsSnapshot,
 } from '@/data/notifications/notificationUserStatus';
 import { isExpoGoClient } from '@/data/release/installedAppVersion';
-import { hasExpoProjectIdConfigured } from '@/services/notifications/notificationService';
 import { colors, spacing, typography } from '@/theme';
-
-function resolvePlatform(): NotificationDiagnosticsSnapshot['platform'] {
-  if (Platform.OS === 'ios') return 'ios';
-  if (Platform.OS === 'android') return 'android';
-  if (Platform.OS === 'web') return 'web';
-  return 'unknown';
-}
 
 export default function NotificationDiagnosticsScreen() {
   const [lines, setLines] = useState<string[]>([]);
@@ -38,42 +25,26 @@ export default function NotificationDiagnosticsScreen() {
     setLoading(true);
     setError(null);
     try {
-      const lastSetup = getLastNotificationSetupDiagnostic();
-      const snapshot = await withTimeout(loadNotificationDiagnosticsSnapshot(), 8_000);
-      if (!snapshot) {
-        setError('Diagnostics timed out. Check Last setup phase below from prior Try Again.');
-        setLines([
-          ...buildNotificationDiagnosticsLines({
-            permissionStatus: 'undetermined',
-            deviceRegistered: false,
-            hasPushToken: false,
-            backendPrefsLoaded: false,
-            platform: resolvePlatform(),
-            appEnvironment: isExpoGoClient() ? 'expo_go' : 'installed_build',
-            supabaseConfigured: false,
-            lastSetupPhase: lastSetup.phase,
-            lastSetupResult: lastSetup.result,
-            lastSetupDetail: lastSetup.detail ?? 'diagnostics_timeout',
-            deviceUuidPresent: lastSetup.deviceUuidPresent,
-          }),
-          `Expo projectId configured: ${hasExpoProjectIdConfigured() ? 'yes' : 'no'}`,
-        ]);
-        return;
-      }
-
+      // Independent bounded probes — never invent undetermined/false for local fields.
+      const probes = await collectNotificationDiagnosticsProbes();
       const full: NotificationDiagnosticsSnapshot = {
-        ...snapshot,
-        platform: resolvePlatform(),
+        permissionStatus: probes.permissionStatus,
+        deviceRegistered: probes.deviceRegistered,
+        hasPushToken: probes.hasPushToken,
+        backendPrefsLoaded: probes.backendPrefsLoaded,
+        platform: probes.platform,
         appEnvironment: isExpoGoClient() ? 'expo_go' : 'installed_build',
-        lastSetupPhase: lastSetup.phase,
-        lastSetupResult: lastSetup.result,
-        lastSetupDetail: lastSetup.detail,
-        deviceUuidPresent: lastSetup.deviceUuidPresent,
+        supabaseConfigured: probes.supabaseConfigured,
+        projectIdConfigured: probes.projectIdConfigured,
+        lastSetupPhase: probes.lastSetupPhase,
+        lastSetupResult: probes.lastSetupResult,
+        lastSetupDetail: probes.lastSetupDetail,
+        deviceUuidPresent: probes.deviceUuidPresent,
+        lastFailedProbe: probes.lastFailedProbe,
+        pushTokenFailureCategory: probes.pushTokenFailureCategory,
+        pushTokenFailureDetail: probes.pushTokenFailureDetail,
       };
-      setLines([
-        ...buildNotificationDiagnosticsLines(full),
-        `Expo projectId configured: ${hasExpoProjectIdConfigured() ? 'yes' : 'no'}`,
-      ]);
+      setLines(buildNotificationDiagnosticsLines(full));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Diagnostics failed');
       setLines([]);
@@ -92,8 +63,8 @@ export default function NotificationDiagnosticsScreen() {
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}>
       <Text style={styles.warning}>
-        Developer/Admin only. No push token values are shown. After Settings → Try Again, refresh
-        here to see the last setup phase.
+        Developer/Admin only. No push token values are shown. Each probe is independently bounded
+        so a slow backend call cannot erase permission or Supabase config.
       </Text>
 
       {loading ? <ActivityIndicator color={colors.primary} /> : null}

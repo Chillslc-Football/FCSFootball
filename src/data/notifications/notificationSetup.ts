@@ -1,3 +1,4 @@
+import { evaluateNotificationSetupSuccess } from '@/data/notifications/notificationSetupSuccess';
 import type { NotificationPermissionStatus } from '@/data/notifications/types';
 
 /** Total wall-clock budget for an explicit Enable / Try Again attempt. */
@@ -101,10 +102,19 @@ export async function raceTimeout<T>(
 
 export type NotificationSetupDeps = {
   getPermissionStatus: () => Promise<NotificationPermissionStatus>;
-  requestPermissionAndToken: () => Promise<string | null>;
-  getExistingToken: () => Promise<string | null>;
+  requestPermissionAndToken: (budget: {
+    deadlineMs: number;
+    startedAtMs: number;
+  }) => Promise<string | null>;
+  getExistingToken: (budget: {
+    deadlineMs: number;
+    startedAtMs: number;
+  }) => Promise<string | null>;
   registerDevice: (expoPushToken: string | null) => Promise<{ registered: boolean } | null>;
   hasDeviceUuid?: () => Promise<boolean>;
+  isSupabaseConfigured?: () => boolean;
+  hasProjectIdConfigured?: () => boolean;
+  isExpoGo?: () => boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 };
@@ -112,6 +122,7 @@ export type NotificationSetupDeps = {
 /**
  * Bounded notification readiness attempt used by Enable / Try Again.
  * Always settles (success, incomplete, timeout, or error) — never hangs.
+ * One true overall deadline — inner steps must not stack past timeoutMs.
  */
 export async function runNotificationSetupAttempt(
   options: {
@@ -123,6 +134,8 @@ export async function runNotificationSetupAttempt(
   const requestPermission = options.requestPermission !== false;
   const timeoutMs = options.timeoutMs ?? NOTIFICATION_SETUP_TIMEOUT_MS;
   const now = deps.now ?? Date.now;
+  const startedAtMs = now();
+  const deadlineMs = startedAtMs + timeoutMs;
 
   recordNotificationSetupDiagnostic({
     phase: 'permission',
@@ -135,7 +148,7 @@ export async function runNotificationSetupAttempt(
 
   try {
     return await raceTimeout(
-      executeSetupAttempt({ requestPermission, deps, now }),
+      executeSetupAttempt({ requestPermission, deps, now, startedAtMs, deadlineMs }),
       timeoutMs,
       'Notification setup timed out',
     );
@@ -144,6 +157,7 @@ export async function runNotificationSetupAttempt(
     const timedOut = /timed out/i.test(detail);
     const snapshot = recordNotificationSetupDiagnostic({
       phase: lastSetupDiagnostic.phase === 'idle' ? 'permission' : lastSetupDiagnostic.phase,
+      // Never preserve a prior success across a timed-out / failed attempt.
       result: timedOut ? 'timeout' : 'error',
       detail,
     });
@@ -164,12 +178,18 @@ async function executeSetupAttempt(options: {
   requestPermission: boolean;
   deps: NotificationSetupDeps;
   now: () => number;
+  startedAtMs: number;
+  deadlineMs: number;
 }): Promise<NotificationSetupAttemptResult> {
-  const { requestPermission, deps } = options;
+  const { requestPermission, deps, now, startedAtMs, deadlineMs } = options;
+  const remainingMs = () => Math.max(0, deadlineMs - now());
 
   recordNotificationSetupDiagnostic({ phase: 'permission', result: 'incomplete' });
   const permissionStatus = await deps.getPermissionStatus();
   const deviceUuidPresent = deps.hasDeviceUuid ? await deps.hasDeviceUuid() : true;
+  const supabaseConfigured = deps.isSupabaseConfigured?.() ?? true;
+  const projectIdConfigured = deps.hasProjectIdConfigured?.() ?? true;
+  const isExpoGo = deps.isExpoGo?.() ?? false;
 
   recordNotificationSetupDiagnostic({
     phase: 'permission',
@@ -179,27 +199,27 @@ async function executeSetupAttempt(options: {
   });
 
   if (!requestPermission && permissionStatus !== 'granted') {
-    const result = recordNotificationSetupDiagnostic({
-      phase: 'complete',
-      result: permissionStatus === 'denied' ? 'permission_denied' : 'incomplete',
+    return finalizeAttempt({
       permissionStatus,
       deviceUuidPresent,
       hasPushToken: false,
       deviceRegistered: false,
+      supabaseConfigured,
+      projectIdConfigured,
+      isExpoGo,
     });
-    return toAttemptResult(result, permissionStatus);
   }
 
   if (permissionStatus === 'denied' && !requestPermission) {
-    const result = recordNotificationSetupDiagnostic({
-      phase: 'complete',
-      result: 'permission_denied',
+    return finalizeAttempt({
       permissionStatus,
       deviceUuidPresent,
       hasPushToken: false,
       deviceRegistered: false,
+      supabaseConfigured,
+      projectIdConfigured,
+      isExpoGo,
     });
-    return toAttemptResult(result, permissionStatus);
   }
 
   recordNotificationSetupDiagnostic({
@@ -210,10 +230,25 @@ async function executeSetupAttempt(options: {
   });
 
   let pushToken: string | null = null;
+  if (remainingMs() < 200) {
+    return finalizeAttempt({
+      permissionStatus,
+      deviceUuidPresent,
+      hasPushToken: false,
+      deviceRegistered: false,
+      supabaseConfigured,
+      projectIdConfigured,
+      isExpoGo,
+      forceResult: 'timeout',
+      detail: 'Notification setup timed out',
+    });
+  }
+
   try {
+    const budget = { deadlineMs, startedAtMs };
     pushToken = requestPermission
-      ? await deps.requestPermissionAndToken()
-      : await deps.getExistingToken();
+      ? await deps.requestPermissionAndToken(budget)
+      : await deps.getExistingToken(budget);
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'Push token request failed';
     recordNotificationSetupDiagnostic({
@@ -224,22 +259,21 @@ async function executeSetupAttempt(options: {
       hasPushToken: false,
       detail,
     });
-    // Continue to register device without token when possible.
     pushToken = null;
   }
 
   const permissionAfterToken = await deps.getPermissionStatus().catch(() => permissionStatus);
 
   if (permissionAfterToken === 'denied' && !pushToken) {
-    const result = recordNotificationSetupDiagnostic({
-      phase: 'complete',
-      result: 'permission_denied',
+    return finalizeAttempt({
       permissionStatus: permissionAfterToken,
       deviceUuidPresent,
       hasPushToken: false,
       deviceRegistered: false,
+      supabaseConfigured,
+      projectIdConfigured,
+      isExpoGo,
     });
-    return toAttemptResult(result, permissionAfterToken);
   }
 
   recordNotificationSetupDiagnostic({
@@ -251,50 +285,105 @@ async function executeSetupAttempt(options: {
   });
 
   let registered = false;
-  try {
-    const registration = await deps.registerDevice(pushToken);
-    registered = Boolean(registration?.registered);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : 'Device registration failed';
-    const result = recordNotificationSetupDiagnostic({
-      phase: 'register_device',
-      result: /timed out/i.test(detail) ? 'timeout' : 'error',
+  if (remainingMs() < 200) {
+    return finalizeAttempt({
       permissionStatus: permissionAfterToken,
       deviceUuidPresent,
       hasPushToken: Boolean(pushToken),
       deviceRegistered: false,
-      detail,
+      supabaseConfigured,
+      projectIdConfigured,
+      isExpoGo,
+      forceResult: 'timeout',
+      detail: 'Notification setup timed out',
     });
-    return toAttemptResult(result, permissionAfterToken);
   }
 
-  const ready = permissionAfterToken === 'granted' && registered && Boolean(pushToken);
-  const result = recordNotificationSetupDiagnostic({
-    phase: 'complete',
-    result: ready ? 'success' : 'incomplete',
+  try {
+    const registration = await raceTimeout(
+      deps.registerDevice(pushToken),
+      Math.min(NOTIFICATION_DEVICE_WRITE_TIMEOUT_MS, remainingMs()),
+      'Device registration timed out',
+    );
+    registered = Boolean(registration?.registered);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'Device registration failed';
+    return finalizeAttempt({
+      permissionStatus: permissionAfterToken,
+      deviceUuidPresent,
+      hasPushToken: Boolean(pushToken),
+      deviceRegistered: false,
+      supabaseConfigured,
+      projectIdConfigured,
+      isExpoGo,
+      forceResult: /timed out/i.test(detail) ? 'timeout' : 'error',
+      detail,
+    });
+  }
+
+  return finalizeAttempt({
     permissionStatus: permissionAfterToken,
     deviceUuidPresent,
     hasPushToken: Boolean(pushToken),
     deviceRegistered: registered,
-    detail: ready
-      ? undefined
-      : !pushToken
-        ? 'Push token missing'
-        : !registered
-          ? 'Device not registered'
-          : 'Setup incomplete',
+    supabaseConfigured,
+    projectIdConfigured,
+    isExpoGo,
   });
-
-  return toAttemptResult(result, permissionAfterToken);
 }
 
-function toAttemptResult(
-  diagnostic: NotificationSetupDiagnostic,
-  permissionStatus: NotificationPermissionStatus,
-): NotificationSetupAttemptResult {
+function finalizeAttempt(input: {
+  permissionStatus: NotificationPermissionStatus;
+  deviceUuidPresent: boolean;
+  hasPushToken: boolean;
+  deviceRegistered: boolean;
+  supabaseConfigured: boolean;
+  projectIdConfigured: boolean;
+  isExpoGo: boolean;
+  forceResult?: NotificationSetupResultKind;
+  detail?: string;
+}): NotificationSetupAttemptResult {
+  const evaluation = evaluateNotificationSetupSuccess({
+    permissionStatus: input.permissionStatus,
+    deviceUuidPresent: input.deviceUuidPresent,
+    hasPushToken: input.hasPushToken,
+    deviceRegistered: input.deviceRegistered,
+    supabaseConfigured: input.supabaseConfigured,
+    projectIdConfigured: input.projectIdConfigured,
+    isExpoGo: input.isExpoGo,
+  });
+
+  let result: NotificationSetupResultKind = evaluation.result;
+  let detail = input.detail ?? evaluation.detail;
+
+  if (input.forceResult) {
+    // Forced timeout/error never becomes success — even if fields look ready.
+    result = input.forceResult === 'success' ? evaluation.result : input.forceResult;
+    if (result === 'success' && !evaluation.deliveryReady) {
+      result = 'incomplete';
+      detail = evaluation.detail ?? 'Delivery not ready';
+    }
+  }
+
+  // Absolute contract: success requires deliveryReady.
+  if (result === 'success' && !evaluation.deliveryReady) {
+    result = 'incomplete';
+    detail = evaluation.detail ?? 'Delivery not ready';
+  }
+
+  const diagnostic = recordNotificationSetupDiagnostic({
+    phase: 'complete',
+    result,
+    permissionStatus: input.permissionStatus,
+    deviceUuidPresent: input.deviceUuidPresent,
+    hasPushToken: input.hasPushToken,
+    deviceRegistered: input.deviceRegistered,
+    detail,
+  });
+
   return {
-    permissionGranted: permissionStatus === 'granted',
-    permissionStatus,
+    permissionGranted: input.permissionStatus === 'granted',
+    permissionStatus: input.permissionStatus,
     registered: diagnostic.deviceRegistered,
     hasPushToken: diagnostic.hasPushToken,
     phase: diagnostic.phase,

@@ -20,10 +20,12 @@ import {
 import { getSupabaseClient, isSupabaseConfigured } from '@/data/notifications/supabaseClient';
 import type { DeviceRegistrationResult, NotificationPreferences } from '@/data/notifications/types';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '@/data/notifications/types';
+import { isExpoGoClient } from '@/data/release/installedAppVersion';
 import { getOrCreateDeviceId } from '@/services/notifications/deviceIdentity';
 import {
   getExistingExpoPushToken,
   getNotificationPermissionStatus,
+  hasExpoProjectIdConfigured,
   registerForPushNotifications,
 } from '@/services/notifications/notificationService';
 
@@ -337,8 +339,8 @@ export async function ensureNotificationReady(
     { requestPermission: options.requestPermission },
     {
       getPermissionStatus: getNotificationPermissionStatus,
-      requestPermissionAndToken: registerForPushNotifications,
-      getExistingToken: getExistingExpoPushToken,
+      requestPermissionAndToken: (budget) => registerForPushNotifications(budget),
+      getExistingToken: (budget) => getExistingExpoPushToken(budget),
       registerDevice: async (expoPushToken) =>
         registerDeviceWithBackend({
           requestPermission: false,
@@ -352,6 +354,9 @@ export async function ensureNotificationReady(
           return false;
         }
       },
+      isSupabaseConfigured,
+      hasProjectIdConfigured: hasExpoProjectIdConfigured,
+      isExpoGo: isExpoGoClient,
     },
   );
 

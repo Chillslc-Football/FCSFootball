@@ -271,22 +271,30 @@ export default function FavoritesScreen() {
             accessibilityLabel="Open FCS Top 25 scores"
             onPress={() => openScoresWithFilter('fcs-top-25')}
             style={({ pressed }) => [styles.quickLink, pressed && styles.quickLinkPressed]}>
-            <Ionicons name="trophy-outline" size={18} color={colors.primary} />
-            <Text style={styles.quickLinkText} numberOfLines={1}>
+            <View style={styles.quickLinkIconSlot}>
+              <Ionicons name="trophy-outline" size={18} color={colors.primary} />
+            </View>
+            <Text style={styles.quickLinkText} numberOfLines={1} ellipsizeMode="tail">
               FCS Top 25
             </Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+            <View style={styles.quickLinkChevronSlot}>
+              <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+            </View>
           </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Open FCS vs FBS scores"
             onPress={() => openScoresWithFilter('fcs-vs-fbs')}
             style={({ pressed }) => [styles.quickLink, pressed && styles.quickLinkPressed]}>
-            <Ionicons name="swap-horizontal-outline" size={18} color={colors.primary} />
-            <Text style={styles.quickLinkText} numberOfLines={1}>
+            <View style={styles.quickLinkIconSlot}>
+              <Ionicons name="swap-horizontal-outline" size={18} color={colors.primary} />
+            </View>
+            <Text style={styles.quickLinkText} numberOfLines={1} ellipsizeMode="tail">
               FCS vs FBS
             </Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+            <View style={styles.quickLinkChevronSlot}>
+              <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+            </View>
           </Pressable>
         </View>
       </View>
@@ -418,20 +426,34 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
     alignItems: 'center',
-    justifyContent: 'center',
     gap: spacing.xs,
     minHeight: 48,
+    minWidth: 0,
   },
   quickLinkPressed: {
     opacity: 0.85,
     backgroundColor: colors.surfaceElevated,
   },
+  quickLinkIconSlot: {
+    width: 18,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickLinkChevronSlot: {
+    width: 18,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   quickLinkText: {
     ...typography.body,
     fontWeight: '700',
     color: colors.text,
-    textAlign: 'center',
+    textAlign: 'left',
+    flex: 1,
     flexShrink: 1,
+    minWidth: 0,
   },
   newsLoadingBox: {
     paddingVertical: spacing.lg,
