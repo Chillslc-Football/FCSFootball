@@ -3,22 +3,30 @@ import { AppState, Linking } from 'react-native';
 
 import {
   ensureNotificationReady,
+  fetchRemoteNotificationPreferencesReadOnly,
   loadLocalDesiredPreferencesSnapshot,
-  NOTIFICATION_INIT_TIMEOUT_MS,
-  reconcileRemoteNotificationPreferences,
   saveNotificationPreferences,
   syncPushTokenIfPermitted,
   withTimeout,
 } from '@/data/notifications/deviceRegistration';
+import { probeNotificationDeliveryHealth } from '@/data/notifications/notificationDeliveryHealth';
 import {
   reconcileDeliveryAfterSetupSettle,
   shouldApplyDeliveryRefresh,
 } from '@/data/notifications/notificationDeliveryRefresh';
 import { cacheNotificationPreferences } from '@/data/notifications/notificationPreferencesStorage';
-import { isNotificationDeliveryReady } from '@/data/notifications/notificationEffectiveState';
+import {
+  isNotificationDeliveryReady,
+  reconcileNotificationPreferencesSnapshot,
+} from '@/data/notifications/notificationEffectiveState';
+import {
+  NOTIFICATION_STARTUP_SYNC_WAIT_MS,
+  waitForNotificationStartupSync,
+} from '@/data/notifications/notificationStartupSync';
 import {
   getNotificationUserStatusView,
   resolveNotificationUserStatus,
+  type NotificationDeliveryCheckPhase,
 } from '@/data/notifications/notificationUserStatus';
 import type { NotificationPermissionStatus, NotificationPreferences } from '@/data/notifications/types';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '@/data/notifications/types';
@@ -32,6 +40,8 @@ export function useNotificationPreferences() {
     useState<NotificationPermissionStatus>('undetermined');
   const [deviceRegistered, setDeviceRegistered] = useState(false);
   const [hasPushToken, setHasPushToken] = useState(false);
+  const [deliveryCheckPhase, setDeliveryCheckPhase] =
+    useState<NotificationDeliveryCheckPhase>('checking');
   const [loaded, setLoaded] = useState(false);
   const [enablingNotifications, setEnablingNotifications] = useState(false);
   const [retryingSetup, setRetryingSetup] = useState(false);
@@ -42,7 +52,7 @@ export function useNotificationPreferences() {
   /** Monotonic token so a stale reconcile cannot overwrite a newer local toggle. */
   const preferencesEpochRef = useRef(0);
   const mountedRef = useRef(true);
-  /** Blocks AppState delivery refresh until first local snapshot + reconcile attempt finish. */
+  /** Blocks AppState soft refresh until cold-start health probe has settled. */
   const initialHydrationSettledRef = useRef(false);
   const hydrationGenerationRef = useRef(0);
   const localUpdatedAtRef = useRef(0);
@@ -94,11 +104,15 @@ export function useNotificationPreferences() {
     const generation = ++hydrationGenerationRef.current;
     const epochAtStart = preferencesEpochRef.current;
     initialHydrationSettledRef.current = false;
+    setDeliveryCheckPhase('checking');
+
+    const isCurrentGeneration = () =>
+      mountedRef.current && generation === hydrationGenerationRef.current;
 
     try {
-      // 1) Local cache / complete defaults — one coherent snapshot for first toggle paint.
+      // 1) Local preference snapshot only — no register_device / sync writes.
       const local = await loadLocalDesiredPreferencesSnapshot();
-      if (!mountedRef.current || generation !== hydrationGenerationRef.current) return;
+      if (!isCurrentGeneration()) return;
 
       localUpdatedAtRef.current = local.updatedAt;
       if (epochAtStart === preferencesEpochRef.current) {
@@ -107,65 +121,85 @@ export function useNotificationPreferences() {
       }
       setLoaded(true);
 
-      // Permission for status card — independent of preference toggles.
+      // Denied is authoritative immediately (not a false "need attention").
       try {
         const status = await getNotificationPermissionStatus();
-        if (mountedRef.current && generation === hydrationGenerationRef.current) {
-          setPermissionStatus(status);
+        if (!isCurrentGeneration()) return;
+        if (status === 'denied') {
+          applyDeliverySnapshot({
+            permissionStatus: 'denied',
+            deviceRegistered: false,
+            hasPushToken: false,
+          });
+          setDeliveryCheckPhase('settled');
+          return;
         }
       } catch {
-        // Keep undetermined.
+        // Stay checking until read-only probe.
       }
 
-      // 2) Remote reconcile asynchronously; never expose a partial merge.
-      const reconciled = await withTimeout(
-        reconcileRemoteNotificationPreferences({
-          preferences: local.preferences,
-          updatedAt: local.updatedAt,
-        }),
-        NOTIFICATION_INIT_TIMEOUT_MS,
-      );
+      // 2) Wait for NotificationBootstrap sole cold-start writer, then probe read-only.
+      await withTimeout(waitForNotificationStartupSync(), NOTIFICATION_STARTUP_SYNC_WAIT_MS);
+      if (!isCurrentGeneration()) return;
 
-      if (!mountedRef.current || generation !== hydrationGenerationRef.current) return;
-
-      if (reconciled) {
-        applyDeliverySnapshot(reconciled.delivery);
+      // Best-effort remote prefs without register_device (device row from Bootstrap).
+      try {
+        const remote = await fetchRemoteNotificationPreferencesReadOnly();
         if (
-          reconciled.source === 'remote' &&
+          remote &&
+          isCurrentGeneration() &&
           epochAtStart === preferencesEpochRef.current
         ) {
-          localUpdatedAtRef.current = reconciled.updatedAt;
-          preferencesRef.current = reconciled.preferences;
-          setPreferences(reconciled.preferences);
-        }
-      } else {
-        // Timed out — still refresh delivery so Settings is not stuck Inactive forever.
-        console.warn(
-          '[useNotificationPreferences] remote reconcile timed out; refreshing delivery only',
-        );
-        try {
-          const delivery = await syncPushTokenIfPermitted();
-          if (mountedRef.current && generation === hydrationGenerationRef.current) {
-            applyDeliverySnapshot(delivery);
+          const reconciled = reconcileNotificationPreferencesSnapshot({
+            local: local.preferences,
+            localUpdatedAt: local.updatedAt,
+            remote: remote.preferences,
+            remoteUpdatedAt: remote.updatedAtMs,
+          });
+          if (reconciled.source === 'remote') {
+            localUpdatedAtRef.current = remote.updatedAtMs;
+            preferencesRef.current = reconciled.preferences;
+            setPreferences(reconciled.preferences);
+            await cacheNotificationPreferences(reconciled.preferences, remote.updatedAtMs);
           }
-        } catch (error) {
-          console.warn('[useNotificationPreferences] delivery fallback failed:', error);
         }
+      } catch (error) {
+        console.warn('[useNotificationPreferences] read-only prefs hydrate failed:', error);
       }
+
+      if (!isCurrentGeneration()) return;
+
+      // 3) Read-only health (Diagnostics-style) — never syncPushTokenIfPermitted here.
+      const health = await probeNotificationDeliveryHealth();
+      if (!isCurrentGeneration()) return;
+      applyDeliverySnapshot(health);
+      setDeliveryCheckPhase('settled');
     } catch (error) {
       console.warn('[useNotificationPreferences] initialize failed:', error);
       if (mountedRef.current) {
-        // Ensure toggles still appear as one complete default/local snapshot.
         setLoaded(true);
         try {
-          const delivery = await syncPushTokenIfPermitted();
-          if (mountedRef.current) applyDeliverySnapshot(delivery);
+          const health = await probeNotificationDeliveryHealth();
+          if (mountedRef.current) {
+            applyDeliverySnapshot(health);
+            setDeliveryCheckPhase('settled');
+          }
         } catch {
           try {
             const status = await getNotificationPermissionStatus();
-            if (mountedRef.current) setPermissionStatus(status);
+            if (mountedRef.current) {
+              applyDeliverySnapshot({
+                permissionStatus: status,
+                deviceRegistered: false,
+                hasPushToken: false,
+              });
+              setDeliveryCheckPhase('settled');
+            }
           } catch {
-            if (mountedRef.current) setPermissionStatus('undetermined');
+            if (mountedRef.current) {
+              setPermissionStatus('undetermined');
+              setDeliveryCheckPhase('settled');
+            }
           }
         }
       }
@@ -177,20 +211,19 @@ export function useNotificationPreferences() {
   }, [applyDeliverySnapshot]);
 
   /**
-   * Soft refresh on AppState — never reloads desired preferences.
-   * Must not regress healthy Settings readiness after a flaky probe
-   * (e.g. returning from Notification Diagnostics).
+   * Soft refresh on AppState — read-only probe (no cold-start write race).
+   * Must not regress healthy → unhealthy on a flaky probe.
    */
   const refreshDeliveryStatus = useCallback(async () => {
     try {
-      const delivery = await syncPushTokenIfPermitted();
+      const delivery = await probeNotificationDeliveryHealth();
       applyDeliverySnapshot(delivery, { mode: 'soft' });
+      if (mountedRef.current) setDeliveryCheckPhase('settled');
     } catch (error) {
       console.warn('[useNotificationPreferences] delivery refresh failed:', error);
       try {
         const status = await getNotificationPermissionStatus();
         if (!mountedRef.current) return;
-        // Soft path: only apply permission when denied; otherwise keep readiness.
         applyDeliverySnapshot(
           {
             permissionStatus: status,
@@ -212,8 +245,6 @@ export function useNotificationPreferences() {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active' && initialHydrationSettledRef.current) {
-        // Returning from the system permission sheet must not rewrite switch values
-        // or race the initial preference hydration.
         void refreshDeliveryStatus();
       }
     });
@@ -226,11 +257,14 @@ export function useNotificationPreferences() {
     hasPushToken,
   });
 
-  const userStatus = resolveNotificationUserStatus({
-    permissionStatus,
-    deviceRegistered,
-    hasPushToken,
-  });
+  const userStatus = resolveNotificationUserStatus(
+    {
+      permissionStatus,
+      deviceRegistered,
+      hasPushToken,
+    },
+    { phase: deliveryCheckPhase },
+  );
   const userStatusView = getNotificationUserStatusView(userStatus);
 
   /**
@@ -248,17 +282,15 @@ export function useNotificationPreferences() {
 
       const updatedAt = Date.now();
       localUpdatedAtRef.current = updatedAt;
-      // Local persistence first (memory + AsyncStorage). Never block the switch on network.
       void cacheNotificationPreferences(next, updatedAt);
 
       const enabling = Object.values(patch).some((value) => value === true);
 
-      // Persist latest desired prefs; read from ref so rapid taps don't write a stale snapshot.
       void saveNotificationPreferences(preferencesRef.current).catch((error) => {
         console.warn('[useNotificationPreferences] remote preference save failed:', error);
       });
 
-      // Turning ON may improve delivery readiness in the background. Turning OFF never does this.
+      // Explicit user-driven write path (not cold start).
       if (enabling) {
         void ensureNotificationReady({ requestPermission: true })
           .then(async (ready) => {
@@ -275,6 +307,7 @@ export function useNotificationPreferences() {
             });
             if (!mountedRef.current) return;
             applyDeliverySnapshot(reconciled);
+            setDeliveryCheckPhase('settled');
           })
           .catch((error) => {
             console.warn('[useNotificationPreferences] readiness sync failed:', error);
@@ -302,7 +335,6 @@ export function useNotificationPreferences() {
           hasPushToken: ready.hasPushToken,
         };
 
-        // Late register_device success after setup race timeout: one bounded confirm.
         const reconciled = await reconcileDeliveryAfterSetupSettle({
           setupResult: ready.result,
           setupSnapshot,
@@ -312,6 +344,7 @@ export function useNotificationPreferences() {
         if (!mountedRef.current || attempt !== setupAttemptRef.current) return;
 
         applyDeliverySnapshot(reconciled);
+        setDeliveryCheckPhase('settled');
 
         if (ready.result !== 'success' && typeof __DEV__ !== 'undefined' && __DEV__) {
           console.warn('[useNotificationPreferences] setup attempt settled incomplete', {
@@ -333,6 +366,7 @@ export function useNotificationPreferences() {
             deviceRegistered: false,
             hasPushToken: false,
           });
+          setDeliveryCheckPhase('settled');
         } catch {
           // Keep prior delivery snapshot; spinner still clears in finally.
         }
@@ -349,20 +383,29 @@ export function useNotificationPreferences() {
     [applyDeliverySnapshot],
   );
 
-  /** Explicit user action — does not run just because Settings opened. */
   const enableNotifications = useCallback(async () => {
     await runBoundedSetupAttempt('enable');
   }, [runBoundedSetupAttempt]);
 
-  /** Retry registration/token attach when permission is already granted. */
   const retryNotificationSetup = useCallback(async () => {
     await runBoundedSetupAttempt('retry');
   }, [runBoundedSetupAttempt]);
 
   const openSystemSettings = useCallback(async () => {
     await Linking.openSettings();
-    setPermissionStatus(await getNotificationPermissionStatus());
-  }, []);
+    const status = await getNotificationPermissionStatus();
+    if (!mountedRef.current) return;
+    if (status === 'denied') {
+      applyDeliverySnapshot({
+        permissionStatus: 'denied',
+        deviceRegistered: false,
+        hasPushToken: false,
+      });
+      setDeliveryCheckPhase('settled');
+      return;
+    }
+    setPermissionStatus(status);
+  }, [applyDeliverySnapshot]);
 
   return {
     /** Saved / desired preferences (switch values). Independent of Delivery readiness. */
@@ -371,6 +414,7 @@ export function useNotificationPreferences() {
     deviceRegistered,
     hasPushToken,
     deliveryReady,
+    deliveryCheckPhase,
     userStatus,
     userStatusView,
     loaded,

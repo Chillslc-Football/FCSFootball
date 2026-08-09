@@ -210,16 +210,15 @@ export async function loadLocalDesiredPreferencesSnapshot(): Promise<Notificatio
   };
 }
 
-/** Fetch remote prefs as one complete normalized object. Does not merge into cache. */
-export async function fetchRemoteNotificationPreferences(): Promise<RemoteNotificationPreferences | null> {
+/**
+ * Read-only prefs fetch — never calls register_device.
+ * Used by Settings cold start after Bootstrap has performed startup registration.
+ */
+export async function fetchRemoteNotificationPreferencesReadOnly(): Promise<RemoteNotificationPreferences | null> {
   if (!isSupabaseConfigured()) return null;
 
   const supabase = getSupabaseClient();
   if (!supabase) return null;
-
-  // Preferences RPCs require a device row. Register without prompting.
-  const registration = await registerDeviceWithBackend({ requestPermission: false });
-  if (!registration?.registered) return null;
 
   const deviceUuid = await getOrCreateDeviceId();
   const { data, error } = await supabase.rpc('get_notification_preferences', {
@@ -232,6 +231,17 @@ export async function fetchRemoteNotificationPreferences(): Promise<RemoteNotifi
   return parseNotificationPreferencesRecord(
     row && typeof row === 'object' ? (row as Record<string, unknown>) : null,
   );
+}
+
+/** Fetch remote prefs as one complete normalized object. Does not merge into cache. */
+export async function fetchRemoteNotificationPreferences(): Promise<RemoteNotificationPreferences | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  // Preferences RPCs require a device row. Register without prompting.
+  const registration = await registerDeviceWithBackend({ requestPermission: false });
+  if (!registration?.registered) return null;
+
+  return fetchRemoteNotificationPreferencesReadOnly();
 }
 
 /**

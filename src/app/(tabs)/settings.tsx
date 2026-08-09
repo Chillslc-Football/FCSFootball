@@ -38,6 +38,10 @@ export default function SettingsScreen() {
           <Text style={styles.statusTitle}>{userStatusView.title}</Text>
           <Text style={styles.statusCopy}>{userStatusView.supportingCopy}</Text>
 
+          {userStatusView.status === 'checking' ? (
+            <ActivityIndicator color={colors.primary} style={styles.statusSpinner} />
+          ) : null}
+
           {userStatusView.primaryAction === 'enable' ? (
             <Pressable
               accessibilityRole="button"
@@ -305,6 +309,10 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     lineHeight: 18,
+  },
+  statusSpinner: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
   },
   noteText: {
     ...typography.caption,

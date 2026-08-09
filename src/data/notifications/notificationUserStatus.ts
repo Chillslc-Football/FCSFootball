@@ -4,6 +4,7 @@ import type { NotificationPermissionStatus } from '@/data/notifications/types';
 
 /** User-facing Settings status — never expose "Delivery Inactive". */
 export type NotificationUserStatus =
+  | 'checking'
   | 'healthy'
   | 'permission_denied'
   | 'permission_undetermined'
@@ -15,6 +16,8 @@ export type NotificationUserStatusView = {
   supportingCopy: string;
   primaryAction: 'none' | 'enable' | 'open_settings' | 'retry';
 };
+
+export type NotificationDeliveryCheckPhase = 'checking' | 'settled';
 
 export type NotificationDiagnosticsSnapshot = NotificationDeliverySnapshot & {
   backendPrefsLoaded: boolean;
@@ -34,13 +37,24 @@ export type NotificationDiagnosticsSnapshot = NotificationDeliverySnapshot & {
 /**
  * Map technical readiness to a simple Settings state.
  * Desired preference switches remain independent of this status.
+ *
+ * While phase is `checking`, temporary false token/registration defaults must NOT
+ * become needs_attention. Denied permission is always authoritative.
  */
 export function resolveNotificationUserStatus(
   snapshot: NotificationDeliverySnapshot,
+  options?: { phase?: NotificationDeliveryCheckPhase },
 ): NotificationUserStatus {
+  const phase = options?.phase ?? 'settled';
+
   if (snapshot.permissionStatus === 'denied') {
     return 'permission_denied';
   }
+
+  if (phase === 'checking') {
+    return 'checking';
+  }
+
   if (snapshot.permissionStatus === 'undetermined') {
     return 'permission_undetermined';
   }
@@ -55,6 +69,13 @@ export function getNotificationUserStatusView(
   status: NotificationUserStatus,
 ): NotificationUserStatusView {
   switch (status) {
+    case 'checking':
+      return {
+        status,
+        title: 'Checking notification status…',
+        supportingCopy: 'Confirming notification delivery on this device.',
+        primaryAction: 'none',
+      };
     case 'healthy':
       return {
         status,

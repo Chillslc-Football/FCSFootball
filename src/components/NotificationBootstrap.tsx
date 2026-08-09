@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 
 import { syncPushTokenIfPermitted } from '@/data/notifications/deviceRegistration';
+import { runNotificationStartupSync } from '@/data/notifications/notificationStartupSync';
 import { debugLogSupabaseConfig } from '@/data/notifications/supabaseClient';
 import {
   addNotificationResponseListener,
@@ -10,6 +11,10 @@ import {
   setupAndroidNotificationChannel,
 } from '@/services/notifications/notificationService';
 
+/**
+ * Sole automatic cold-start writer for push token + register_device.
+ * Settings must not duplicate this work for health display.
+ */
 export function NotificationBootstrap() {
   const router = useRouter();
 
@@ -18,9 +23,10 @@ export function NotificationBootstrap() {
     configureNotificationHandler();
     void setupAndroidNotificationChannel();
 
-    // Launch path: register device + attach Expo push token if permission already granted.
-    // Does not prompt for permission.
-    void syncPushTokenIfPermitted();
+    // One shared cold-start sync — Settings waits, then probes read-only.
+    void runNotificationStartupSync(async () => {
+      await syncPushTokenIfPermitted();
+    });
 
     const tokenSubscription = addPushTokenListener(() => {
       // Native push token rotated — refresh Expo token when already permitted.

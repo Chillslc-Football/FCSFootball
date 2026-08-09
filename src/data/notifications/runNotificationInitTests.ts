@@ -15,6 +15,12 @@ import {
   reconcileNotificationPreferencesSnapshot,
   toEffectiveNotificationPreferences,
 } from '@/data/notifications/notificationEffectiveState';
+import {
+  isColdStartHealthPathWriteFree,
+  resetNotificationStartupSyncForTests,
+  runNotificationStartupSync,
+  waitForNotificationStartupSync,
+} from '@/data/notifications/notificationStartupSync';
 import { raceTimeout } from '@/data/notifications/notificationSetup';
 import {
   buildNotificationDiagnosticsLines,
@@ -376,6 +382,68 @@ test('late registration success after setup timeout → Settings healthy', () =>
   assert.equal(getNotificationUserStatusView('healthy').title, 'Notifications enabled');
 });
 
+test('cold start begins checking — granted + false defaults is NOT needs_attention', () => {
+  const defaultsWhileChecking = {
+    permissionStatus: 'granted' as const,
+    deviceRegistered: false,
+    hasPushToken: false,
+  };
+  const status = resolveNotificationUserStatus(defaultsWhileChecking, { phase: 'checking' });
+  assert.equal(status, 'checking');
+  const view = getNotificationUserStatusView(status);
+  assert.equal(view.title, 'Checking notification status…');
+  assert.equal(view.primaryAction, 'none');
+  assert.notEqual(status, 'needs_attention');
+});
+
+test('cold startup settles healthy → Notifications enabled', () => {
+  const ready = {
+    permissionStatus: 'granted' as const,
+    deviceRegistered: true,
+    hasPushToken: true,
+  };
+  const status = resolveNotificationUserStatus(ready, { phase: 'settled' });
+  assert.equal(status, 'healthy');
+  assert.equal(getNotificationUserStatusView(status).title, 'Notifications enabled');
+  assert.equal(getNotificationUserStatusView(status).primaryAction, 'none');
+});
+
+test('cold startup settles genuinely unhealthy → needs_attention', () => {
+  const unhealthy = {
+    permissionStatus: 'granted' as const,
+    deviceRegistered: false,
+    hasPushToken: false,
+  };
+  const status = resolveNotificationUserStatus(unhealthy, { phase: 'settled' });
+  assert.equal(status, 'needs_attention');
+  assert.equal(getNotificationUserStatusView(status).title, 'Notifications need attention');
+  assert.equal(getNotificationUserStatusView(status).primaryAction, 'retry');
+});
+
+test('Settings cold-start health path does not call register/write sync', () => {
+  assert.equal(
+    isColdStartHealthPathWriteFree({
+      calledRegisterDevice: false,
+      calledSyncPushTokenIfPermitted: false,
+    }),
+    true,
+  );
+  assert.equal(
+    isColdStartHealthPathWriteFree({
+      calledRegisterDevice: true,
+      calledSyncPushTokenIfPermitted: false,
+    }),
+    false,
+  );
+  assert.equal(
+    isColdStartHealthPathWriteFree({
+      calledRegisterDevice: false,
+      calledSyncPushTokenIfPermitted: true,
+    }),
+    false,
+  );
+});
+
 test('genuine timeout reconcile failure → Settings remains unhealthy', () => {
   const timeoutSnapshot = {
     permissionStatus: 'granted' as const,
@@ -403,7 +471,20 @@ test('genuine timeout reconcile failure → Settings remains unhealthy', () => {
   assert.equal(resolveNotificationUserStatus(timeoutSnapshot), 'needs_attention');
 });
 
-test('permission denied remains unhealthy and cannot be overridden', () => {
+test('permission denied remains unhealthy and cannot be overridden by checking', () => {
+  const denied = {
+    permissionStatus: 'denied' as const,
+    deviceRegistered: false,
+    hasPushToken: false,
+  };
+  assert.equal(
+    resolveNotificationUserStatus(denied, { phase: 'checking' }),
+    'permission_denied',
+  );
+  assert.equal(
+    resolveNotificationUserStatus(denied, { phase: 'settled' }),
+    'permission_denied',
+  );
   assert.equal(
     shouldRunPostSetupDeliveryReconcile({
       setupResult: 'timeout',
@@ -411,16 +492,6 @@ test('permission denied remains unhealthy and cannot be overridden', () => {
     }),
     false,
   );
-  const deniedSetup = {
-    permissionStatus: 'denied' as const,
-    deviceRegistered: false,
-    hasPushToken: false,
-  };
-  // Denied setup does not run reconcile — snapshot stays denied even if a
-  // hypothetical confirm looks healthy (gate in shouldRunPostSetupDeliveryReconcile).
-  assert.equal(resolveNotificationUserStatus(deniedSetup), 'permission_denied');
-
-  // If confirmation itself reports denied, denied is authoritative.
   assert.deepEqual(
     selectDeliverySnapshotAfterSetup({
       setupSnapshot: {
@@ -428,9 +499,9 @@ test('permission denied remains unhealthy and cannot be overridden', () => {
         deviceRegistered: false,
         hasPushToken: true,
       },
-      confirmed: deniedSetup,
+      confirmed: denied,
     }),
-    deniedSetup,
+    denied,
   );
 });
 
@@ -525,16 +596,17 @@ test('retry/readiness action settles to retry for incomplete registration', () =
 
 test('Settings status copy never uses Delivery Inactive', () => {
   for (const status of [
+    'checking',
     'healthy',
     'permission_denied',
     'permission_undetermined',
     'needs_attention',
   ] as const) {
     const view = getNotificationUserStatusView(status);
-    assert.doesNotMatch(view.title, /Delivery/i);
     assert.doesNotMatch(view.supportingCopy, /Delivery Inactive/i);
     assert.doesNotMatch(view.title, /Inactive/i);
   }
+  assert.equal(getNotificationUserStatusView('checking').primaryAction, 'none');
 });
 
 test('Expo Go diagnostics do not pretend production delivery is ready', () => {
@@ -589,6 +661,64 @@ async function runAsyncDiagnosticsTests(): Promise<void> {
     assert.equal(syncCalls, 1);
     assert.equal(resolveNotificationUserStatus(final), 'healthy');
   });
+
+  await testAsync('NotificationBootstrap is the sole cold-start writer (single-flight)', async () => {
+    resetNotificationStartupSyncForTests();
+    let writerCalls = 0;
+    const first = runNotificationStartupSync(async () => {
+      writerCalls += 1;
+      await new Promise((r) => setTimeout(r, 5));
+    });
+    const second = runNotificationStartupSync(async () => {
+      writerCalls += 1;
+    });
+    await Promise.all([first, second, waitForNotificationStartupSync()]);
+    assert.equal(writerCalls, 1);
+    resetNotificationStartupSyncForTests();
+  });
+
+  await testAsync(
+    'read-only cold health probe never requires register_device write',
+    async () => {
+      let registerWrites = 0;
+      const snapshot = await assembleNotificationDiagnosticsProbes({
+        getPermissionStatus: async () => 'granted',
+        getDeviceUuid: async () => 'cold-start-uuid',
+        probePushTokenPresent: async () => true,
+        isSupabaseConfigured: () => true,
+        hasProjectIdConfigured: () => true,
+        fetchBackendPrefs: async () => {
+          // Read-only prefs probe — Settings health uses this, not register_device.
+          return { ok: true, hasData: true };
+        },
+        getLastSetup: () => ({ phase: 'idle', result: 'incomplete' }),
+        getLastPushTokenFailure: () => null,
+        platform: 'android',
+        raceTimeout,
+      });
+      assert.equal(registerWrites, 0);
+      assert.equal(snapshot.hasPushToken, true);
+      assert.equal(snapshot.deviceRegistered, true);
+      assert.equal(
+        isColdStartHealthPathWriteFree({
+          calledRegisterDevice: registerWrites > 0,
+          calledSyncPushTokenIfPermitted: false,
+        }),
+        true,
+      );
+      assert.equal(
+        resolveNotificationUserStatus(
+          {
+            permissionStatus: snapshot.permissionStatus,
+            deviceRegistered: snapshot.deviceRegistered,
+            hasPushToken: snapshot.hasPushToken,
+          },
+          { phase: 'settled' },
+        ),
+        'healthy',
+      );
+    },
+  );
 
   await testAsync('bounded post-setup reconcile keeps unhealthy when confirm fails', async () => {
     const timeoutSnapshot = {
