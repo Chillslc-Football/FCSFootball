@@ -15,37 +15,43 @@ export const LAYOUT_COLUMNS = {
   scoreValue: 40,
   /** Compact kickoff date/time meta on team schedule rows. */
   scheduleMeta: 96,
-  /** Home Quick Links: fixed icon / chevron; text takes remaining width. */
-  quickLinkIcon: 18,
+  /**
+   * Home Quick Links (icon-free): trailing chevron only.
+   * Matches today.tsx: paddingLeft sm, paddingRight xs, gap xs, border 1.
+   */
   quickLinkChevron: 18,
   quickLinkGap: 4,
-  quickLinkPaddingH: 8,
+  quickLinkPaddingLeft: 8,
+  quickLinkPaddingRight: 4,
+  quickLinkBorderH: 2,
   quickLinkRowGap: 8,
-  /** Matches Screen content `paddingHorizontal: spacing.lg`. */
+  /** Matches Screen content `padding: spacing.lg` horizontal. */
   quickLinkScreenPaddingH: 24,
 } as const;
 
-/** Approximate average glyph width for bold body text at default font scale. */
-const QUICK_LINK_CHAR_WIDTH_ESTIMATE = 8.2;
+/**
+ * Conservative average glyph width for bold 16pt body on iOS (SF Pro).
+ * Used only for geometry contracts — not runtime measurement.
+ */
+const QUICK_LINK_CHAR_WIDTH_ESTIMATE = 9.5;
 
 /**
  * Text width available inside one Quick Link card for the label.
- * icon + chevron are non-shrinking; text is flexible.
+ * Chevron is non-shrinking; text is flexible. No leading icon.
  */
-export function quickLinkLabelMaxWidth(cardInnerWidth: number): number {
+export function quickLinkLabelMaxWidth(cardOuterWidth: number): number {
   const chrome =
-    LAYOUT_COLUMNS.quickLinkIcon +
-    LAYOUT_COLUMNS.quickLinkChevron +
-    LAYOUT_COLUMNS.quickLinkGap * 2 +
-    LAYOUT_COLUMNS.quickLinkPaddingH * 2;
-  return Math.max(0, cardInnerWidth - chrome);
+    LAYOUT_COLUMNS.quickLinkBorderH +
+    LAYOUT_COLUMNS.quickLinkPaddingLeft +
+    LAYOUT_COLUMNS.quickLinkPaddingRight +
+    LAYOUT_COLUMNS.quickLinkGap +
+    LAYOUT_COLUMNS.quickLinkChevron;
+  return Math.max(0, cardOuterWidth - chrome);
 }
 
-/** Card width for one of two equal Quick Links in a horizontal row. */
+/** Card outer width for one of two equal Quick Links in a horizontal row. */
 export function quickLinkCardWidth(screenWidth: number): number {
-  const content =
-    screenWidth -
-    LAYOUT_COLUMNS.quickLinkScreenPaddingH * 2;
+  const content = screenWidth - LAYOUT_COLUMNS.quickLinkScreenPaddingH * 2;
   return (content - LAYOUT_COLUMNS.quickLinkRowGap) / 2;
 }
 
@@ -58,7 +64,7 @@ export function quickLinkLabelFitsAtWidth(label: string, screenWidth: number): b
 /** Alias used by Polls / Top25TeamCard. */
 export const POLL_RANK_COLUMN_WIDTH = LAYOUT_COLUMNS.pollRank;
 
-/** Alias used by Conference standings header + rows. */
+/** Alias used by Conference standings header + data rows. */
 export const STANDINGS_COLUMN_WIDTHS = {
   conf: LAYOUT_COLUMNS.standingsConf,
   overall: LAYOUT_COLUMNS.standingsOverall,

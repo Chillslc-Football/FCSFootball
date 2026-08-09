@@ -161,8 +161,12 @@ async function main(): Promise<void> {
     );
   });
 
-  await test('Quick Links preserve full labels at normal phone widths', () => {
+  await test('Quick Links preserve full labels at normal phone widths (icon-free)', () => {
     const labels = ['FCS Top 25', 'FCS vs FBS'] as const;
+    assert.equal(LAYOUT_COLUMNS.quickLinkScreenPaddingH, 24, 'Screen padding is spacing.lg');
+    // No leading icon slot in geometry.
+    assert.equal('quickLinkIcon' in LAYOUT_COLUMNS, false);
+
     for (const width of [360, 390, 430]) {
       for (const label of labels) {
         assert.equal(
@@ -171,20 +175,25 @@ async function main(): Promise<void> {
           `"${label}" should fit at ${width}pt`,
         );
       }
-      // Geometry: icon + chevron never shrink; text gets remaining card width.
       const card = quickLinkCardWidth(width);
       const textMax = quickLinkLabelMaxWidth(card);
       const chrome =
-        LAYOUT_COLUMNS.quickLinkIcon +
-        LAYOUT_COLUMNS.quickLinkChevron +
-        LAYOUT_COLUMNS.quickLinkGap * 2 +
-        LAYOUT_COLUMNS.quickLinkPaddingH * 2;
+        LAYOUT_COLUMNS.quickLinkBorderH +
+        LAYOUT_COLUMNS.quickLinkPaddingLeft +
+        LAYOUT_COLUMNS.quickLinkPaddingRight +
+        LAYOUT_COLUMNS.quickLinkGap +
+        LAYOUT_COLUMNS.quickLinkChevron;
       assert.equal(textMax, card - chrome);
-      assert.ok(textMax > chrome, 'text slot must exceed fixed chrome at normal widths');
+      assert.ok(textMax >= 95, `text slot too narrow at ${width}: ${textMax}`);
     }
 
-    // Narrowest practical phone: may ellipsize, but text slot remains > 0.
-    assert.ok(quickLinkLabelMaxWidth(quickLinkCardWidth(320)) > 0);
+    // ~320: prefer full labels; graceful ellipsis only if font metrics demand it.
+    const narrowText = quickLinkLabelMaxWidth(quickLinkCardWidth(320));
+    assert.ok(narrowText > 0);
+    assert.ok(
+      quickLinkLabelFitsAtWidth('FCS Top 25', 320) || narrowText >= 90,
+      '320pt should keep nearly full label width',
+    );
   });
 
   console.log('\nAll responsive layout tests passed.');

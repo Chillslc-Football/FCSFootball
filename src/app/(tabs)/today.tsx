@@ -271,9 +271,6 @@ export default function FavoritesScreen() {
             accessibilityLabel="Open FCS Top 25 scores"
             onPress={() => openScoresWithFilter('fcs-top-25')}
             style={({ pressed }) => [styles.quickLink, pressed && styles.quickLinkPressed]}>
-            <View style={styles.quickLinkIconSlot}>
-              <Ionicons name="trophy-outline" size={18} color={colors.primary} />
-            </View>
             <Text style={styles.quickLinkText} numberOfLines={1} ellipsizeMode="tail">
               FCS Top 25
             </Text>
@@ -286,9 +283,6 @@ export default function FavoritesScreen() {
             accessibilityLabel="Open FCS vs FBS scores"
             onPress={() => openScoresWithFilter('fcs-vs-fbs')}
             style={({ pressed }) => [styles.quickLink, pressed && styles.quickLinkPressed]}>
-            <View style={styles.quickLinkIconSlot}>
-              <Ionicons name="swap-horizontal-outline" size={18} color={colors.primary} />
-            </View>
             <Text style={styles.quickLinkText} numberOfLines={1} ellipsizeMode="tail">
               FCS vs FBS
             </Text>
@@ -415,6 +409,7 @@ const styles = StyleSheet.create({
   quickLinksRow: {
     flexDirection: 'row',
     gap: spacing.sm,
+    minWidth: 0,
   },
   quickLink: {
     flex: 1,
@@ -424,7 +419,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primaryMuted,
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
+    paddingLeft: spacing.sm,
+    paddingRight: spacing.xs,
     alignItems: 'center',
     gap: spacing.xs,
     minHeight: 48,
@@ -434,14 +430,9 @@ const styles = StyleSheet.create({
     opacity: 0.85,
     backgroundColor: colors.surfaceElevated,
   },
-  quickLinkIconSlot: {
-    width: 18,
-    flexShrink: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   quickLinkChevronSlot: {
     width: 18,
+    flexGrow: 0,
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
@@ -451,8 +442,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
     textAlign: 'left',
-    flex: 1,
+    flexGrow: 1,
     flexShrink: 1,
+    flexBasis: 0,
     minWidth: 0,
   },
   newsLoadingBox: {

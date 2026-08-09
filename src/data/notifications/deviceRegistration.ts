@@ -171,7 +171,10 @@ export async function syncPushTokenIfPermitted(): Promise<{
   };
 }
 
-/** Snapshot used by Developer Notification Diagnostics (no secrets / no full token). */
+/**
+ * @deprecated Prefer collectNotificationDiagnosticsProbes — this wrapper is read-only
+ * and must not call syncPushTokenIfPermitted / register_device.
+ */
 export async function loadNotificationDiagnosticsSnapshot(): Promise<{
   permissionStatus: Awaited<ReturnType<typeof getNotificationPermissionStatus>>;
   deviceRegistered: boolean;
@@ -179,18 +182,16 @@ export async function loadNotificationDiagnosticsSnapshot(): Promise<{
   backendPrefsLoaded: boolean;
   supabaseConfigured: boolean;
 }> {
-  const supabaseConfigured = isSupabaseConfigured();
-  const delivery = await syncPushTokenIfPermitted();
-  let backendPrefsLoaded = false;
-  if (delivery.deviceRegistered) {
-    const remote = await fetchRemoteNotificationPreferences();
-    backendPrefsLoaded = Boolean(remote);
-  }
-
+  const { collectNotificationDiagnosticsProbes } = await import(
+    '@/data/notifications/notificationDiagnostics'
+  );
+  const probes = await collectNotificationDiagnosticsProbes();
   return {
-    ...delivery,
-    backendPrefsLoaded,
-    supabaseConfigured,
+    permissionStatus: probes.permissionStatus,
+    deviceRegistered: probes.deviceRegistered,
+    hasPushToken: probes.hasPushToken,
+    backendPrefsLoaded: probes.backendPrefsLoaded,
+    supabaseConfigured: probes.supabaseConfigured,
   };
 }
 

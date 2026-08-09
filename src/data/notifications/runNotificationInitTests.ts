@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import { shouldApplyDeliveryRefresh } from '@/data/notifications/notificationDeliveryRefresh';
+import { assembleNotificationDiagnosticsProbes } from '@/data/notifications/notificationDiagnosticsLogic';
 import {
   coalesceNotificationPreferences,
   isNotificationDeliveryReady,
@@ -8,6 +10,7 @@ import {
   reconcileNotificationPreferencesSnapshot,
   toEffectiveNotificationPreferences,
 } from '@/data/notifications/notificationEffectiveState';
+import { raceTimeout } from '@/data/notifications/notificationSetup';
 import {
   buildNotificationDiagnosticsLines,
   getNotificationUserStatusView,
@@ -258,6 +261,79 @@ test('user status: permission granted + registered + push token → healthy', ()
   assert.equal(getNotificationUserStatusView(status).primaryAction, 'none');
 });
 
+test('deliveryReady=true + stale lastSetupResult=incomplete → Notifications enabled', () => {
+  // Settings health uses current delivery only — lastSetup is diagnostics history.
+  const current = {
+    permissionStatus: 'granted' as const,
+    deviceRegistered: true,
+    hasPushToken: true,
+  };
+  assert.equal(isNotificationDeliveryReady(current), true);
+  assert.equal(resolveNotificationUserStatus(current), 'healthy');
+  assert.equal(getNotificationUserStatusView('healthy').title, 'Notifications enabled');
+
+  const lines = buildNotificationDiagnosticsLines({
+    ...current,
+    backendPrefsLoaded: true,
+    platform: 'android',
+    appEnvironment: 'installed_build',
+    supabaseConfigured: true,
+    lastSetupPhase: 'idle',
+    lastSetupResult: 'incomplete',
+  });
+  assert.ok(lines.some((line) => line === 'Delivery ready: yes'));
+  assert.ok(lines.some((line) => line === 'Last setup result: incomplete'));
+  assert.equal(resolveNotificationUserStatus(current), 'healthy');
+});
+
+test('soft delivery refresh does not regress healthy → unhealthy', () => {
+  const healthy = {
+    permissionStatus: 'granted' as const,
+    deviceRegistered: true,
+    hasPushToken: true,
+  };
+  const flaky = {
+    permissionStatus: 'granted' as const,
+    deviceRegistered: false,
+    hasPushToken: false,
+  };
+  assert.equal(
+    shouldApplyDeliveryRefresh({ previous: healthy, next: flaky, mode: 'soft' }),
+    false,
+  );
+  assert.equal(
+    shouldApplyDeliveryRefresh({ previous: healthy, next: flaky, mode: 'hard' }),
+    true,
+  );
+  assert.equal(
+    shouldApplyDeliveryRefresh({
+      previous: healthy,
+      next: { ...healthy, permissionStatus: 'denied' },
+      mode: 'soft',
+    }),
+    true,
+  );
+});
+
+test('actual token/registration failure still shows Notifications need attention', () => {
+  assert.equal(
+    resolveNotificationUserStatus({
+      permissionStatus: 'granted',
+      deviceRegistered: true,
+      hasPushToken: false,
+    }),
+    'needs_attention',
+  );
+  assert.equal(
+    resolveNotificationUserStatus({
+      permissionStatus: 'granted',
+      deviceRegistered: false,
+      hasPushToken: true,
+    }),
+    'needs_attention',
+  );
+});
+
 test('user status: permission denied → Notifications are off', () => {
   const status = resolveNotificationUserStatus({
     permissionStatus: 'denied',
@@ -360,4 +436,120 @@ test('Expo Go diagnostics do not pretend production delivery is ready', () => {
   assert.ok(lines.some((line) => line.includes('Expo Go')));
 });
 
-console.log('\nAll notification init tests passed.');
+async function testAsync(name: string, fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+    console.log(`ok  - ${name}`);
+  } catch (error) {
+    console.error(`fail - ${name}`);
+    throw error;
+  }
+}
+
+async function runAsyncDiagnosticsTests(): Promise<void> {
+  await testAsync('opening diagnostics does not mutate readiness / setup history', async () => {
+    let prefsCalls = 0;
+    const readinessBefore = {
+      permissionStatus: 'granted' as const,
+      deviceRegistered: true,
+      hasPushToken: true,
+    };
+    const setupBefore = {
+      phase: 'idle',
+      result: 'incomplete' as const,
+      detail: undefined as string | undefined,
+    };
+
+    const snapshot = await assembleNotificationDiagnosticsProbes({
+      getPermissionStatus: async () => 'granted',
+      getDeviceUuid: async () => 'diag-device-uuid',
+      probePushTokenPresent: async () => true,
+      isSupabaseConfigured: () => true,
+      hasProjectIdConfigured: () => true,
+      fetchBackendPrefs: async () => {
+        prefsCalls += 1;
+        return { ok: true, hasData: true };
+      },
+      getLastSetup: () => setupBefore,
+      getLastPushTokenFailure: () => null,
+      platform: 'android',
+      raceTimeout,
+    });
+
+    assert.equal(prefsCalls, 1);
+    assert.equal(snapshot.hasPushToken, true);
+    assert.equal(snapshot.deviceRegistered, true);
+    assert.equal(snapshot.lastSetupResult, 'incomplete');
+    assert.equal(snapshot.lastSetupPhase, 'idle');
+    // Historical incomplete + current healthy coexist in diagnostics output.
+    assert.equal(isNotificationDeliveryReady(readinessBefore), true);
+    assert.equal(resolveNotificationUserStatus(readinessBefore), 'healthy');
+    assert.deepEqual(setupBefore, {
+      phase: 'idle',
+      result: 'incomplete',
+      detail: undefined,
+    });
+  });
+
+  await testAsync('refreshing diagnostics stays read-only (prefs lookup only)', async () => {
+    let prefsCalls = 0;
+    const fetchBackendPrefs = async () => {
+      prefsCalls += 1;
+      return { ok: true, hasData: true };
+    };
+
+    const first = await assembleNotificationDiagnosticsProbes({
+      getPermissionStatus: async () => 'granted',
+      getDeviceUuid: async () => 'diag-device-uuid',
+      probePushTokenPresent: async () => true,
+      isSupabaseConfigured: () => true,
+      hasProjectIdConfigured: () => true,
+      fetchBackendPrefs,
+      getLastSetup: () => ({ phase: 'complete', result: 'success' }),
+      getLastPushTokenFailure: () => null,
+      platform: 'android',
+      raceTimeout,
+    });
+    const second = await assembleNotificationDiagnosticsProbes({
+      getPermissionStatus: async () => 'granted',
+      getDeviceUuid: async () => 'diag-device-uuid',
+      probePushTokenPresent: async () => true,
+      isSupabaseConfigured: () => true,
+      hasProjectIdConfigured: () => true,
+      fetchBackendPrefs,
+      getLastSetup: () => ({ phase: 'complete', result: 'success' }),
+      getLastPushTokenFailure: () => null,
+      platform: 'android',
+      raceTimeout,
+    });
+
+    assert.equal(first.deviceRegistered, true);
+    assert.equal(second.deviceRegistered, true);
+    assert.equal(prefsCalls, 2);
+    assert.equal(
+      shouldApplyDeliveryRefresh({
+        previous: {
+          permissionStatus: 'granted',
+          deviceRegistered: true,
+          hasPushToken: true,
+        },
+        next: {
+          permissionStatus: 'granted',
+          deviceRegistered: true,
+          hasPushToken: true,
+        },
+        mode: 'soft',
+      }),
+      true,
+    );
+  });
+}
+
+void runAsyncDiagnosticsTests()
+  .then(() => {
+    console.log('\nAll notification init tests passed.');
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });

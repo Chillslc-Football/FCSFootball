@@ -10,6 +10,7 @@ import {
   syncPushTokenIfPermitted,
   withTimeout,
 } from '@/data/notifications/deviceRegistration';
+import { shouldApplyDeliveryRefresh } from '@/data/notifications/notificationDeliveryRefresh';
 import { cacheNotificationPreferences } from '@/data/notifications/notificationPreferencesStorage';
 import { isNotificationDeliveryReady } from '@/data/notifications/notificationEffectiveState';
 import {
@@ -45,6 +46,11 @@ export function useNotificationPreferences() {
   /** Prevents duplicate concurrent Enable / Try Again attempts. */
   const setupInFlightRef = useRef(false);
   const setupAttemptRef = useRef(0);
+  const deliveryRef = useRef({
+    permissionStatus: 'undetermined' as NotificationPermissionStatus,
+    deviceRegistered: false,
+    hasPushToken: false,
+  });
 
   useEffect(() => {
     mountedRef.current = true;
@@ -54,12 +60,26 @@ export function useNotificationPreferences() {
   }, []);
 
   const applyDeliverySnapshot = useCallback(
-    (snapshot: {
-      permissionStatus: NotificationPermissionStatus;
-      deviceRegistered: boolean;
-      hasPushToken: boolean;
-    }) => {
+    (
+      snapshot: {
+        permissionStatus: NotificationPermissionStatus;
+        deviceRegistered: boolean;
+        hasPushToken: boolean;
+      },
+      options?: { mode?: 'soft' | 'hard' },
+    ) => {
       if (!mountedRef.current) return;
+      const mode = options?.mode ?? 'hard';
+      if (
+        !shouldApplyDeliveryRefresh({
+          previous: deliveryRef.current,
+          next: snapshot,
+          mode,
+        })
+      ) {
+        return;
+      }
+      deliveryRef.current = snapshot;
       setPermissionStatus(snapshot.permissionStatus);
       setDeviceRegistered(snapshot.deviceRegistered);
       setHasPushToken(snapshot.hasPushToken);
@@ -153,16 +173,29 @@ export function useNotificationPreferences() {
     }
   }, [applyDeliverySnapshot]);
 
-  /** Refresh permission/delivery only — never reloads desired preferences. */
+  /**
+   * Soft refresh on AppState — never reloads desired preferences.
+   * Must not regress healthy Settings readiness after a flaky probe
+   * (e.g. returning from Notification Diagnostics).
+   */
   const refreshDeliveryStatus = useCallback(async () => {
     try {
       const delivery = await syncPushTokenIfPermitted();
-      applyDeliverySnapshot(delivery);
+      applyDeliverySnapshot(delivery, { mode: 'soft' });
     } catch (error) {
       console.warn('[useNotificationPreferences] delivery refresh failed:', error);
       try {
         const status = await getNotificationPermissionStatus();
-        if (mountedRef.current) setPermissionStatus(status);
+        if (!mountedRef.current) return;
+        // Soft path: only apply permission when denied; otherwise keep readiness.
+        applyDeliverySnapshot(
+          {
+            permissionStatus: status,
+            deviceRegistered: deliveryRef.current.deviceRegistered,
+            hasPushToken: deliveryRef.current.hasPushToken,
+          },
+          { mode: 'soft' },
+        );
       } catch {
         // Keep prior status.
       }
