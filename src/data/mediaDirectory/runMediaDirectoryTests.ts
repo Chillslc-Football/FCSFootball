@@ -299,7 +299,7 @@ test('suggestion validation requires name, coverage, and at least one link', () 
     );
     assert.match(
       String(missingCoverage.fieldErrors['links.0.coverage'] ?? ''),
-      /Select coverage for Link 1/i,
+      /Select tags for Link 1/i,
     );
   }
 

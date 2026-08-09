@@ -264,7 +264,7 @@ export function validateMediaSuggestionInput(
     conferenceIds.length === 0 &&
     teamIds.length === 0
   ) {
-    const message = 'Choose at least one coverage tag.';
+    const message = 'Choose at least one tag.';
     fieldErrors.coverage = message;
     errors.push(message);
   }

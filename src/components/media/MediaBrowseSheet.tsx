@@ -108,12 +108,12 @@ export function MediaBrowseSheet({
       : screen === 'conferences'
         ? 'Select Conference'
         : isCoverage
-          ? 'Select Coverage'
+          ? 'Select Tags'
           : 'Browse Media';
   const teamOptionLabel = isCoverage ? 'Teams' : 'Team';
   const conferenceOptionLabel = isCoverage ? 'Conferences' : 'Conference';
   const selectedSectionTitle = isCoverage ? 'Selected Tags' : 'Selected Filters';
-  const dismissLabel = isCoverage ? 'Dismiss select coverage' : 'Dismiss browse media';
+  const dismissLabel = isCoverage ? 'Dismiss select tags' : 'Dismiss browse media';
 
   const renderTeam: ListRenderItem<MediaBrowseTeamOption> = ({ item, index }) => {
     const selected = selectedTeamIds.has(item.id);

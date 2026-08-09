@@ -637,10 +637,11 @@ export default function UpdateCreatorScreen() {
                     <Text style={styles.fieldError}>{fieldErrors[`links.${index}.platform`]}</Text>
                   ) : null}
 
-                  <Text style={styles.coverageLabel}>Coverage</Text>
+                  <Text style={styles.coverageLabel}>Tags</Text>
+                  <Text style={styles.hint}>Select all that describe this creator.</Text>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={`Select coverage for link ${index + 1}`}
+                    accessibilityLabel={`Select tags for link ${index + 1}`}
                     onPress={() => {
                       Keyboard.dismiss();
                       setCoverageEditorIndex(index);
@@ -656,7 +657,7 @@ export default function UpdateCreatorScreen() {
                         !coverageSummary && styles.coveragePlaceholder,
                       ]}
                       numberOfLines={1}>
-                      {coverageSummary || 'Select coverage'}
+                      {coverageSummary || 'Select tags'}
                     </Text>
                     <Ionicons
                       name="chevron-forward"

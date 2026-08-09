@@ -178,7 +178,7 @@ export function validateMediaLinkRows(
       coverage.teamIds.length === 0 &&
       coverage.conferenceIds.length === 0
     ) {
-      const message = `Select coverage for Link ${index + 1}.`;
+      const message = `Select tags for Link ${index + 1}.`;
       fieldErrors[`links.${index}.coverage`] = message;
       if (!fieldErrors.links) fieldErrors.links = message;
       continue;
