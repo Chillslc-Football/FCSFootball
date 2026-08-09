@@ -10,7 +10,10 @@ import {
   syncPushTokenIfPermitted,
   withTimeout,
 } from '@/data/notifications/deviceRegistration';
-import { shouldApplyDeliveryRefresh } from '@/data/notifications/notificationDeliveryRefresh';
+import {
+  reconcileDeliveryAfterSetupSettle,
+  shouldApplyDeliveryRefresh,
+} from '@/data/notifications/notificationDeliveryRefresh';
 import { cacheNotificationPreferences } from '@/data/notifications/notificationPreferencesStorage';
 import { isNotificationDeliveryReady } from '@/data/notifications/notificationEffectiveState';
 import {
@@ -259,11 +262,19 @@ export function useNotificationPreferences() {
       if (enabling) {
         void ensureNotificationReady({ requestPermission: true })
           .then(async (ready) => {
-            applyDeliverySnapshot({
-              permissionStatus: await getNotificationPermissionStatus(),
+            const setupSnapshot = {
+              permissionStatus: ready.permissionStatus,
               deviceRegistered: ready.registered,
               hasPushToken: ready.hasPushToken,
+            };
+            const reconciled = await reconcileDeliveryAfterSetupSettle({
+              setupResult: ready.result,
+              setupSnapshot,
+              syncDelivery: syncPushTokenIfPermitted,
+              withTimeout,
             });
+            if (!mountedRef.current) return;
+            applyDeliverySnapshot(reconciled);
           })
           .catch((error) => {
             console.warn('[useNotificationPreferences] readiness sync failed:', error);
@@ -285,11 +296,22 @@ export function useNotificationPreferences() {
         const ready = await ensureNotificationReady({ requestPermission: true });
         if (!mountedRef.current || attempt !== setupAttemptRef.current) return;
 
-        applyDeliverySnapshot({
+        const setupSnapshot = {
           permissionStatus: ready.permissionStatus,
           deviceRegistered: ready.registered,
           hasPushToken: ready.hasPushToken,
+        };
+
+        // Late register_device success after setup race timeout: one bounded confirm.
+        const reconciled = await reconcileDeliveryAfterSetupSettle({
+          setupResult: ready.result,
+          setupSnapshot,
+          syncDelivery: syncPushTokenIfPermitted,
+          withTimeout,
         });
+        if (!mountedRef.current || attempt !== setupAttemptRef.current) return;
+
+        applyDeliverySnapshot(reconciled);
 
         if (ready.result !== 'success' && typeof __DEV__ !== 'undefined' && __DEV__) {
           console.warn('[useNotificationPreferences] setup attempt settled incomplete', {
@@ -298,6 +320,7 @@ export function useNotificationPreferences() {
             phase: ready.phase,
             registered: ready.registered,
             hasPushToken: ready.hasPushToken,
+            reconciledReady: isNotificationDeliveryReady(reconciled),
           });
         }
       } catch (error) {

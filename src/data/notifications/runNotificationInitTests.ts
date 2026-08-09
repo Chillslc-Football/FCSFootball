@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 
-import { shouldApplyDeliveryRefresh } from '@/data/notifications/notificationDeliveryRefresh';
+import {
+  reconcileDeliveryAfterSetupSettle,
+  selectDeliverySnapshotAfterSetup,
+  shouldApplyDeliveryRefresh,
+  shouldRunPostSetupDeliveryReconcile,
+} from '@/data/notifications/notificationDeliveryRefresh';
 import { assembleNotificationDiagnosticsProbes } from '@/data/notifications/notificationDiagnosticsLogic';
 import {
   coalesceNotificationPreferences,
@@ -313,6 +318,120 @@ test('soft delivery refresh does not regress healthy → unhealthy', () => {
     }),
     true,
   );
+  // Soft refresh may still upgrade unhealthy → healthy (AppState intact).
+  assert.equal(
+    shouldApplyDeliveryRefresh({ previous: flaky, next: healthy, mode: 'soft' }),
+    true,
+  );
+});
+
+test('post-setup reconcile runs only for timeout/incomplete while granted', () => {
+  assert.equal(
+    shouldRunPostSetupDeliveryReconcile({
+      setupResult: 'timeout',
+      permissionStatus: 'granted',
+    }),
+    true,
+  );
+  assert.equal(
+    shouldRunPostSetupDeliveryReconcile({
+      setupResult: 'incomplete',
+      permissionStatus: 'granted',
+    }),
+    true,
+  );
+  assert.equal(
+    shouldRunPostSetupDeliveryReconcile({
+      setupResult: 'success',
+      permissionStatus: 'granted',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRunPostSetupDeliveryReconcile({
+      setupResult: 'timeout',
+      permissionStatus: 'denied',
+    }),
+    false,
+  );
+});
+
+test('late registration success after setup timeout → Settings healthy', () => {
+  const timeoutSnapshot = {
+    permissionStatus: 'granted' as const,
+    deviceRegistered: false,
+    hasPushToken: true,
+  };
+  const confirmed = {
+    permissionStatus: 'granted' as const,
+    deviceRegistered: true,
+    hasPushToken: true,
+  };
+  assert.equal(resolveNotificationUserStatus(timeoutSnapshot), 'needs_attention');
+  const selected = selectDeliverySnapshotAfterSetup({
+    setupSnapshot: timeoutSnapshot,
+    confirmed,
+  });
+  assert.equal(resolveNotificationUserStatus(selected), 'healthy');
+  assert.equal(getNotificationUserStatusView('healthy').title, 'Notifications enabled');
+});
+
+test('genuine timeout reconcile failure → Settings remains unhealthy', () => {
+  const timeoutSnapshot = {
+    permissionStatus: 'granted' as const,
+    deviceRegistered: false,
+    hasPushToken: true,
+  };
+  assert.deepEqual(
+    selectDeliverySnapshotAfterSetup({
+      setupSnapshot: timeoutSnapshot,
+      confirmed: {
+        permissionStatus: 'granted',
+        deviceRegistered: false,
+        hasPushToken: false,
+      },
+    }),
+    timeoutSnapshot,
+  );
+  assert.deepEqual(
+    selectDeliverySnapshotAfterSetup({
+      setupSnapshot: timeoutSnapshot,
+      confirmed: null,
+    }),
+    timeoutSnapshot,
+  );
+  assert.equal(resolveNotificationUserStatus(timeoutSnapshot), 'needs_attention');
+});
+
+test('permission denied remains unhealthy and cannot be overridden', () => {
+  assert.equal(
+    shouldRunPostSetupDeliveryReconcile({
+      setupResult: 'timeout',
+      permissionStatus: 'denied',
+    }),
+    false,
+  );
+  const deniedSetup = {
+    permissionStatus: 'denied' as const,
+    deviceRegistered: false,
+    hasPushToken: false,
+  };
+  // Denied setup does not run reconcile — snapshot stays denied even if a
+  // hypothetical confirm looks healthy (gate in shouldRunPostSetupDeliveryReconcile).
+  assert.equal(resolveNotificationUserStatus(deniedSetup), 'permission_denied');
+
+  // If confirmation itself reports denied, denied is authoritative.
+  assert.deepEqual(
+    selectDeliverySnapshotAfterSetup({
+      setupSnapshot: {
+        permissionStatus: 'granted',
+        deviceRegistered: false,
+        hasPushToken: true,
+      },
+      confirmed: deniedSetup,
+    }),
+    deniedSetup,
+  );
 });
 
 test('actual token/registration failure still shows Notifications need attention', () => {
@@ -447,6 +566,75 @@ async function testAsync(name: string, fn: () => Promise<void>): Promise<void> {
 }
 
 async function runAsyncDiagnosticsTests(): Promise<void> {
+  await testAsync('bounded post-setup reconcile upgrades late registration success', async () => {
+    const timeoutSnapshot = {
+      permissionStatus: 'granted' as const,
+      deviceRegistered: false,
+      hasPushToken: true,
+    };
+    let syncCalls = 0;
+    const final = await reconcileDeliveryAfterSetupSettle({
+      setupResult: 'timeout',
+      setupSnapshot: timeoutSnapshot,
+      syncDelivery: async () => {
+        syncCalls += 1;
+        return {
+          permissionStatus: 'granted',
+          deviceRegistered: true,
+          hasPushToken: true,
+        };
+      },
+      withTimeout: async (promise) => promise,
+    });
+    assert.equal(syncCalls, 1);
+    assert.equal(resolveNotificationUserStatus(final), 'healthy');
+  });
+
+  await testAsync('bounded post-setup reconcile keeps unhealthy when confirm fails', async () => {
+    const timeoutSnapshot = {
+      permissionStatus: 'granted' as const,
+      deviceRegistered: false,
+      hasPushToken: true,
+    };
+    const final = await reconcileDeliveryAfterSetupSettle({
+      setupResult: 'timeout',
+      setupSnapshot: timeoutSnapshot,
+      syncDelivery: async () => ({
+        permissionStatus: 'granted',
+        deviceRegistered: false,
+        hasPushToken: false,
+      }),
+      withTimeout: async (promise) => promise,
+    });
+    assert.deepEqual(final, timeoutSnapshot);
+    assert.equal(resolveNotificationUserStatus(final), 'needs_attention');
+  });
+
+  await testAsync('bounded post-setup reconcile skips when permission denied', async () => {
+    let syncCalls = 0;
+    const denied = {
+      permissionStatus: 'denied' as const,
+      deviceRegistered: false,
+      hasPushToken: false,
+    };
+    const final = await reconcileDeliveryAfterSetupSettle({
+      setupResult: 'timeout',
+      setupSnapshot: denied,
+      syncDelivery: async () => {
+        syncCalls += 1;
+        return {
+          permissionStatus: 'granted',
+          deviceRegistered: true,
+          hasPushToken: true,
+        };
+      },
+      withTimeout: async (promise) => promise,
+    });
+    assert.equal(syncCalls, 0);
+    assert.deepEqual(final, denied);
+    assert.equal(resolveNotificationUserStatus(final), 'permission_denied');
+  });
+
   await testAsync('opening diagnostics does not mutate readiness / setup history', async () => {
     let prefsCalls = 0;
     const readinessBefore = {
