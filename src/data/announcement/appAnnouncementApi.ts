@@ -48,39 +48,76 @@ export type LoadAnnouncementResult = {
  * Load announcement for Home.
  * Fail open: network errors do not throw; may return fresh cache or null.
  */
+/** TEMP diagnostics — strip URLs/secrets from error text before logging. */
+function sanitizeAnnounceDiagError(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  return raw.replace(/https?:\/\/\S+/gi, '[redacted_url]').slice(0, 120);
+}
+
+function logAnnounceLoadDiag(
+  phase: string,
+  result: Pick<LoadAnnouncementResult, 'announcement' | 'source' | 'fetchFailed' | 'error'> & {
+    called?: boolean;
+    hasRow?: boolean;
+  },
+): void {
+  // TEMP: Home announcement read-path diagnosis (remove after investigation).
+  console.log('[announce-diag] loadAppAnnouncement', {
+    phase,
+    called: result.called ?? true,
+    hasRow: result.hasRow ?? result.announcement != null,
+    message: result.announcement?.message ?? null,
+    active: result.announcement?.active ?? null,
+    source: result.source,
+    fetchFailed: result.fetchFailed,
+    error: sanitizeAnnounceDiagError(result.error) ?? null,
+  });
+}
+
 export async function loadAppAnnouncement(options?: {
   forceRefresh?: boolean;
   nowMs?: number;
 }): Promise<LoadAnnouncementResult> {
+  // TEMP: Home announcement read-path diagnosis (remove after investigation).
+  console.log('[announce-diag] loadAppAnnouncement called', {
+    forceRefresh: Boolean(options?.forceRefresh),
+  });
+
   const nowMs = options?.nowMs ?? Date.now();
   const cache = await readCache();
   const cacheFresh = Boolean(cache) && isAnnouncementCacheFresh(cache!.fetchedAt, nowMs);
 
   if (!options?.forceRefresh && cacheFresh) {
-    return {
+    const result: LoadAnnouncementResult = {
       announcement: cache!.announcement,
       source: 'cache',
       fetchFailed: false,
     };
+    logAnnounceLoadDiag('cache_hit', result);
+    return result;
   }
 
   if (!isSupabaseConfigured()) {
-    return {
+    const result: LoadAnnouncementResult = {
       announcement: null,
       source: 'none',
       fetchFailed: true,
       error: 'supabase_not_configured',
     };
+    logAnnounceLoadDiag('supabase_not_configured', { ...result, hasRow: false });
+    return result;
   }
 
   const supabase = getSupabaseClient();
   if (!supabase) {
-    return {
+    const result: LoadAnnouncementResult = {
       announcement: null,
       source: 'none',
       fetchFailed: true,
       error: 'supabase_client_unavailable',
     };
+    logAnnounceLoadDiag('supabase_client_unavailable', { ...result, hasRow: false });
+    return result;
   }
 
   try {
@@ -95,23 +132,29 @@ export async function loadAppAnnouncement(options?: {
 
     const announcement = data ? mapAnnouncementRow(data as AppAnnouncementDbRow) : null;
     await writeCache(announcement);
-    return { announcement, source: 'network', fetchFailed: false };
+    const result: LoadAnnouncementResult = { announcement, source: 'network', fetchFailed: false };
+    logAnnounceLoadDiag('network', { ...result, hasRow: data != null });
+    return result;
   } catch (error) {
     // Prefer fresh cache only; do not apply stale cache after failed refresh.
     if (cacheFresh && cache) {
-      return {
+      const result: LoadAnnouncementResult = {
         announcement: cache.announcement,
         source: 'cache',
         fetchFailed: true,
         error: error instanceof Error ? error.message : 'announcement_fetch_failed',
       };
+      logAnnounceLoadDiag('network_fail_cache_fallback', result);
+      return result;
     }
-    return {
+    const result: LoadAnnouncementResult = {
       announcement: null,
       source: 'none',
       fetchFailed: true,
       error: error instanceof Error ? error.message : 'announcement_fetch_failed',
     };
+    logAnnounceLoadDiag('network_fail', { ...result, hasRow: false });
+    return result;
   }
 }
 

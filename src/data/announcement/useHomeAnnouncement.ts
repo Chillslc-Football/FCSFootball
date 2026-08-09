@@ -25,9 +25,32 @@ export function useHomeAnnouncement() {
       ]);
       setAnnouncement(loaded.announcement);
       setDismissedVersionKey(dismissed);
+
+      // TEMP: Home announcement read-path diagnosis (remove after investigation).
+      const show = shouldShowAnnouncement({
+        announcement: loaded.announcement,
+        dismissedVersionKey: dismissed,
+      });
+      console.log('[announce-diag] useHomeAnnouncement visibility', {
+        shouldShow: show,
+        hydratedWillBe: true,
+        hasAnnouncement: loaded.announcement != null,
+        message: loaded.announcement?.message ?? null,
+        active: loaded.announcement?.active ?? null,
+        dismissedPresent: dismissed != null,
+        fetchFailed: loaded.fetchFailed,
+        error: loaded.error
+          ? loaded.error.replace(/https?:\/\/\S+/gi, '[redacted_url]').slice(0, 120)
+          : null,
+      });
     } catch (error) {
       // Never break Home.
       console.warn('[useHomeAnnouncement] refresh failed:', error);
+      // TEMP: Home announcement read-path diagnosis (remove after investigation).
+      console.log('[announce-diag] useHomeAnnouncement refresh threw', {
+        shouldShow: false,
+        hasAnnouncement: false,
+      });
     } finally {
       setHydrated(true);
     }

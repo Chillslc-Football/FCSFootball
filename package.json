@@ -22,7 +22,6 @@
     "test:welcome-storage": "npx --yes tsx --tsconfig tsconfig.json src/data/onboarding/runWelcomeStorageTests.ts",
     "test:app-release-policy": "npx --yes tsx --tsconfig tsconfig.json src/data/release/runAppReleasePolicyTests.ts",
     "test:app-announcement": "npx --yes tsx --tsconfig tsconfig.json src/data/announcement/runAppAnnouncementTests.ts",
-    "test:admin-auth-errors": "npx --yes tsx --tsconfig tsconfig.json src/data/media/runAdminAuthErrorTests.ts",
     "test:espn-roster": "npx --yes tsx --tsconfig tsconfig.json src/data/providers/runEspnRosterTests.ts",
     "test:espn-fetch-retry": "npx --yes tsx --tsconfig tsconfig.json src/data/providers/runEspnFetchRetryTests.ts",
     "test:media-submissions": "npx --yes tsx --tsconfig tsconfig.json src/data/media/runMediaValidationTests.ts",

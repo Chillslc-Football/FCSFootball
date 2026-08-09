@@ -42,7 +42,6 @@ export default function RootLayout() {
               <Stack.Screen name="index" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="developer" options={{ headerShown: false }} />
-              <Stack.Screen name="admin" options={{ headerShown: false }} />
               <Stack.Screen name="media" options={{ title: 'FCS Media' }} />
               <Stack.Screen name="creator/[id]" options={{ title: 'Creator' }} />
               <Stack.Screen name="update-creator/[id]" options={{ title: 'Update Creator' }} />

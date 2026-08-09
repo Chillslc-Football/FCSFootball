@@ -24,7 +24,6 @@ export default function DeveloperLayout() {
         options={{ title: 'Notification Diagnostics' }}
       />
       <Stack.Screen name="live-game-simulator" options={{ title: 'Live Game Simulator' }} />
-      <Stack.Screen name="media-suggestions" options={{ title: 'Media Suggestions' }} />
     </Stack>
   );
 }

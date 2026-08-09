@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -64,6 +64,15 @@ export default function FavoritesScreen() {
     dismiss: dismissHomeAnnouncement,
     refresh: refreshHomeAnnouncement,
   } = useHomeAnnouncement();
+
+  // TEMP: Home announcement read-path diagnosis (remove after investigation).
+  useEffect(() => {
+    console.log('[announce-diag] today banner props', {
+      visible: homeAnnouncementVisible,
+      bannerReceivesAnnouncement: homeAnnouncement != null,
+      message: homeAnnouncement?.message ?? null,
+    });
+  }, [homeAnnouncement, homeAnnouncementVisible]);
 
   const loadScheduleData = useCallback(async (options?: ScoresSilentRefreshOptions & {
     pullRefresh?: boolean;

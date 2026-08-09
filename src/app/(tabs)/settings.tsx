@@ -154,12 +154,12 @@ export default function SettingsScreen() {
         />
       </View>
 
-      <View style={styles.adminSection}>
-        <Text style={styles.adminSectionTitle}>Admin</Text>
-        <AdminSecondaryRow
-          href={'/admin' as Href}
-          title="Admin"
-          subtitle="Internal tools, media review, and diagnostics"
+      <View style={styles.developerSection}>
+        <Text style={styles.developerSectionTitle}>Developer</Text>
+        <DeveloperSecondaryRow
+          href={'/developer' as Href}
+          title="Diagnostics"
+          subtitle="Notification diagnostics and internal tools"
         />
       </View>
     </Screen>
@@ -220,7 +220,7 @@ function SupportActionCard({
 }
 
 /** Compact secondary row — findable for owners, de-emphasized for normal users. */
-function AdminSecondaryRow({
+function DeveloperSecondaryRow({
   href,
   title,
   subtitle,
@@ -235,12 +235,12 @@ function AdminSecondaryRow({
         accessibilityRole="link"
         accessibilityLabel={`${title}. ${subtitle}`}
         accessibilityHint="Opens another screen"
-        style={({ pressed }) => [styles.adminRow, pressed && styles.pressed]}>
-        <View style={styles.adminRowText}>
-          <Text style={styles.adminRowTitle} numberOfLines={1}>
+        style={({ pressed }) => [styles.developerRow, pressed && styles.pressed]}>
+        <View style={styles.developerRowText}>
+          <Text style={styles.developerRowTitle} numberOfLines={1}>
             {title}
           </Text>
-          <Text style={styles.adminRowSubtitle} numberOfLines={2}>
+          <Text style={styles.developerRowSubtitle} numberOfLines={2}>
             {subtitle}
           </Text>
         </View>
@@ -424,16 +424,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  adminSection: {
+  developerSection: {
     gap: spacing.xs,
     marginBottom: spacing.sm,
   },
-  adminSectionTitle: {
+  developerSectionTitle: {
     ...typography.label,
     fontSize: 11,
     color: colors.textMuted,
   },
-  adminRow: {
+  developerRow: {
     paddingVertical: spacing.xs + 2,
     paddingHorizontal: spacing.xs,
     flexDirection: 'row',
@@ -441,19 +441,19 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minHeight: 40,
   },
-  adminRowText: {
+  developerRowText: {
     flexGrow: 1,
     flexShrink: 1,
     flexBasis: 0,
     minWidth: 0,
     gap: 1,
   },
-  adminRowTitle: {
+  developerRowTitle: {
     ...typography.caption,
     fontWeight: '500',
     color: colors.textSecondary,
   },
-  adminRowSubtitle: {
+  developerRowSubtitle: {
     ...typography.caption,
     fontSize: 12,
     color: colors.textMuted,

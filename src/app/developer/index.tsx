@@ -171,15 +171,6 @@ export default function DeveloperScreen() {
         </Pressable>
       </Link>
 
-      <Link href={'/developer/media-suggestions' as Href} asChild>
-        <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-          <Text style={styles.rowTitle}>Media Suggestions</Text>
-          <Text style={styles.rowSubtitle}>
-            Review pending Spotify / YouTube / X suggestions (admin sign-in required)
-          </Text>
-        </Pressable>
-      </Link>
-
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Reset Version 1 Welcome"
