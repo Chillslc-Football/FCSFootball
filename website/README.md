@@ -8,7 +8,6 @@ Static site for public pages on `https://fcspulse.com`.
 website/
   index.html
   styles.css
-  _redirects
   privacy/
     index.html
   delete-data/
@@ -33,8 +32,11 @@ Public URLs after deploy:
 
 Custom domain: `fcspulse.com`
 
-`_redirects` maps `/privacy` and `/delete-data` to their `index.html` files so
-direct open and refresh work without a 404.
+No `_redirects` file. Directory `index.html` files are enough for Wrangler /
+Cloudflare static assets to serve `/privacy` and `/delete-data` (and their
+trailing-slash forms). Do not rewrite those paths to `*/index.html` — that
+creates a redirect loop with the platform’s pretty-URL / trailing-slash
+behavior.
 
 ## Local preview
 
