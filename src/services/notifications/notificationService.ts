@@ -265,6 +265,34 @@ export function addNotificationResponseListener(
   return Notifications.addNotificationResponseReceivedListener(listener);
 }
 
+/** Stable key so cold-start + live listener do not navigate twice for one tap. */
+export function getNotificationResponseDedupeKey(
+  response: Notifications.NotificationResponse,
+): string {
+  return `${response.notification.request.identifier}:${String(response.notification.date)}`;
+}
+
+/** Shared extraction used by cold-start and live notification tap handlers. */
+export function getEventIdFromNotificationResponse(
+  response: Notifications.NotificationResponse,
+): string | undefined {
+  const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+  const eventId = typeof data?.eventId === 'string' ? data.eventId.trim() : '';
+  return eventId || undefined;
+}
+
+/**
+ * Cold-start / killed-state tap: last response that launched the app, if any.
+ * Callers should clear after handling so ordinary launches do not replay it.
+ */
+export async function getLastNotificationResponse(): Promise<Notifications.NotificationResponse | null> {
+  return Notifications.getLastNotificationResponseAsync();
+}
+
+export async function clearLastNotificationResponse(): Promise<void> {
+  await Notifications.clearLastNotificationResponseAsync();
+}
+
 export function addPushTokenListener(
   listener: (token: Notifications.DevicePushToken) => void,
 ): Notifications.EventSubscription {
