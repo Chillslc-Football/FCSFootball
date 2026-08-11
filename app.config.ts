@@ -18,7 +18,7 @@ const config: ExpoConfig = {
 
   ios: {
     bundleIdentifier: 'com.chillslc.fcsfootball',
-    supportsTablet: true,
+    supportsTablet: false,
     infoPlist: {
       LSApplicationQueriesSchemes: ['sportscenter', 'espnapp'],
     },
