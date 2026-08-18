@@ -131,6 +131,7 @@ export function ConferenceStandingsSection({
 
   return (
     <View style={styles.table}>
+      <StandingsHeaderRow />
       {sortedEntries.map((entry, index) => (
         <View
           key={entry.teamId ?? `${entry.displayName}-${index}`}

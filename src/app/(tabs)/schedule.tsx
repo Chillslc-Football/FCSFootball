@@ -4,10 +4,7 @@ import { RefreshControl, StyleSheet, View } from 'react-native';
 
 import { ConferenceDropdown } from '@/components/ConferenceDropdown';
 import { ConferenceScheduleSection } from '@/components/conferences/ConferenceScheduleSection';
-import {
-  ConferenceStandingsSection,
-  ConferenceStandingsTableHeader,
-} from '@/components/conferences/ConferenceStandingsSection';
+import { ConferenceStandingsSection } from '@/components/conferences/ConferenceStandingsSection';
 import { ConferenceWeekScroller } from '@/components/conferences/ConferenceWeekScroller';
 import {
   ConferenceViewTabs,
@@ -117,16 +114,8 @@ export default function ConferencesScreen() {
       );
     }
 
-    if (
-      activeView === 'standings' &&
-      standings.loadState === 'success' &&
-      standings.entries.length > 0
-    ) {
-      return <ConferenceStandingsTableHeader />;
-    }
-
     return null;
-  }, [activeView, selectedWeek, standings.entries.length, standings.loadState]);
+  }, [activeView, selectedWeek]);
 
   return (
     <Screen
