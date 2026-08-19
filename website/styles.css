@@ -162,6 +162,26 @@ a:focus {
   text-decoration: none;
 }
 
+.store-btn-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45em;
+  white-space: nowrap;
+}
+
+.store-apple-mark {
+  width: 0.95em;
+  height: 1.15em;
+  flex-shrink: 0;
+}
+
+.store-btn-sub {
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
 .store-btn-apple {
   background: var(--gold);
   color: var(--on-gold);
@@ -238,5 +258,137 @@ a:focus {
     font-weight: 600;
     line-height: 1.3;
     text-align: center;
+  }
+}
+
+/* Homepage-only. Privacy and data deletion pages omit .page-home. */
+body.page-home {
+  padding: 32px 16px 64px;
+}
+
+.page-home .shell {
+  max-width: 960px;
+}
+
+.page-home .hero {
+  margin-bottom: 40px;
+}
+
+.page-home h1 {
+  margin: 0 0 14px;
+  max-width: 20ch;
+  font-size: clamp(1.9rem, 5.4vw, 2.85rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+.page-home .hero-lead {
+  margin: 0 0 24px;
+  max-width: 40rem;
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.page-home .hero .store-actions {
+  margin-bottom: 0;
+}
+
+.page-home h2 {
+  margin: 0 0 16px;
+  font-size: clamp(1.2rem, 2.6vw, 1.45rem);
+  line-height: 1.25;
+  font-weight: 800;
+  color: #fff;
+}
+
+.page-home .feature-section,
+.page-home .community-section {
+  margin-bottom: 40px;
+}
+
+.page-home .feature-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.page-home .feature-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--gold);
+  border-radius: 12px;
+  padding: 18px 18px 20px;
+}
+
+.page-home .feature-card h3 {
+  margin: 0 0 8px;
+  font-size: 1.02rem;
+  line-height: 1.3;
+  font-weight: 800;
+  color: #fff;
+}
+
+.page-home .feature-card p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.page-home .community-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 22px 20px;
+}
+
+.page-home .community-panel p {
+  margin: 0;
+  max-width: 42rem;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.page-home .footer {
+  margin-top: 8px;
+}
+
+@media (min-width: 640px) {
+  body.page-home {
+    padding: 52px 24px 80px;
+  }
+
+  .page-home .hero {
+    margin-bottom: 48px;
+  }
+
+  .page-home .hero .store-actions {
+    max-width: 36rem;
+  }
+
+  .page-home .feature-section,
+  .page-home .community-section {
+    margin-bottom: 48px;
+  }
+
+  .page-home .feature-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .page-home .feature-card {
+    padding: 20px 20px 22px;
+  }
+
+  .page-home .community-panel {
+    padding: 26px 28px;
+  }
+}
+
+@media (min-width: 900px) {
+  .page-home .feature-grid {
+    grid-template-columns: 1fr 1fr 1fr;
   }
 }
